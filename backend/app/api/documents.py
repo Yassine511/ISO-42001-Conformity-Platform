@@ -1,0 +1,72 @@
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models import Document, DocumentPage, DocumentStatus, Organization
+from app.schemas import DocumentOut, DocumentPageOut
+from app.services.parsing import SUPPORTED_EXTENSIONS, UnsupportedFileType, parse_document
+
+router = APIRouter(prefix="/api", tags=["documents"])
+
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+
+
+@router.post("/organizations/{org_id}/documents", response_model=DocumentOut, status_code=201)
+async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(get_db)):
+    org = db.get(Organization, org_id)
+    if not org:
+        raise HTTPException(404, "Organisation introuvable.")
+    filename = file.filename or "document"
+    if not any(filename.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+        raise HTTPException(415, f"Type de fichier non supporté. Formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
+
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, "Fichier trop volumineux (limite : 20 Mo).")
+
+    doc = Document(
+        organization_id=org_id,
+        filename=filename,
+        content_type=file.content_type or "application/octet-stream",
+    )
+    try:
+        pages = parse_document(filename, data)
+        doc.status = DocumentStatus.PARSED.value
+        doc.page_count = len(pages)
+        doc.pages = [DocumentPage(page_number=i + 1, text=text) for i, text in enumerate(pages)]
+    except UnsupportedFileType as exc:
+        raise HTTPException(415, str(exc))
+    except Exception as exc:
+        doc.status = DocumentStatus.FAILED.value
+        doc.error = f"Échec de l'analyse : {exc}"
+
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+@router.get("/organizations/{org_id}/documents", response_model=list[DocumentOut])
+def list_documents(org_id: str, db: Session = Depends(get_db)):
+    if not db.get(Organization, org_id):
+        raise HTTPException(404, "Organisation introuvable.")
+    return db.scalars(
+        select(Document).where(Document.organization_id == org_id).order_by(Document.created_at)
+    ).all()
+
+
+@router.get("/documents/{document_id}/pages", response_model=list[DocumentPageOut])
+def get_document_pages(document_id: str, db: Session = Depends(get_db)):
+    doc = db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(404, "Document introuvable.")
+    return doc.pages
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(document_id: str, db: Session = Depends(get_db)):
+    doc = db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(404, "Document introuvable.")
+    db.delete(doc)
+    db.commit()
