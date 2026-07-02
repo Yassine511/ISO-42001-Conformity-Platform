@@ -6,7 +6,7 @@ AI copilot for ISO/IEC 42001 conformity assessment with a **verifiable trust lay
 chat answer must carry citations that a deterministic checker verifies against the source text; the system
 abstains instead of guessing, a human confirms every verdict, and reliability is measured on a gold dataset.
 
-Full specification: [Rapport_Projet_INT102.md](Rapport_Projet_INT102.md).
+Full specification: [Plan_Projet_INT102.md](Plan_Projet_INT102.md).
 
 ## Architecture
 
