@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: int102
       POSTGRES_DB: int102
     ports:
-      - "5432:5432"
+      # 5433 on the host: many dev machines already run a native PostgreSQL on 5432
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

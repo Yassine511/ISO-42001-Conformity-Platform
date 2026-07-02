@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://int102:int102@localhost:5432/int102"
+    database_url: str = "postgresql+psycopg://int102:int102@localhost:5433/int102"
     qdrant_url: str = "http://localhost:6333"
     cors_origins: list[str] = ["http://localhost:5173"]
 
