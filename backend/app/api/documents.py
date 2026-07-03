@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Document, DocumentPage, DocumentStatus, Organization
 from app.schemas import DocumentOut, DocumentPageOut
+from app.services import qdrant
 from app.services.parsing import (
     PARSER_VERSION,
     SUPPORTED_EXTENSIONS,
@@ -81,5 +82,11 @@ def delete_document(document_id: str, db: Session = Depends(get_db)):
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(404, "Document introuvable.")
+    # Qdrant first: if it is unreachable we abort rather than leave orphan
+    # vectors searchable. /index reconciliation is the recovery path.
+    try:
+        qdrant.delete_points_by_document(document_id)
+    except Exception as exc:
+        raise HTTPException(503, f"Index vectoriel indisponible, suppression annulée : {exc}")
     db.delete(doc)
     db.commit()

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Retrieval (M2). Collection name is versioned: model/chunker change => new name + reindex.
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    fastembed_cache_dir: str = ""  # empty = fastembed default; set FASTEMBED_CACHE_DIR in Docker
+    qdrant_collection: str = "retrieval_minilm12_v1"
+    corpus_path: str = "../corpus"  # repo corpus/ dir; /app/corpus in Docker (read-only mount)
+
     # LLM providers (used from M3 onward)
     mistral_api_key: str = ""
     groq_api_key: str = ""

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401 — register tables on Base metadata
-from app.api import documents, organizations
+from app.api import documents, organizations, retrieval
 from app.config import settings
 from app.db import Base, engine
 
@@ -44,6 +44,7 @@ app.add_middleware(
 
 app.include_router(organizations.router)
 app.include_router(documents.router)
+app.include_router(retrieval.router)
 
 
 @app.get("/api/health")

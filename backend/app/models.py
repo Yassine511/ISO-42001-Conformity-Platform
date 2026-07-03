@@ -69,3 +69,26 @@ class DocumentPage(Base):
     text: Mapped[str] = mapped_column(Text)
 
     document: Mapped[Document] = relationship(back_populates="pages")
+
+
+class Chunk(Base):
+    """Retrieval unit over a document page span.
+
+    id is content-addressed over (document_id, parser_version, chunker_version,
+    page, offsets) — reindexing is idempotent, and ids can never collide across
+    documents or organizations. char_start/char_end slice DocumentPage.text
+    exactly: text == page_text[char_start:char_end].
+    """
+
+    __tablename__ = "chunks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    page_number: Mapped[int] = mapped_column(Integer)
+    char_start: Mapped[int] = mapped_column(Integer)
+    char_end: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+
+    document: Mapped[Document] = relationship()

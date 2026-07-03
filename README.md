@@ -76,7 +76,23 @@ M2 backend: index chunks in Qdrant with multilingual embeddings
 infra: map container Postgres to host port 5433
 ```
 
+## Retrieval (M2)
+
+Hybrid retrieval = French-analyzer BM25 + vector search (fastembed
+`paraphrase-multilingual-MiniLM-L12-v2`, 384-dim) merged with RRF, over a versioned Qdrant
+collection (`retrieval_minilm12_v1`). PostgreSQL is authoritative; Qdrant is a rebuildable
+derived index (`/index` reconciles, search hydrates from PG and discards orphans).
+
+```
+POST /api/organizations/{id}/index    # chunk + embed + reconcile (first run downloads ~220 MB model)
+POST /api/kb/index                    # index the 65 ISO KB requirements (reads CORPUS_PATH)
+POST /api/organizations/{id}/search   # {"query": "...", "k": 8, "scope": "policy|kb|both"}
+```
+
+Exit gates (dev gold split, `scripts/retrieval_sanity.py`): doc recall@5 ≥ 0.85, anchor
+recall@5 ≥ 0.70, anchor recall@10 ≥ 0.85 — measured 0.95 / 0.86 / 0.95 (hybrid) on corpus v1.2.0.
+
 ## Milestones
 
-M1a foundation (this state) → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
+M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG (this state) → M3 pipeline core
 (judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation → M7 scoring & artifacts → M8 deliverables.
