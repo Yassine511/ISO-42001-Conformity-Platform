@@ -112,3 +112,18 @@ def test_forced_split_at_nonzero_offset_regression():
     for a, b in zip(split_chunks, split_chunks[1:]):
         overlap = a.char_end - b.char_start
         assert overlap >= 20, f"forced-split overlap too small: {overlap}"
+
+
+def test_sentence_boundary_between_target_and_hard_max_preferred():
+    """Audit P2: a sentence cut at ~1101 must beat a whitespace cut at ~1196."""
+    s1 = "Première phrase du paragraphe qui est déjà assez longue pour compter. "  # ~71
+    # one sentence ending between TARGET (1000) and HARD_MAX (1200)
+    long_sentence = "x" * 1030 + ". "
+    tail = "mot " * 200  # no sentence punctuation
+    text = s1 + long_sentence + tail.strip()
+    chunks = chunk_page(text)
+    _assert_invariants(text, chunks)
+    boundary = text.index(long_sentence) + len(long_sentence.rstrip())
+    assert any(
+        abs(c.char_end - boundary) <= 1 for c in chunks
+    ), f"no cut at the sentence boundary {boundary}: {[(c.char_start, c.char_end) for c in chunks]}"

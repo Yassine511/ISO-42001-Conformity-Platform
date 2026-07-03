@@ -36,6 +36,9 @@ def point_id(result_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, result_id))
 
 
+PAYLOAD_INDEX_FIELDS = ("source_type", "org_id", "document_id", "corpus_version")
+
+
 def ensure_collection() -> None:
     client = get_client()
     name = settings.qdrant_collection
@@ -47,15 +50,19 @@ def ensure_collection() -> None:
                 f"Collection {name!r} incompatible (dim={params.size}, distance={params.distance}) — "
                 f"attendu dim={EMBEDDING_DIM}, cosine. Changez de nom de collection et réindexez."
             )
-        return
-    client.create_collection(
-        collection_name=name,
-        vectors_config=qm.VectorParams(size=EMBEDDING_DIM, distance=qm.Distance.COSINE),
-    )
-    for field in ("source_type", "org_id", "document_id", "corpus_version"):
-        client.create_payload_index(
-            collection_name=name, field_name=field, field_schema=qm.PayloadSchemaType.KEYWORD
+    else:
+        client.create_collection(
+            collection_name=name,
+            vectors_config=qm.VectorParams(size=EMBEDDING_DIM, distance=qm.Distance.COSINE),
         )
+    # Idempotent on both paths: pre-existing collections must get the payload
+    # indexes too (an early return here left the live collection without them).
+    existing = set((client.get_collection(name).payload_schema or {}).keys())
+    for field in PAYLOAD_INDEX_FIELDS:
+        if field not in existing:
+            client.create_payload_index(
+                collection_name=name, field_name=field, field_schema=qm.PayloadSchemaType.KEYWORD
+            )
 
 
 def upsert_points(points: list[qm.PointStruct]) -> None:

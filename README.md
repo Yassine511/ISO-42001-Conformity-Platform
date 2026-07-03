@@ -89,8 +89,10 @@ POST /api/kb/index                    # index the 65 ISO KB requirements (reads 
 POST /api/organizations/{id}/search   # {"query": "...", "k": 8, "scope": "policy|kb|both"}
 ```
 
-Exit gates (dev gold split, `scripts/retrieval_sanity.py`): doc recall@5 ≥ 0.85, anchor
-recall@5 ≥ 0.70, anchor recall@10 ≥ 0.85 — measured 0.95 / 0.86 / 0.95 (hybrid) on corpus v1.2.0.
+Exit gates (dev gold split, `scripts/retrieval_sanity.py`, strict six-document baseline):
+doc recall@5 ≥ 0.85, anchor recall@5 ≥ 0.70, anchor recall@10 ≥ 0.85 — measured
+0.95 / 0.86 / 0.93 (hybrid) on corpus v1.2.0; KB scope R@5 = 0.96 on natural-language
+rationale queries (floor 0.60).
 
 ## Milestones
 

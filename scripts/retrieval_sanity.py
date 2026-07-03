@@ -42,6 +42,7 @@ from app.services.bm25 import Bm25Index  # noqa: E402
 from app.services.embeddings import embed_texts  # noqa: E402
 
 FLOORS = {"doc_r5": 0.85, "anchor_r5": 0.70, "anchor_r10": 0.85}
+KB_FLOOR_R5 = 0.60  # NL queries (gold rationales) -> right KB requirement in top-5
 K_MAX = 10
 
 
@@ -82,7 +83,9 @@ def quote_occurrences(pages: list[DocumentPage], quote: str) -> list[tuple[int, 
 def arm_results(db, org_id: str, query: str, kb: dict) -> dict[str, list[Chunk]]:
     """Top-K_MAX policy chunks per arm."""
     bm25_hits = Bm25Index(retrieval._bm25_entries(db, "policy", org_id, kb)).search(query, K_MAX)
-    vec_ids = retrieval._vector_arm(embed_texts([query])[0], "policy", org_id, kb["corpus_version"])
+    vec_ids = retrieval._vector_arm(
+        embed_texts([query])[0], "policy", org_id, kb["corpus_version"], K_MAX
+    )
     hybrid = retrieval.hybrid_search(db, org_id, query, K_MAX, "policy")
     out = {
         "BM25": [rid for rid, _ in bm25_hits],
@@ -116,9 +119,20 @@ def main() -> int:
         for d in db.scalars(select(Document).where(Document.organization_id == org.id)).all()
     }
     items = load_gold_dev()
-    missing_docs = {i["document"] for i in items} - set(docs_by_name)
+    corpus_filenames = {p.name for p in sorted((ROOT / "corpus" / "documents").glob("*.md"))}
+    missing_docs = corpus_filenames - set(docs_by_name)
+    extra_docs = set(docs_by_name) - corpus_filenames
     if missing_docs:
         print(f"Documents gold absents de l'organisation : {sorted(missing_docs)}")
+        return 1
+    if extra_docs:
+        print(
+            "Baseline non propre : documents hors corpus présents dans l'organisation "
+            f"{sorted(extra_docs)} — supprimez-les ou utilisez une organisation dédiée."
+        )
+        return 1
+    if report.get("stale_parser"):
+        print(f"Baseline non propre : documents parsés par un extracteur obsolète {report['stale_parser']}")
         return 1
 
     arms = ["BM25", "Vector", "Hybrid"]
@@ -178,6 +192,22 @@ def main() -> int:
         print("\nCas hybrides sans containment @10 :")
         for m in misses:
             print(f"  - {m}")
+
+    # KB-scope gate: natural-language queries (gold rationales) must surface
+    # the right requirement. Rationales describe the finding, not the
+    # requirement text, so this is a genuine paraphrase test.
+    gold = json.loads((ROOT / "corpus" / "gold" / "gold_labels.json").read_text(encoding="utf-8"))
+    kb_cases = [g for g in gold["items"] if g["split"] == "dev"]
+    kb_hits = 0
+    for g in kb_cases:
+        results = retrieval.hybrid_search(db, org.id, g["rationale_fr"], 5, "kb")
+        if any(r.requirement_id == g["requirement_id"] for r in results):
+            kb_hits += 1
+    kb_r5 = kb_hits / len(kb_cases)
+    kb_fail = kb_r5 < KB_FLOOR_R5
+    print(f"\nKB (requêtes NL = rationales dev, n={len(kb_cases)}) : R@5 = {kb_r5:.2f}"
+          f" (plancher {KB_FLOOR_R5:.2f})" + ("  ✗ ÉCHEC" if kb_fail else ""))
+    failed = failed or kb_fail
 
     print("\n" + ("ÉCHEC : plancher(s) manqué(s)." if failed else "Tous les planchers M2 sont atteints."))
     db.close()

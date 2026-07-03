@@ -24,10 +24,11 @@ from app.models import Chunk, Document, DocumentStatus
 from app.services import qdrant
 from app.services.bm25 import Bm25Index
 from app.services.chunking import chunk_page, make_chunk_id
+from app.services.parsing import PARSER_VERSION
 from app.services.embeddings import embed_texts
 
 RRF_K = 60
-ARM_TOP = 20  # candidates taken from each arm before fusion
+ARM_TOP = 20  # minimum candidates per arm; grows with k so k=50 can be served
 
 
 @dataclass
@@ -100,8 +101,10 @@ def index_organization(db: Session, org_id: str) -> dict:
     ) if doc_ids else set()
     desired_ids = {row.id for row, _ in desired}
     # Reconciliation must also see points that exist ONLY in Qdrant (orphans
-    # from crashes or manual writes): scroll this org's policy points.
-    qdrant_ids = _scroll_org_result_ids(org_id)
+    # from crashes or manual writes): scroll this org's policy points. Points
+    # are keyed by their ACTUAL point id — an orphan's id is arbitrary and
+    # cannot be recomputed from its (possibly absent) result_id.
+    org_points = _scroll_org_points(org_id)  # actual_point_id -> result_id | None
 
     # 1) embed + upsert desired points (wait=True) BEFORE touching PG
     if desired:
@@ -132,22 +135,36 @@ def index_organization(db: Session, org_id: str) -> dict:
             db.add(row)
     db.commit()
 
-    # 3) drop stale points: anything in PG-before or in Qdrant that is not desired
-    stale = (previous_ids | qdrant_ids) - desired_ids
-    qdrant.delete_points_by_ids([qdrant.point_id(cid) for cid in stale])
+    # 3) drop stale points BY ACTUAL POINT ID: any point of this org whose
+    # result_id is missing or not desired, plus PG leftovers (whose point ids
+    # are recomputable because we created them).
+    stale_point_ids = [
+        pid for pid, rid in org_points.items() if rid is None or rid not in desired_ids
+    ]
+    stale_point_ids += [
+        qdrant.point_id(cid)
+        for cid in previous_ids - desired_ids
+        if qdrant.point_id(cid) not in org_points
+    ]
+    qdrant.delete_points_by_ids(stale_point_ids)
 
     return {
         "documents": len(docs),
         "chunks": len(desired),
         "added": len(desired_ids - previous_ids),
-        "removed": len(stale),
+        "removed": len(stale_point_ids),
+        # Docs parsed by an older extractor: indexed as-is, but flagged so the
+        # caller knows the parse (and thus the chunks) may be stale.
+        "stale_parser": sorted(
+            d.filename for d in docs if d.parser_version != PARSER_VERSION
+        ),
     }
 
 
-def _scroll_org_result_ids(org_id: str) -> set[str]:
-    """All policy result_ids currently present in Qdrant for an organization."""
+def _scroll_org_points(org_id: str) -> dict[str, str | None]:
+    """Actual point id -> payload result_id (None if absent) for an org's policy points."""
     client = qdrant.get_client()
-    ids: set[str] = set()
+    points_map: dict[str, str | None] = {}
     offset = None
     while True:
         points, offset = client.scroll(
@@ -163,10 +180,11 @@ def _scroll_org_result_ids(org_id: str) -> set[str]:
             with_payload=["result_id"],
             with_vectors=False,
         )
-        ids.update(p.payload["result_id"] for p in points if p.payload and "result_id" in p.payload)
+        for p in points:
+            points_map[str(p.id)] = (p.payload or {}).get("result_id")
         if offset is None:
             break
-    return ids
+    return points_map
 
 
 def index_kb() -> dict:
@@ -208,7 +226,9 @@ def index_kb() -> dict:
 # ---------------------------------------------------------------- search
 
 
-def _vector_arm(query_vec: list[float], scope: str, org_id: str, corpus_version: str) -> list[str]:
+def _vector_arm(
+    query_vec: list[float], scope: str, org_id: str, corpus_version: str, arm_top: int
+) -> list[str]:
     """result_ids ranked by cosine similarity, best first."""
     conditions_by_scope = {
         "policy": qm.Filter(
@@ -231,12 +251,17 @@ def _vector_arm(query_vec: list[float], scope: str, org_id: str, corpus_version:
             collection_name=settings.qdrant_collection,
             query=query_vec,
             query_filter=conditions_by_scope[s],
-            limit=ARM_TOP,
+            limit=arm_top,
             with_payload=True,
         ).points
-        scored.extend((h.score, h.payload["result_id"]) for h in hits)
+        # tolerate malformed points (no payload/result_id): skip, never crash
+        scored.extend(
+            (h.score, h.payload["result_id"])
+            for h in hits
+            if h.payload and "result_id" in h.payload
+        )
     scored.sort(key=lambda p: (-p[0], p[1]))
-    return [rid for _, rid in scored[:ARM_TOP]]
+    return [rid for _, rid in scored[:arm_top]]
 
 
 def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict | None) -> list[tuple[str, str]]:
@@ -261,8 +286,9 @@ def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "po
     kb = load_kb() if scope in ("kb", "both") else None
     query_vec = embed_texts([query])[0]
 
-    vector_ids = _vector_arm(query_vec, scope, org_id, kb["corpus_version"] if kb else "")
-    bm25_hits = Bm25Index(_bm25_entries(db, scope, org_id, kb)).search(query, ARM_TOP)
+    arm_top = max(ARM_TOP, k)  # each arm must supply at least k candidates
+    vector_ids = _vector_arm(query_vec, scope, org_id, kb["corpus_version"] if kb else "", arm_top)
+    bm25_hits = Bm25Index(_bm25_entries(db, scope, org_id, kb)).search(query, arm_top)
 
     vector_rank = {rid: i + 1 for i, rid in enumerate(vector_ids)}
     bm25_rank = {rid: i + 1 for i, (rid, _) in enumerate(bm25_hits)}

@@ -88,10 +88,15 @@ def _split_long_paragraph(text: str, p_start: int, p_end: int) -> list[tuple[int
     pieces: list[tuple[int, int]] = []
     seg_start = p_start
     while p_end - seg_start > HARD_MAX_CHARS:
-        limit = seg_start + TARGET_CHARS
-        sentence_cuts = [c for c in cuts if seg_start < c <= limit]
-        if sentence_cuts:
-            cut = sentence_cuts[-1]
+        # Prefer a sentence boundary within the target; failing that, accept
+        # one anywhere up to the hard max — a sentence cut at 1101 beats a
+        # mid-sentence whitespace cut at 1196.
+        in_target = [c for c in cuts if seg_start < c <= seg_start + TARGET_CHARS]
+        in_hard_max = [c for c in cuts if seg_start < c <= seg_start + HARD_MAX_CHARS]
+        if in_target:
+            cut = in_target[-1]
+        elif in_hard_max:
+            cut = in_hard_max[-1]
         else:
             cut = _last_whitespace_before(text, seg_start + HARD_MAX_CHARS, seg_start)
             if cut is None:

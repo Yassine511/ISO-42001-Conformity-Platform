@@ -35,11 +35,22 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(413, "Fichier trop volumineux (limite : 20 Mo).")
 
+    checksum = hashlib.sha256(data).hexdigest()
+    duplicate = db.scalar(
+        select(Document).where(
+            Document.organization_id == org_id, Document.checksum == checksum
+        )
+    )
+    if duplicate:
+        raise HTTPException(
+            409, f"Document au contenu identique déjà téléversé : {duplicate.filename}"
+        )
+
     doc = Document(
         organization_id=org_id,
         filename=filename,
         content_type=file.content_type or "application/octet-stream",
-        checksum=hashlib.sha256(data).hexdigest(),
+        checksum=checksum,
         parser_version=PARSER_VERSION,
     )
     try:

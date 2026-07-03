@@ -65,6 +65,7 @@ class IndexReport(BaseModel):
     chunks: int
     added: int
     removed: int
+    stale_parser: list[str] = []
 
 
 class KbIndexReport(BaseModel):

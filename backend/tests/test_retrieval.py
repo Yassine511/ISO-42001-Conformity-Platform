@@ -309,3 +309,101 @@ def test_corpus_path_is_cwd_independent():
     from app.config import settings
 
     assert Path(settings.corpus_path).is_absolute()
+
+
+def test_bm25plus_no_negative_idf_inversion():
+    """Audit P1: Okapi negative IDF ranked a MORE relevant doc lower."""
+    idx = Bm25Index(
+        [
+            ("doc1", "La provenance des données. Les données et les données encore des données."),
+            ("doc2", "Les données du comité."),
+        ]
+    )
+    hits = idx.search("provenance des données", 5)
+    assert hits[0][0] == "doc1", f"relevance inversion: {hits}"
+
+
+def test_reconciliation_removes_orphan_with_arbitrary_point_id(client):
+    """Audit P1: orphans must be deleted by their ACTUAL point id, and points
+    without result_id must be purged, not crash search."""
+    import uuid as uuid_mod
+
+    from qdrant_client import models as qm
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+
+    org_id, _ = _setup_org(client)
+    client.post(f"/api/organizations/{org_id}/index")
+
+    arbitrary_id = str(uuid_mod.uuid4())  # NOT uuid5(result_id)
+    no_result_id = str(uuid_mod.uuid4())
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(
+                id=arbitrary_id,
+                vector=emb.embed_texts(["orphelin arbitraire"])[0],
+                payload={"source_type": "policy", "result_id": "ghost", "org_id": org_id},
+            ),
+            qm.PointStruct(
+                id=no_result_id,
+                vector=emb.embed_texts(["provenance des données d'entraînement"])[0],
+                payload={"source_type": "policy", "org_id": org_id},  # no result_id
+            ),
+        ],
+        wait=True,
+    )
+    # search must not crash on the payload without result_id
+    r = client.post(
+        f"/api/organizations/{org_id}/search",
+        json={"query": "provenance des données d'entraînement", "k": 5},
+    )
+    assert r.status_code == 200
+
+    report = client.post(f"/api/organizations/{org_id}/index").json()
+    assert report["removed"] >= 2
+    remaining = q.get_client().retrieve(
+        collection_name=settings.qdrant_collection, ids=[arbitrary_id, no_result_id]
+    )
+    assert remaining == [], "orphans with arbitrary/missing ids must be deleted"
+
+
+def test_kb_search_can_return_more_than_arm_top(client):
+    """Audit P2: k=50 must not be silently capped by a 20-candidate arm."""
+    org_id, _ = _setup_org(client)
+    client.post("/api/kb/index")
+    r = client.post(
+        f"/api/organizations/{org_id}/search",
+        json={"query": "l'organisation doit documenter les systèmes d'IA", "k": 50, "scope": "kb"},
+    )
+    assert len(r.json()) > 20
+
+
+def test_duplicate_content_upload_rejected(client):
+    org_id, _ = _setup_org(client)
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("copie.txt", DOC_A.encode(), "text/plain")},
+    )
+    assert r.status_code == 409
+
+
+def test_index_report_flags_stale_parser(client):
+    from sqlalchemy import select as sa_select
+
+    from app.db import get_db
+    from app.main import app as fastapi_app
+    from app.models import Document as Doc
+
+    org_id, docs = _setup_org(client)
+    # age one document's parser_version through the overridden test session
+    override = fastapi_app.dependency_overrides[get_db]
+    db = next(override())
+    row = db.get(Doc, docs["data.txt"])
+    row.parser_version = "0"
+    db.commit()
+
+    report = client.post(f"/api/organizations/{org_id}/index").json()
+    assert report["stale_parser"] == ["data.txt"]

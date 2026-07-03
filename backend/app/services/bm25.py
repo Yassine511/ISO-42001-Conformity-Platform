@@ -10,7 +10,7 @@ import re
 import unicodedata
 
 import snowballstemmer
-from rank_bm25 import BM25Okapi
+from rank_bm25 import BM25Plus
 
 _STEMMER = snowballstemmer.stemmer("french")
 _TOKEN = re.compile(r"\w+", re.UNICODE)
@@ -50,9 +50,11 @@ class Bm25Index:
     """BM25 over a list of (result_id, text) pairs.
 
     Candidates are documents sharing >=1 analyzed token with the query,
-    ranked by BM25 score. Filtering on token overlap (not `score > 0`) keeps
-    tiny corpora working: with 1-2 documents BM25Okapi's IDF goes zero or
-    negative for matching terms, which a positivity filter would discard.
+    ranked by BM25Plus. Two deliberate choices for tiny corpora, where
+    BM25Okapi breaks: candidate filtering uses token overlap (a positivity
+    filter empties 1-2 doc corpora), and BM25Plus is used because its IDF is
+    nonnegative — Okapi's negative IDF inverted relevance (a doc matching an
+    extra rare term ranked BELOW one matching only the common term).
     """
 
     def __init__(self, entries: list[tuple[str, str]]):
@@ -63,7 +65,7 @@ class Bm25Index:
             tokens = analyze(text)
             corpus.append(tokens)
             self._token_sets.append(frozenset(tokens))
-        self._bm25 = BM25Okapi(corpus) if corpus else None
+        self._bm25 = BM25Plus(corpus) if corpus else None
 
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
         """Top-k (result_id, score) among token-overlapping docs; deterministic."""
