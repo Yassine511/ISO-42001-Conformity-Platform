@@ -178,7 +178,7 @@
       "id": "A.3.3",
       "domain": "A.3",
       "domain_title_fr": "Organisation interne",
-      "requirement_fr": "L'organisation doit définir un processus permettant au personnel de signaler ses préoccupations concernant le rôle de l'organisation vis-à-vis d'un système d'IA, tout au long de son cycle de vie.",
+      "requirement_fr": "L'organisation doit définir et mettre en place une procédure de signalement des préoccupations concernant son rôle vis-à-vis d'un système d'IA, applicable tout au long du cycle de vie du système.",
       "keywords_fr": ["signalement", "préoccupations", "alerte", "canal de remontée"]
     },
     {
@@ -213,8 +213,8 @@
       "id": "A.4.6",
       "domain": "A.4",
       "domain_title_fr": "Ressources pour les systèmes d'IA",
-      "requirement_fr": "L'organisation doit documenter les compétences et ressources humaines nécessaires au cycle de vie des systèmes d'IA (développement, déploiement, supervision, maintenance).",
-      "keywords_fr": ["ressources humaines", "compétences", "expertise", "équipes"]
+      "requirement_fr": "L'organisation doit documenter les ressources humaines et leurs compétences mobilisées sur le cycle de vie des systèmes d'IA : développement, déploiement, exploitation, gestion des changements, maintenance, transfert, déclassement, ainsi que vérification et intégration.",
+      "keywords_fr": ["ressources humaines", "compétences", "expertise", "équipes", "déclassement", "transfert"]
     },
     {
       "id": "A.5.2",
@@ -290,8 +290,8 @@
       "id": "A.6.2.6",
       "domain": "A.6",
       "domain_title_fr": "Cycle de vie des systèmes d'IA",
-      "requirement_fr": "L'organisation doit exploiter et surveiller les systèmes d'IA en fonctionnement (performance, dérives, incidents, actions correctives, retrait éventuel).",
-      "keywords_fr": ["surveillance en production", "dérive", "monitoring", "retrait", "maintenance"]
+      "requirement_fr": "L'organisation doit définir et documenter ce qui est nécessaire à l'exploitation continue des systèmes d'IA, au minimum : la surveillance du système et de ses performances, les réparations, les mises à jour et l'assistance.",
+      "keywords_fr": ["surveillance en production", "dérive", "monitoring", "réparations", "mises à jour", "assistance", "maintenance"]
     },
     {
       "id": "A.6.2.7",
@@ -304,8 +304,8 @@
       "id": "A.6.2.8",
       "domain": "A.6",
       "domain_title_fr": "Cycle de vie des systèmes d'IA",
-      "requirement_fr": "Les systèmes d'IA doivent enregistrer des journaux d'événements permettant la traçabilité de leur fonctionnement, sur une période définie.",
-      "keywords_fr": ["journaux", "logs", "traçabilité", "enregistrement des événements"]
+      "requirement_fr": "L'organisation doit déterminer à quelles phases du cycle de vie du système d'IA la journalisation des événements doit être activée, au minimum lorsque le système est en utilisation.",
+      "keywords_fr": ["journaux", "logs", "traçabilité", "enregistrement des événements", "phases du cycle de vie"]
     },
     {
       "id": "A.7.2",
@@ -332,7 +332,7 @@
       "id": "A.7.5",
       "domain": "A.7",
       "domain_title_fr": "Données pour les systèmes d'IA",
-      "requirement_fr": "L'organisation doit documenter la provenance des données utilisées par ses systèmes d'IA et pouvoir la retracer tout au long du cycle de vie.",
+      "requirement_fr": "L'organisation doit définir et documenter un processus d'enregistrement de la provenance des données utilisées par ses systèmes d'IA, couvrant le cycle de vie des données et du système.",
       "keywords_fr": ["provenance des données", "traçabilité", "lignage", "origine"]
     },
     {
