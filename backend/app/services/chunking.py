@@ -83,7 +83,8 @@ def _paragraph_spans(text: str) -> list[tuple[int, int]]:
 def _split_long_paragraph(text: str, p_start: int, p_end: int) -> list[tuple[int, int]]:
     """Split an oversized paragraph at sentence, then whitespace boundaries."""
     # Candidate cut positions: just after each sentence end inside the paragraph.
-    cuts = [p_start + m.end() for m in _SENTENCE_END.finditer(text, p_start, p_end)]
+    # finditer(text, pos, endpos) yields matches with ABSOLUTE offsets already.
+    cuts = [m.end() for m in _SENTENCE_END.finditer(text, p_start, p_end)]
     pieces: list[tuple[int, int]] = []
     seg_start = p_start
     while p_end - seg_start > HARD_MAX_CHARS:
@@ -96,9 +97,22 @@ def _split_long_paragraph(text: str, p_start: int, p_end: int) -> list[tuple[int
             if cut is None:
                 cut = seg_start + HARD_MAX_CHARS  # pathological: no whitespace at all
         pieces.append((seg_start, cut))
-        # Forced split: back the next piece up by a small overlap (whitespace-aligned).
-        overlapped = _last_whitespace_before(text, cut, max(seg_start, cut - FORCED_SPLIT_OVERLAP))
-        seg_start = overlapped if overlapped is not None else cut
+        # Forced split: back the next piece up by a small overlap, whitespace-
+        # aligned. First skip the whitespace run at the cut itself (the
+        # sentence regex consumes it), otherwise the backtrack lands on `cut`
+        # and the overlap silently becomes zero.
+        content_end = cut
+        while content_end > seg_start and text[content_end - 1].isspace():
+            content_end -= 1
+        # Aim FORCED_SPLIT_OVERLAP chars back, then align forward to the next
+        # word boundary so the overlap is ~the full budget, not one word.
+        target = max(seg_start, content_end - FORCED_SPLIT_OVERLAP)
+        i = target
+        while i < content_end and not text[i].isspace():
+            i += 1
+        while i < content_end and text[i].isspace():
+            i += 1
+        seg_start = i if i < content_end else cut
     pieces.append((seg_start, p_end))
     # Trim edge whitespace of every piece so the slice invariant stays tidy.
     trimmed = []

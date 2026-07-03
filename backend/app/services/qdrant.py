@@ -52,6 +52,10 @@ def ensure_collection() -> None:
         collection_name=name,
         vectors_config=qm.VectorParams(size=EMBEDDING_DIM, distance=qm.Distance.COSINE),
     )
+    for field in ("source_type", "org_id", "document_id", "corpus_version"):
+        client.create_payload_index(
+            collection_name=name, field_name=field, field_schema=qm.PayloadSchemaType.KEYWORD
+        )
 
 
 def upsert_points(points: list[qm.PointStruct]) -> None:

@@ -178,3 +178,134 @@ def test_qdrant_helpers_smoke():
     q.ensure_collection()  # idempotent
     q.delete_points_by_ids([q.point_id("whatever")])  # must not raise
     q.delete_points_by_document("no-such-doc")  # must not raise
+
+
+def test_bm25_works_on_tiny_corpus():
+    """Audit P1: BM25Okapi IDF is <= 0 for 1-2 docs; token-overlap filter must keep matches."""
+    one = Bm25Index([("c1", "La provenance des données est documentée dans le registre.")])
+    assert [rid for rid, _ in one.search("provenance des données", 5)] == ["c1"]
+
+    two = Bm25Index(
+        [
+            ("c1", "La provenance des données est documentée dans le registre."),
+            ("c2", "Le comité se réunit chaque trimestre."),
+        ]
+    )
+    hits = two.search("provenance des données", 5)
+    assert hits and hits[0][0] == "c1"
+    assert all(rid != "c2" for rid, _ in hits)
+
+
+def test_cross_org_hydration_leak_blocked(client):
+    """Audit P1: a point whose payload claims org B but whose result_id is an
+    org A chunk must never surface in org B's results."""
+    org_a, _ = _setup_org(client)
+    client.post(f"/api/organizations/{org_a}/index")
+    org_b = client.post("/api/organizations", json={"name": "Org B"}).json()["id"]
+
+    from qdrant_client import models as qm
+    from sqlalchemy import select
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+
+    # take a real chunk id from org A via a search
+    a_hit = client.post(
+        f"/api/organizations/{org_a}/search",
+        json={"query": "provenance des données d'entraînement", "k": 1},
+    ).json()[0]
+    stolen_id = a_hit["result_id"]
+
+    vec = emb.embed_texts(["provenance des données d'entraînement"])[0]
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(
+                id=q.point_id("attacker-point"),
+                vector=vec,
+                payload={"source_type": "policy", "result_id": stolen_id, "org_id": org_b},
+            )
+        ],
+        wait=True,
+    )
+    r = client.post(
+        f"/api/organizations/{org_b}/search",
+        json={"query": "provenance des données d'entraînement", "k": 5},
+    )
+    assert r.json() == [], "org B must not see org A content"
+
+
+def test_reconciliation_removes_unknown_orphans(client):
+    """Audit P2: /index must delete points that exist only in Qdrant."""
+    org_id, _ = _setup_org(client)
+    client.post(f"/api/organizations/{org_id}/index")
+
+    from qdrant_client import models as qm
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(
+                id=q.point_id("orphan-xyz"),
+                vector=emb.embed_texts(["orphelin"])[0],
+                payload={"source_type": "policy", "result_id": "orphan-xyz", "org_id": org_id},
+            )
+        ],
+        wait=True,
+    )
+    client.post(f"/api/organizations/{org_id}/index")
+    remaining = q.get_client().retrieve(
+        collection_name=settings.qdrant_collection, ids=[q.point_id("orphan-xyz")]
+    )
+    assert remaining == [], "orphan point must be removed by reconciliation"
+
+
+def test_retrieval_endpoints_return_503_on_qdrant_errors(client, monkeypatch):
+    """Audit P2: qdrant-client raises ResponseHandlingException, not ConnectionError."""
+    from qdrant_client.http.exceptions import ResponseHandlingException
+
+    from app.services import retrieval as retrieval_service
+
+    org_id, _ = _setup_org(client)
+
+    def boom(*args, **kwargs):
+        raise ResponseHandlingException(TimeoutError("down"))
+
+    monkeypatch.setattr(retrieval_service.qdrant, "ensure_collection", boom)
+    assert client.post(f"/api/organizations/{org_id}/index").status_code == 503
+    assert client.post("/api/kb/index").status_code == 503
+
+    monkeypatch.setattr(retrieval_service, "hybrid_search", boom)
+    r = client.post(f"/api/organizations/{org_id}/search", json={"query": "x"})
+    assert r.status_code == 503
+
+
+def test_policy_search_does_not_need_kb(client, monkeypatch):
+    """Audit P2: scope=policy must not read the corpus KB file."""
+    from app.services import retrieval as retrieval_service
+
+    org_id, _ = _setup_org(client)
+    client.post(f"/api/organizations/{org_id}/index")
+
+    def no_kb():
+        raise FileNotFoundError("KB must not be loaded for policy scope")
+
+    monkeypatch.setattr(retrieval_service, "load_kb", no_kb)
+    r = client.post(
+        f"/api/organizations/{org_id}/search",
+        json={"query": "provenance des données", "k": 3, "scope": "policy"},
+    )
+    assert r.status_code == 200 and r.json()
+
+
+def test_corpus_path_is_cwd_independent():
+    from pathlib import Path
+
+    from app.config import settings
+
+    assert Path(settings.corpus_path).is_absolute()

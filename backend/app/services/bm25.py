@@ -47,23 +47,39 @@ def analyze(text: str) -> list[str]:
 
 
 class Bm25Index:
-    """BM25 over a list of (result_id, text) pairs."""
+    """BM25 over a list of (result_id, text) pairs.
+
+    Candidates are documents sharing >=1 analyzed token with the query,
+    ranked by BM25 score. Filtering on token overlap (not `score > 0`) keeps
+    tiny corpora working: with 1-2 documents BM25Okapi's IDF goes zero or
+    negative for matching terms, which a positivity filter would discard.
+    """
 
     def __init__(self, entries: list[tuple[str, str]]):
         self._ids = [rid for rid, _ in entries]
-        corpus = [analyze(text) for _, text in entries]
+        self._token_sets: list[frozenset[str]] = []
+        corpus = []
+        for _, text in entries:
+            tokens = analyze(text)
+            corpus.append(tokens)
+            self._token_sets.append(frozenset(tokens))
         self._bm25 = BM25Okapi(corpus) if corpus else None
 
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
-        """Top-k (result_id, score), score > 0 only; deterministic order."""
+        """Top-k (result_id, score) among token-overlapping docs; deterministic."""
         if self._bm25 is None:
             return []
         tokens = analyze(query)
         if not tokens:
             return []
+        query_set = set(tokens)
         scores = self._bm25.get_scores(tokens)
         ranked = sorted(
-            ((rid, float(s)) for rid, s in zip(self._ids, scores) if s > 0),
+            (
+                (rid, float(s))
+                for rid, s, toks in zip(self._ids, scores, self._token_sets)
+                if query_set & toks
+            ),
             key=lambda pair: (-pair[1], pair[0]),
         )
         return ranked[:k]

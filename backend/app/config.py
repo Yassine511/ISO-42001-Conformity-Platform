@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repo root derived from this file's location — never from the process CWD.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -16,7 +21,7 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     fastembed_cache_dir: str = ""  # empty = fastembed default; set FASTEMBED_CACHE_DIR in Docker
     qdrant_collection: str = "retrieval_minilm12_v1"
-    corpus_path: str = "../corpus"  # repo corpus/ dir; /app/corpus in Docker (read-only mount)
+    corpus_path: str = str(_REPO_ROOT / "corpus")  # /app/corpus in Docker (read-only mount)
 
     # LLM providers (used from M3 onward)
     mistral_api_key: str = ""

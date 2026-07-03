@@ -39,9 +39,10 @@ def test_oversized_paragraph_sentence_split():
     chunks = chunk_page(text.strip())
     _assert_invariants(text.strip(), chunks)
     assert len(chunks) >= 2
-    # sentence-boundary splits: chunks start at sentence starts (capital letter)
-    for c in chunks:
-        assert c.text[0].isupper()
+    # cuts land at sentence ends; later chunks start mid-overlap by design
+    for c in chunks[:-1]:
+        assert c.text.rstrip().endswith(".")
+    assert chunks[0].text[0].isupper()
 
 
 def test_oversized_paragraph_without_sentences_whitespace_split():
@@ -90,3 +91,24 @@ def test_chunk_id_distinct_across_documents():
     b = make_chunk_id("doc-B", "2", 1, 0, 100)
     assert a != b
     assert a == make_chunk_id("doc-A", "2", 1, 0, 100)  # deterministic
+
+
+def test_forced_split_at_nonzero_offset_regression():
+    """Audit P2: finditer offsets are absolute; adding p_start double-counted.
+
+    A long paragraph AFTER an earlier paragraph must still split at sentence
+    boundaries, with a real overlap on forced splits.
+    """
+    prefix = "Paragraphe d'introduction.\n\n"
+    long_para = "Ceci est une phrase complète du document de politique interne. " * 40
+    text = prefix + long_para.strip()
+    chunks = chunk_page(text)
+    _assert_invariants(text, chunks)
+
+    split_chunks = [c for c in chunks if c.char_start >= len(prefix)]
+    assert len(split_chunks) >= 2
+    for c in split_chunks[:-1]:
+        assert c.text.rstrip().endswith("."), f"cut not at sentence boundary: ...{c.text[-40:]!r}"
+    for a, b in zip(split_chunks, split_chunks[1:]):
+        overlap = a.char_end - b.char_start
+        assert overlap >= 20, f"forced-split overlap too small: {overlap}"

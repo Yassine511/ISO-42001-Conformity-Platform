@@ -99,6 +99,9 @@ def index_organization(db: Session, org_id: str) -> dict:
         db.scalars(select(Chunk.id).where(Chunk.document_id.in_(doc_ids))).all()
     ) if doc_ids else set()
     desired_ids = {row.id for row, _ in desired}
+    # Reconciliation must also see points that exist ONLY in Qdrant (orphans
+    # from crashes or manual writes): scroll this org's policy points.
+    qdrant_ids = _scroll_org_result_ids(org_id)
 
     # 1) embed + upsert desired points (wait=True) BEFORE touching PG
     if desired:
@@ -129,15 +132,41 @@ def index_organization(db: Session, org_id: str) -> dict:
             db.add(row)
     db.commit()
 
-    # 3) drop stale points
-    qdrant.delete_points_by_ids([qdrant.point_id(cid) for cid in previous_ids - desired_ids])
+    # 3) drop stale points: anything in PG-before or in Qdrant that is not desired
+    stale = (previous_ids | qdrant_ids) - desired_ids
+    qdrant.delete_points_by_ids([qdrant.point_id(cid) for cid in stale])
 
     return {
         "documents": len(docs),
         "chunks": len(desired),
         "added": len(desired_ids - previous_ids),
-        "removed": len(previous_ids - desired_ids),
+        "removed": len(stale),
     }
+
+
+def _scroll_org_result_ids(org_id: str) -> set[str]:
+    """All policy result_ids currently present in Qdrant for an organization."""
+    client = qdrant.get_client()
+    ids: set[str] = set()
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=qm.Filter(
+                must=[
+                    qm.FieldCondition(key="source_type", match=qm.MatchValue(value="policy")),
+                    qm.FieldCondition(key="org_id", match=qm.MatchValue(value=org_id)),
+                ]
+            ),
+            limit=256,
+            offset=offset,
+            with_payload=["result_id"],
+            with_vectors=False,
+        )
+        ids.update(p.payload["result_id"] for p in points if p.payload and "result_id" in p.payload)
+        if offset is None:
+            break
+    return ids
 
 
 def index_kb() -> dict:
@@ -210,7 +239,7 @@ def _vector_arm(query_vec: list[float], scope: str, org_id: str, corpus_version:
     return [rid for _, rid in scored[:ARM_TOP]]
 
 
-def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict) -> list[tuple[str, str]]:
+def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict | None) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
     if scope in ("policy", "both"):
         rows = db.execute(
@@ -219,7 +248,7 @@ def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict) -> list[tuple[
             .where(Document.organization_id == org_id)
         ).all()
         entries.extend((cid, text) for cid, text in rows)
-    if scope in ("kb", "both"):
+    if scope in ("kb", "both") and kb is not None:
         for e in kb["by_id"].values():
             text = e["requirement_fr"] + " " + " ".join(e.get("keywords_fr", []))
             entries.append((kb_result_id(kb["corpus_version"], e["id"]), text))
@@ -227,10 +256,12 @@ def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict) -> list[tuple[
 
 
 def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "policy") -> list[RetrievedItem]:
-    kb = load_kb()
+    # KB is only loaded when the scope needs it: policy search must not
+    # depend on the corpus files being present.
+    kb = load_kb() if scope in ("kb", "both") else None
     query_vec = embed_texts([query])[0]
 
-    vector_ids = _vector_arm(query_vec, scope, org_id, kb["corpus_version"])
+    vector_ids = _vector_arm(query_vec, scope, org_id, kb["corpus_version"] if kb else "")
     bm25_hits = Bm25Index(_bm25_entries(db, scope, org_id, kb)).search(query, ARM_TOP)
 
     vector_rank = {rid: i + 1 for i, rid in enumerate(vector_ids)}
@@ -246,14 +277,18 @@ def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "po
     for rid, score in ranked:
         if len(results) >= k:
             break
-        item = _hydrate(db, rid, score, vector_rank.get(rid), bm25_rank.get(rid), kb)
+        item = _hydrate(db, org_id, rid, score, vector_rank.get(rid), bm25_rank.get(rid), kb)
         if item is not None:
             results.append(item)
     return results
 
 
-def _hydrate(db: Session, rid: str, score: float, vrank: int | None, brank: int | None, kb: dict) -> RetrievedItem | None:
+def _hydrate(
+    db: Session, org_id: str, rid: str, score: float, vrank: int | None, brank: int | None, kb: dict | None
+) -> RetrievedItem | None:
     if rid.startswith("kb:"):
+        if kb is None:
+            return None
         _, version, req_id = rid.split(":", 2)
         entry = kb["by_id"].get(req_id)
         if entry is None or version != kb["corpus_version"]:
@@ -271,6 +306,8 @@ def _hydrate(db: Session, rid: str, score: float, vrank: int | None, brank: int 
     chunk = db.get(Chunk, rid)
     if chunk is None:
         return None
+    if chunk.document.organization_id != org_id:
+        return None  # authoritative isolation check — never trust point payloads
     return RetrievedItem(
         result_id=rid,
         source_type="policy",
