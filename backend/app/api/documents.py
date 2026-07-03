@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -5,7 +7,14 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Document, DocumentPage, DocumentStatus, Organization
 from app.schemas import DocumentOut, DocumentPageOut
-from app.services.parsing import SUPPORTED_EXTENSIONS, UnsupportedFileType, parse_document
+from app.services.parsing import (
+    PARSER_VERSION,
+    SUPPORTED_EXTENSIONS,
+    EmptyDocument,
+    InvalidEncoding,
+    UnsupportedFileType,
+    parse_document,
+)
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
@@ -29,6 +38,8 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
         organization_id=org_id,
         filename=filename,
         content_type=file.content_type or "application/octet-stream",
+        checksum=hashlib.sha256(data).hexdigest(),
+        parser_version=PARSER_VERSION,
     )
     try:
         pages = parse_document(filename, data)
@@ -37,6 +48,8 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
         doc.pages = [DocumentPage(page_number=i + 1, text=text) for i, text in enumerate(pages)]
     except UnsupportedFileType as exc:
         raise HTTPException(415, str(exc))
+    except (EmptyDocument, InvalidEncoding) as exc:
+        raise HTTPException(422, str(exc))
     except Exception as exc:
         doc.status = DocumentStatus.FAILED.value
         doc.error = f"Échec de l'analyse : {exc}"

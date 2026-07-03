@@ -5,7 +5,9 @@ class Settings(BaseSettings):
     """Application settings, overridable via environment variables (.env)."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
+    #utf-8 is a text encoder that converts text to bytes
+    #it tells Pydantic how to read the .env file. This prevents characters in configuration values from being decoded incorrectly.
+    #for example you have APP_NAME=Copilote de conformité without it conformité could appear corrupted as conformitÃ©
     database_url: str = "postgresql+psycopg://int102:int102@localhost:5433/int102"
     qdrant_url: str = "http://localhost:6333"
     cors_origins: list[str] = ["http://localhost:5173"]
@@ -16,3 +18,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+#read config from .env , decodes it as utf-8

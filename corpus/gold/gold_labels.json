@@ -9,12 +9,13 @@
       "non_compliant",
       "missing"
     ],
-    "version": "1.1",
-    "corpus_version": "1.1.0",
+    "version": "1.2",
+    "corpus_version": "1.2.0",
     "splits": {
       "dev": "réglage des prompts, de la récupération et des seuils",
       "test": "réservé au rapport final M6 — jamais utilisé pour régler quoi que ce soit"
-    }
+    },
+    "evidence_note": "evidence_quote_fr est l'ANCRE de récupération et de vérification (la citation minimale attendue), pas la totalité de la preuve : le verdict est établi par les auteurs sur l'ensemble du corpus. La métrique d'hallucination M6 porte sur l'existence verbatim des citations produites, pas sur cette ancre."
   },
   "items": [
     {
@@ -87,7 +88,7 @@
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "seuls les systèmes d'IA approuvés par le Comité IA et inscrits au registre des systèmes autorisés peuvent être utilisés dans un cadre professionnel.",
       "rationale_fr": "Le passage cité atteste la validation préalable des systèmes ; la politique définit aussi supervision humaine, restrictions de données et signalement (section 2).",
-      "split": "test"
+      "split": "dev"
     },
     {
       "id": "G-009",
@@ -168,7 +169,7 @@
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "La traçabilité complète de la provenance des jeux de données n'est pas exigée par la présente politique.",
       "rationale_fr": "La politique écarte explicitement l'exigence de provenance, notamment pour les jeux antérieurs à 2025.",
-      "split": "test"
+      "split": "dev"
     },
     {
       "id": "G-018",
@@ -204,7 +205,7 @@
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
       "rationale_fr": "Processus d'évaluation d'impact défini, avec déclencheurs précis (mise en production, évolution significative).",
-      "split": "test"
+      "split": "dev"
     },
     {
       "id": "G-022",
@@ -222,7 +223,7 @@
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact",
       "rationale_fr": "La politique exclut explicitement les impacts sociétaux, à rebours de l'exigence.",
-      "split": "dev"
+      "split": "test"
     },
     {
       "id": "G-024",
@@ -416,10 +417,10 @@
     {
       "id": "G-045",
       "requirement_id": "5.1",
-      "verdict": "compliant",
+      "verdict": "partial",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La Direction Générale s'engage à ce que tout système d'IA conçu, déployé ou utilisé par Lumen AI le soit de manière responsable, conformément à nos valeurs d'entreprise, à la réglementation applicable et à notre niveau de tolérance au risque approuvé par le Comité Exécutif.",
-      "rationale_fr": "Engagement explicite de la direction, compatible avec la stratégie et porté au plus haut niveau.",
+      "rationale_fr": "L'engagement de la direction est démontré, mais la mise à disposition des ressources et le suivi de l'atteinte des résultats du SMIA ne sont évidencés nulle part.",
       "split": "dev"
     },
     {
@@ -447,7 +448,7 @@
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
       "rationale_fr": "Un processus d'évaluation d'impact est défini avec des déclencheurs précis et des résultats documentés.",
-      "split": "test"
+      "split": "dev"
     },
     {
       "id": "G-049",
@@ -483,7 +484,7 @@
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
       "rationale_fr": "Des communications ponctuelles existent mais sans détermination de quoi, quand, avec qui et comment communiquer.",
-      "split": "dev"
+      "split": "test"
     },
     {
       "id": "G-053",
@@ -501,7 +502,7 @@
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "seuls les systèmes d'IA approuvés par le Comité IA et inscrits au registre des systèmes autorisés peuvent être utilisés dans un cadre professionnel.",
       "rationale_fr": "Une maîtrise opérationnelle existe (registre, validation) mais la maîtrise des processus externalisés n'est pas traitée.",
-      "split": "test"
+      "split": "dev"
     },
     {
       "id": "G-055",
@@ -515,19 +516,19 @@
     {
       "id": "G-056",
       "requirement_id": "8.3",
-      "verdict": "compliant",
+      "verdict": "partial",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Le plan de traitement, ses responsables et ses échéances sont validés par le Comité IA et suivis en revue trimestrielle.",
-      "rationale_fr": "Le plan de traitement est mis en œuvre et suivi trimestriellement, avec des résultats documentés.",
+      "rationale_fr": "Le plan de traitement est validé et suivi, mais la vérification de son efficacité et la conservation documentée des résultats ne sont pas démontrées.",
       "split": "dev"
     },
     {
       "id": "G-057",
       "requirement_id": "8.4",
-      "verdict": "compliant",
+      "verdict": "partial",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
-      "rationale_fr": "Les évaluations d'impact sont réalisées lors des changements significatifs et documentées.",
+      "rationale_fr": "Les évaluations d'impact sont déclenchées par la mise en production et les changements significatifs, mais aucune réévaluation à intervalles planifiés n'est prévue (contrairement aux risques, réexaminés annuellement).",
       "split": "dev"
     },
     {
@@ -572,7 +573,7 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "La présente politique encadre le cycle de vie des systèmes d'intelligence artificielle développés ou adaptés par Lumen AI, de l'expression du besoin jusqu'au retrait du système.",
-      "rationale_fr": "Des processus de conception et de développement responsables sont définis et documentés pour chaque étape du cycle de vie (sections 2 à 8).",
+      "rationale_fr": "La citation ancre le périmètre ; la conformité repose sur les processus documentés des sections 2 à 8 de LUM-LCM-001 (objectifs, exigences, conception, V&V, déploiement, exploitation, journalisation) couvrant chaque étape du cycle de vie.",
       "split": "dev"
     },
     {
@@ -591,7 +592,7 @@
       "document": "third_party_ai_policy.md",
       "evidence_quote_fr": "les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
       "rationale_fr": "La politique exclut explicitement la communication des incidents aux utilisateurs.",
-      "split": "dev"
+      "split": "test"
     },
     {
       "id": "G-065",

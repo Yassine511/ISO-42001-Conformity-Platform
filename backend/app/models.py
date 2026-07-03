@@ -42,6 +42,10 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(20), default=DocumentStatus.UPLOADED.value)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Provenance/lifecycle anchors for M2 indexing: detect re-uploads of the
+    # same content and parses produced by an outdated extractor.
+    checksum: Mapped[str] = mapped_column(String(64), default="")
+    parser_version: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     organization: Mapped[Organization] = relationship(back_populates="documents")

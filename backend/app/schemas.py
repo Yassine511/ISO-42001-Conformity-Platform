@@ -1,10 +1,11 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class OrganizationCreate(BaseModel):
-    name: str
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 class OrganizationOut(BaseModel):
@@ -25,6 +26,8 @@ class DocumentOut(BaseModel):
     status: str
     error: str | None
     page_count: int
+    checksum: str
+    parser_version: str
     created_at: datetime
 
 

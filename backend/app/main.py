@@ -1,5 +1,8 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,10 +12,16 @@ from app.config import settings
 from app.db import Base, engine
 
 
+def run_migrations() -> None:
+    command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # M1a: create_all suffices; replace with Alembic migrations when the schema grows.
-    Base.metadata.create_all(bind=engine)
+    if engine.url.get_backend_name() == "sqlite":
+        Base.metadata.create_all(bind=engine)  # tests / throwaway local runs
+    else:
+        run_migrations()
     yield
 
 

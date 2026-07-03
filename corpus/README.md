@@ -35,7 +35,12 @@ verbatim ne concernent que les documents Lumen AI, que nous avons rédigés.
   l'**abstention**. 11 exigences sont volontairement absentes : A.4.4, A.4.5, A.4.6, A.6.2.7,
   A.8.3, A.8.5, 6.3, 7.1, 7.5, 9.2, 10.2.
 
-Répartition actuelle : 29 compliant · 21 partial · 4 non_compliant · 11 missing.
+Répartition actuelle : 26 compliant · 24 partial · 4 non_compliant · 11 missing.
+
+**Sémantique de l'ancre d'évidence** : `evidence_quote_fr` est l'ancre de récupération et de
+vérification — la citation minimale attendue — pas la totalité de la preuve. Le verdict est
+établi par les auteurs sur l'ensemble du corpus. La métrique d'hallucination M6 porte sur
+l'existence verbatim des citations *produites par le système*, pas sur cette ancre.
 
 ## Partition dev / test
 
@@ -44,6 +49,11 @@ Chaque cas gold porte un champ `split` :
 - **dev** — utilisable pour régler les prompts, la récupération et les seuils (M2–M5) ;
 - **test** (~25 %, stratifié par verdict) — **réservé au rapport M6** : jamais consulté pour
   un réglage, afin que le chiffre final ne soit pas sur-ajusté.
+
+**Limite assumée** : ce découpage est un *holdout d'étiquettes*, pas une preuve de
+généralisation — les mêmes six documents alimentent les deux splits. Le validateur garantit
+seulement qu'aucune citation identique n'apparaît dans les deux. Une preuve de généralisation
+exigerait une seconde organisation jamais vue (travail futur, cf. rapport).
 
 `corpus_version` (identique dans la KB et le gold, vérifié par le validateur) fige la version
 du corpus utilisée pour chaque run d'évaluation rapporté.

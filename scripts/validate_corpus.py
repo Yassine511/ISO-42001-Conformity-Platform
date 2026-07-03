@@ -42,8 +42,9 @@ def check_kb(kb: dict) -> tuple[list[str], set[str]]:
         ids.add(rid)
         if entry["domain"] not in ALLOWED_DOMAINS:
             errors.append(f"KB {rid}: domaine inconnu {entry['domain']!r}")
-        if not rid.startswith(entry["domain"]) and not rid.split(".")[0] == entry["domain"]:
-            errors.append(f"KB {rid}: id incohérent avec le domaine {entry['domain']}")
+        expected_domain = "A." + rid.split(".")[1] if rid.startswith("A.") else rid.split(".")[0]
+        if expected_domain != entry["domain"]:
+            errors.append(f"KB {rid}: id incohérent avec le domaine {entry['domain']} (attendu {expected_domain})")
         if len(entry["requirement_fr"]) > MAX_REQUIREMENT_CHARS:
             errors.append(
                 f"KB {rid}: paraphrase trop longue ({len(entry['requirement_fr'])} > {MAX_REQUIREMENT_CHARS} caractères) — risque de texte ISO verbatim"
@@ -67,6 +68,8 @@ def check_gold(gold: dict, kb_ids: set[str], docs: dict[str, str]) -> list[str]:
             errors.append(f"Gold {gid}: verdict inconnu {item['verdict']!r}")
         if item.get("split") not in {"dev", "test"}:
             errors.append(f"Gold {gid}: split invalide {item.get('split')!r} (attendu dev|test)")
+        if not (item.get("rationale_fr") or "").strip():
+            errors.append(f"Gold {gid}: rationale_fr vide")
         if item["verdict"] == "missing":
             if item["document"] is not None or item["evidence_quote_fr"] is not None:
                 errors.append(f"Gold {gid}: verdict 'missing' mais document/quote non nuls")
@@ -116,6 +119,15 @@ def run() -> list[str]:
     covered = {i["requirement_id"] for i in gold["items"]}
     for rid in sorted(kb_ids - covered):
         errors.append(f"Exigence KB {rid} sans aucun cas gold")
+
+    # Étanchéité du holdout : une même citation ne doit pas apparaître dans dev ET test
+    quote_splits: dict[str, set[str]] = {}
+    for i in gold["items"]:
+        if i.get("evidence_quote_fr"):
+            quote_splits.setdefault(i["evidence_quote_fr"], set()).add(i.get("split", "?"))
+    for quote, splits in quote_splits.items():
+        if len(splits) > 1:
+            errors.append(f"Citation partagée entre dev et test : {quote[:60]!r}…")
 
     # Documents référencés au moins une fois
     referenced = {i["document"] for i in gold["items"] if i["document"]}

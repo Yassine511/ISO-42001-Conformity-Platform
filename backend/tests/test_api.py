@@ -67,3 +67,32 @@ def test_unsupported_upload(client):
         files={"file": ("image.png", b"\x89PNG", "image/png")},
     )
     assert r.status_code == 415
+
+
+def test_blank_organization_name_rejected(client):
+    assert client.post("/api/organizations", json={"name": "   "}).status_code == 422
+    assert client.post("/api/organizations", json={"name": ""}).status_code == 422
+
+
+def test_empty_document_rejected(client):
+    org_id = client.post("/api/organizations", json={"name": "Vide SA"}).json()["id"]
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("vide.txt", b"   ", "text/plain")},
+    )
+    assert r.status_code == 422
+    # nothing persisted
+    assert client.get(f"/api/organizations/{org_id}/documents").json() == []
+
+
+def test_document_has_checksum_and_parser_version(client):
+    import hashlib
+
+    org_id = client.post("/api/organizations", json={"name": "Hash SA"}).json()["id"]
+    data = "Contenu de politique IA.".encode()
+    doc = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("p.txt", data, "text/plain")},
+    ).json()
+    assert doc["checksum"] == hashlib.sha256(data).hexdigest()
+    assert doc["parser_version"]
