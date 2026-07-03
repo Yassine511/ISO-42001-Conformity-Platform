@@ -3,7 +3,9 @@
     "standard": "ISO/IEC 42001:2023",
     "language": "fr",
     "note": "Exigences atomiques PARAPHRASÉES dans nos propres mots. Aucun texte verbatim de la norme (le texte ISO est protégé par le droit d'auteur). Chaque entrée ne porte qu'une référence de clause vers la norme.",
-    "version": "1.0"
+    "version": "1.1",
+    "corpus_version": "1.1.0",
+    "granularity_note": "7.5, 9.2 et 9.3 sont volontairement représentées par une entrée unique (choix de granularité documenté dans corpus/README.md)."
   },
   "requirements": [
     {
@@ -56,6 +58,13 @@
       "keywords_fr": ["rôles", "responsabilités", "autorités", "attribution"]
     },
     {
+      "id": "6.1.1",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "Lors de la planification du système de management de l'IA, l'organisation doit tenir compte de son contexte et de ses parties intéressées pour déterminer les risques et les opportunités à traiter, afin d'atteindre les résultats visés, de prévenir les effets indésirables et de s'améliorer en continu.",
+      "keywords_fr": ["risques et opportunités", "planification", "effets indésirables"]
+    },
+    {
       "id": "6.1.2",
       "domain": "6",
       "domain_title_fr": "Planification",
@@ -84,6 +93,20 @@
       "keywords_fr": ["objectifs", "planification", "indicateurs", "échéances"]
     },
     {
+      "id": "6.3",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "Les modifications du système de management de l'IA jugées nécessaires doivent être réalisées de façon planifiée.",
+      "keywords_fr": ["planification des modifications", "gestion du changement", "changements du SMIA"]
+    },
+    {
+      "id": "7.1",
+      "domain": "7",
+      "domain_title_fr": "Support",
+      "requirement_fr": "L'organisation doit déterminer et fournir les ressources nécessaires à l'établissement, à la mise en œuvre, à la maintenance et à l'amélioration continue du système de management de l'IA.",
+      "keywords_fr": ["ressources", "moyens", "budget", "allocation"]
+    },
+    {
       "id": "7.2",
       "domain": "7",
       "domain_title_fr": "Support",
@@ -98,6 +121,13 @@
       "keywords_fr": ["sensibilisation", "politique d'IA", "personnel"]
     },
     {
+      "id": "7.4",
+      "domain": "7",
+      "domain_title_fr": "Support",
+      "requirement_fr": "L'organisation doit déterminer les communications internes et externes pertinentes pour le système de management de l'IA : sur quels sujets, à quels moments, avec qui et comment communiquer.",
+      "keywords_fr": ["communication interne", "communication externe", "plan de communication"]
+    },
+    {
       "id": "7.5",
       "domain": "7",
       "domain_title_fr": "Support",
@@ -110,6 +140,27 @@
       "domain_title_fr": "Fonctionnement",
       "requirement_fr": "L'organisation doit planifier, mettre en œuvre et maîtriser les processus nécessaires pour satisfaire les exigences du système de management de l'IA, y compris la maîtrise des changements et des processus externalisés.",
       "keywords_fr": ["maîtrise opérationnelle", "processus", "changements", "externalisation"]
+    },
+    {
+      "id": "8.2",
+      "domain": "8",
+      "domain_title_fr": "Fonctionnement",
+      "requirement_fr": "L'organisation doit réaliser l'appréciation des risques liés à l'IA à intervalles planifiés ou lors de changements significatifs, et conserver les résultats sous forme d'informations documentées.",
+      "keywords_fr": ["appréciation des risques en exploitation", "intervalles planifiés", "changements significatifs"]
+    },
+    {
+      "id": "8.3",
+      "domain": "8",
+      "domain_title_fr": "Fonctionnement",
+      "requirement_fr": "L'organisation doit mettre en œuvre le plan de traitement des risques liés à l'IA, en vérifier l'efficacité et conserver les résultats sous forme d'informations documentées.",
+      "keywords_fr": ["mise en œuvre du traitement", "efficacité des contrôles", "plan de traitement"]
+    },
+    {
+      "id": "8.4",
+      "domain": "8",
+      "domain_title_fr": "Fonctionnement",
+      "requirement_fr": "L'organisation doit réaliser les évaluations d'impact des systèmes d'IA à intervalles planifiés ou lors de changements significatifs, et conserver les résultats sous forme d'informations documentées.",
+      "keywords_fr": ["évaluation d'impact en exploitation", "réévaluation", "changements significatifs"]
     },
     {
       "id": "9.1",

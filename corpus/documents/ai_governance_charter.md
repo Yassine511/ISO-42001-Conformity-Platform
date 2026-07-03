@@ -11,9 +11,13 @@ La présente charte établit la politique de Lumen AI en matière de développem
 
 Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.
 
+À cette fin, Lumen AI établit, met en œuvre et maintient un système de management de l'IA couvrant l'ensemble du cycle de vie de ses systèmes d'IA, dont les processus sont décrits dans les politiques du référentiel documentaire LUM.
+
 ## 2. Périmètre
 
 La charte s'applique aux activités liées à l'assistant interne « Lumen Assist » ainsi qu'aux autres initiatives d'IA de l'entreprise, selon les cas.
+
+Pour définir ce périmètre, l'entreprise identifie les enjeux internes (culture d'ingénierie, dépendance croissante à l'assistant interne) et externes (évolutions réglementaires européennes, attentes des clients, état de l'art technologique) pertinents pour sa gouvernance de l'IA, ainsi que son double rôle de développeur et d'utilisateur de systèmes d'IA. Les parties intéressées du dispositif sont recensées : collaborateurs, clients, fournisseurs de composants d'IA et autorités de contrôle.
 
 ## 3. Principes directeurs
 
@@ -44,7 +48,11 @@ La liste nominative des titulaires de ces rôles est tenue à jour par la Direct
 
 Tout collaborateur qui a une préoccupation concernant un système d'IA de l'entreprise peut en faire part à son manager, qui appréciera la suite à donner.
 
-## 7. Revue de la charte
+## 7. Suivi du dispositif
+
+Aucun indicateur de suivi ni de mesure de l'efficacité du dispositif de gouvernance de l'IA n'est défini à ce jour, l'entreprise estimant le dispositif trop récent pour faire l'objet d'une mesure pertinente.
+
+## 8. Revue de la charte
 
 La présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.
 

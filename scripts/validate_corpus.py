@@ -65,6 +65,8 @@ def check_gold(gold: dict, kb_ids: set[str], docs: dict[str, str]) -> list[str]:
             errors.append(f"Gold {gid}: requirement_id {item['requirement_id']!r} absent de la KB")
         if item["verdict"] not in ALLOWED_VERDICTS:
             errors.append(f"Gold {gid}: verdict inconnu {item['verdict']!r}")
+        if item.get("split") not in {"dev", "test"}:
+            errors.append(f"Gold {gid}: split invalide {item.get('split')!r} (attendu dev|test)")
         if item["verdict"] == "missing":
             if item["document"] is not None or item["evidence_quote_fr"] is not None:
                 errors.append(f"Gold {gid}: verdict 'missing' mais document/quote non nuls")
@@ -103,6 +105,17 @@ def run() -> list[str]:
 
     errors, kb_ids = check_kb(kb)
     errors += check_gold(gold, kb_ids, docs)
+
+    # Versions immuables : KB et gold doivent porter la même version de corpus
+    kb_v = kb["meta"].get("corpus_version")
+    gold_v = gold["meta"].get("corpus_version")
+    if not kb_v or kb_v != gold_v:
+        errors.append(f"corpus_version incohérente : KB={kb_v!r} vs gold={gold_v!r}")
+
+    # Couverture : chaque exigence de la KB doit avoir au moins un cas gold
+    covered = {i["requirement_id"] for i in gold["items"]}
+    for rid in sorted(kb_ids - covered):
+        errors.append(f"Exigence KB {rid} sans aucun cas gold")
 
     # Documents référencés au moins une fois
     referenced = {i["document"] for i in gold["items"] if i["document"]}

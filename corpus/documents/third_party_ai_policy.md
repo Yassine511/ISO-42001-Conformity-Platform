@@ -23,7 +23,7 @@ Les besoins et attentes des clients concernant l'usage de l'IA par Lumen AI sont
 
 ## 5. Communication avec les tiers en cas d'incident
 
-En cas d'incident affectant un système d'IA impliquant un fournisseur, la coordination avec ce fournisseur suit les modalités prévues dans la matrice de responsabilités du contrat concerné.
+En cas d'incident affectant un système d'IA impliquant un fournisseur, la coordination avec ce fournisseur suit les modalités prévues dans la matrice de responsabilités du contrat concerné. En dehors de cette coordination, les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.
 
 ---
 

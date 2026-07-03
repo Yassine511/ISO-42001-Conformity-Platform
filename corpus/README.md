@@ -7,9 +7,15 @@ Ce dossier contient le livrable du jalon **M1b** : tout ce que les jalons aval c
 
 | Chemin | Rôle |
 |--------|------|
-| `kb/iso42001_kb.json` | 58 exigences atomiques **paraphrasées** de l'ISO/IEC 42001:2023 (clauses 4–10 + Annexe A A.2–A.10, contrôles A.2.2 → A.10.4), en français |
+| `kb/iso42001_kb.json` | 65 exigences atomiques **paraphrasées** de l'ISO/IEC 42001:2023 (clauses 4–10 + Annexe A A.2–A.10, contrôles A.2.2 → A.10.4), en français |
 | `documents/*.md` | Les 6 politiques de l'organisation fictive **Lumen AI** (français), avec des écarts volontairement semés |
-| `gold/gold_labels.json` | 41 vérités terrain : verdict + citation d'évidence verbatim — c'est le gold set de l'évaluation M6 |
+| `gold/gold_labels.json` | 65 vérités terrain (couverture 100 % de la KB) : verdict + citation d'évidence verbatim — c'est le gold set de l'évaluation M6 |
+
+**Granularité de la KB** : `7.5`, `9.2` et `9.3` sont représentées chacune par une entrée unique
+(plutôt que leurs sous-clauses 7.5.1–7.5.3, 9.2.1–9.2.2, 9.3.1–9.3.3) — un choix assumé de
+granularité : ces sous-clauses se testent naturellement ensemble sur un corpus documentaire.
+Le découpage en obligations atomiques plus fin (manifeste d'obligations avec relecture
+indépendante) est nommé comme travail futur dans le rapport.
 
 ## Règle de droit d'auteur
 
@@ -26,10 +32,21 @@ verbatim ne concernent que les documents Lumen AI, que nous avons rédigés.
 - **non_compliant** — le document contredit ou exclut explicitement l'exigence
   (ex. provenance des données « non exigée », impacts sociétaux « exclus du périmètre ») ;
 - **missing** — aucune couverture nulle part dans le corpus : la bonne réponse du système est
-  l'**abstention**. 7 exigences sont volontairement absentes : A.4.4, A.4.5, A.4.6, A.6.2.7,
-  A.8.3, 9.2, 10.2.
+  l'**abstention**. 11 exigences sont volontairement absentes : A.4.4, A.4.5, A.4.6, A.6.2.7,
+  A.8.3, A.8.5, 6.3, 7.1, 7.5, 9.2, 10.2.
 
-Répartition actuelle : 20 compliant · 12 partial · 2 non_compliant · 7 missing.
+Répartition actuelle : 29 compliant · 21 partial · 4 non_compliant · 11 missing.
+
+## Partition dev / test
+
+Chaque cas gold porte un champ `split` :
+
+- **dev** — utilisable pour régler les prompts, la récupération et les seuils (M2–M5) ;
+- **test** (~25 %, stratifié par verdict) — **réservé au rapport M6** : jamais consulté pour
+  un réglage, afin que le chiffre final ne soit pas sur-ajusté.
+
+`corpus_version` (identique dans la KB et le gold, vérifié par le validateur) fige la version
+du corpus utilisée pour chaque run d'évaluation rapporté.
 
 ## Contrat du gold set
 

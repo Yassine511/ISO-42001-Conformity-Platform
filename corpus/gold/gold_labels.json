@@ -3,8 +3,18 @@
     "organization": "Lumen AI",
     "language": "fr",
     "note": "Vérités terrain de l'évaluation (M6). evidence_quote_fr est une sous-chaîne VERBATIM du document source (vérifiée par scripts/validate_corpus.py). verdict=missing signifie qu'aucun document du corpus ne couvre l'exigence : la bonne réponse du système est l'abstention.",
-    "verdicts": ["compliant", "partial", "non_compliant", "missing"],
-    "version": "1.0"
+    "verdicts": [
+      "compliant",
+      "partial",
+      "non_compliant",
+      "missing"
+    ],
+    "version": "1.1",
+    "corpus_version": "1.1.0",
+    "splits": {
+      "dev": "réglage des prompts, de la récupération et des seuils",
+      "test": "réservé au rapport final M6 — jamais utilisé pour régler quoi que ce soit"
+    }
   },
   "items": [
     {
@@ -13,7 +23,8 @@
       "verdict": "compliant",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
-      "rationale_fr": "Une politique d'IA est établie, communiquée en interne et disponible pour les parties intéressées."
+      "rationale_fr": "Une politique d'IA est établie, communiquée en interne et disponible pour les parties intéressées.",
+      "split": "test"
     },
     {
       "id": "G-002",
@@ -21,7 +32,8 @@
       "verdict": "compliant",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La Direction Générale s'engage à ce que tout système d'IA conçu, déployé ou utilisé par Lumen AI le soit de manière responsable, conformément à nos valeurs d'entreprise, à la réglementation applicable et à notre niveau de tolérance au risque approuvé par le Comité Exécutif.",
-      "rationale_fr": "Politique documentée, guidée par la stratégie, les valeurs et le niveau de risque acceptable."
+      "rationale_fr": "Politique documentée, guidée par la stratégie, les valeurs et le niveau de risque acceptable.",
+      "split": "dev"
     },
     {
       "id": "G-003",
@@ -29,7 +41,8 @@
       "verdict": "compliant",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La présente politique d'IA s'articule explicitement avec les politiques existantes de l'entreprise : la Politique de Sécurité des Systèmes d'Information (LUM-SEC-001), la Politique de protection des données personnelles (LUM-DPO-001) conforme au RGPD",
-      "rationale_fr": "L'articulation avec les autres politiques est explicite, avec une règle d'arbitrage en cas de conflit."
+      "rationale_fr": "L'articulation avec les autres politiques est explicite, avec une règle d'arbitrage en cas de conflit.",
+      "split": "dev"
     },
     {
       "id": "G-004",
@@ -37,7 +50,8 @@
       "verdict": "partial",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.",
-      "rationale_fr": "Une revue existe mais sans intervalle planifié : la mise à jour est laissée à l'appréciation du Comité IA."
+      "rationale_fr": "Une revue existe mais sans intervalle planifié : la mise à jour est laissée à l'appréciation du Comité IA.",
+      "split": "test"
     },
     {
       "id": "G-005",
@@ -45,7 +59,8 @@
       "verdict": "compliant",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La liste nominative des titulaires de ces rôles est tenue à jour par la Direction des Ressources Humaines et communiquée à l'ensemble du personnel via l'intranet.",
-      "rationale_fr": "Les rôles IA (Responsable IA, Responsable Données, Responsables produit, DPO) sont définis et attribués nominativement."
+      "rationale_fr": "Le passage cité atteste l'attribution nominative et la communication des rôles IA (leur définition figure à la section 5.2 de la charte).",
+      "split": "dev"
     },
     {
       "id": "G-006",
@@ -53,7 +68,8 @@
       "verdict": "partial",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "Tout collaborateur qui a une préoccupation concernant un système d'IA de l'entreprise peut en faire part à son manager, qui appréciera la suite à donner.",
-      "rationale_fr": "Un canal existe mais aucun processus défini : pas de circuit formalisé, pas de traitement garanti, pas d'alternative au manager."
+      "rationale_fr": "Un canal existe mais aucun processus défini : pas de circuit formalisé, pas de traitement garanti, pas d'alternative au manager.",
+      "split": "dev"
     },
     {
       "id": "G-007",
@@ -61,7 +77,8 @@
       "verdict": "partial",
       "document": "ai_governance_charter.md",
       "evidence_quote_fr": "La charte s'applique aux activités liées à l'assistant interne « Lumen Assist » ainsi qu'aux autres initiatives d'IA de l'entreprise, selon les cas.",
-      "rationale_fr": "Un périmètre est esquissé mais « selon les cas » le rend indéterminé : le domaine d'application n'est pas clairement délimité."
+      "rationale_fr": "Un périmètre est esquissé mais « selon les cas » le rend indéterminé : le domaine d'application n'est pas clairement délimité.",
+      "split": "dev"
     },
     {
       "id": "G-008",
@@ -69,7 +86,8 @@
       "verdict": "compliant",
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "seuls les systèmes d'IA approuvés par le Comité IA et inscrits au registre des systèmes autorisés peuvent être utilisés dans un cadre professionnel.",
-      "rationale_fr": "Processus d'utilisation responsable défini : validation préalable, supervision humaine, restrictions de données, signalement."
+      "rationale_fr": "Le passage cité atteste la validation préalable des systèmes ; la politique définit aussi supervision humaine, restrictions de données et signalement (section 2).",
+      "split": "test"
     },
     {
       "id": "G-009",
@@ -77,7 +95,8 @@
       "verdict": "compliant",
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "Les systèmes d'IA doivent être utilisés conformément à leur fiche d'usage. Tout usage en dehors des cas approuvés — y compris à des fins d'expérimentation — nécessite une autorisation écrite du Responsable IA.",
-      "rationale_fr": "L'usage prévu est documenté par système et les détournements d'usage sont encadrés."
+      "rationale_fr": "L'usage prévu est documenté par système et les détournements d'usage sont encadrés.",
+      "split": "dev"
     },
     {
       "id": "G-010",
@@ -85,7 +104,8 @@
       "verdict": "partial",
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "Lumen AI se fixe pour objectifs que l'utilisation de ses systèmes d'IA soit légale, équitable et non discriminatoire, et qu'elle préserve la confidentialité des données traitées.",
-      "rationale_fr": "Des objectifs d'utilisation responsable existent mais la transparence vis-à-vis des personnes concernées n'y figure pas."
+      "rationale_fr": "Des objectifs d'utilisation responsable existent mais la transparence vis-à-vis des personnes concernées n'y figure pas.",
+      "split": "dev"
     },
     {
       "id": "G-011",
@@ -93,7 +113,8 @@
       "verdict": "compliant",
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'utilisation",
-      "rationale_fr": "Sensibilisation obligatoire, annuelle et tracée, couvrant la politique, la contribution et les conséquences d'un non-respect."
+      "rationale_fr": "Sensibilisation obligatoire, annuelle et tracée, couvrant la politique, la contribution et les conséquences d'un non-respect.",
+      "split": "dev"
     },
     {
       "id": "G-012",
@@ -101,7 +122,8 @@
       "verdict": "partial",
       "document": "ai_usage_policy.md",
       "evidence_quote_fr": "Une formation approfondie aux outils d'IA est par ailleurs recommandée aux collaborateurs qui le souhaitent, sur la base du volontariat.",
-      "rationale_fr": "La formation est facultative : les compétences nécessaires ne sont ni déterminées ni assurées, sans preuves documentées."
+      "rationale_fr": "La formation est facultative : les compétences nécessaires ne sont ni déterminées ni assurées, sans preuves documentées.",
+      "split": "test"
     },
     {
       "id": "G-013",
@@ -109,7 +131,8 @@
       "verdict": "compliant",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "Lumen AI définit et applique un processus documenté de gestion des données pour l'IA, couvrant l'ensemble du cycle : identification du besoin, acquisition, préparation, utilisation pour l'entraînement ou l'évaluation, conservation et suppression.",
-      "rationale_fr": "Processus documenté de gestion des données pour le développement et l'amélioration des systèmes d'IA."
+      "rationale_fr": "Processus documenté de gestion des données pour le développement et l'amélioration des systèmes d'IA.",
+      "split": "dev"
     },
     {
       "id": "G-014",
@@ -117,7 +140,8 @@
       "verdict": "compliant",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "Chaque jeu de données utilisé par un système d'IA est enregistré dans l'inventaire des données IA, qui documente pour chaque ressource : son identifiant, sa description, ses catégories de données, son usage prévu (entraînement, évaluation, production), son propriétaire",
-      "rationale_fr": "Les ressources de données sont documentées dans un inventaire tenu à jour et revu."
+      "rationale_fr": "Les ressources de données sont documentées dans un inventaire tenu à jour et revu.",
+      "split": "test"
     },
     {
       "id": "G-015",
@@ -125,7 +149,8 @@
       "verdict": "compliant",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "Toute acquisition de données destinées à un système d'IA fait l'objet d'une fiche d'acquisition documentant : la source des données (interne, fournisseur, données publiques), les conditions de collecte, les droits d'utilisation associés",
-      "rationale_fr": "L'acquisition est encadrée : sources, conditions de collecte et droits d'utilisation documentés et validés."
+      "rationale_fr": "L'acquisition est encadrée : sources, conditions de collecte et droits d'utilisation documentés et validés.",
+      "split": "dev"
     },
     {
       "id": "G-016",
@@ -133,7 +158,8 @@
       "verdict": "partial",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "Les équipes veillent à utiliser des données d'une qualité appropriée à leur cas d'usage.",
-      "rationale_fr": "La qualité est évoquée mais aucune exigence définie ni vérification : simple déclaration d'intention."
+      "rationale_fr": "La qualité est évoquée mais aucune exigence définie ni vérification : simple déclaration d'intention.",
+      "split": "dev"
     },
     {
       "id": "G-017",
@@ -141,7 +167,8 @@
       "verdict": "non_compliant",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "La traçabilité complète de la provenance des jeux de données n'est pas exigée par la présente politique.",
-      "rationale_fr": "La politique écarte explicitement l'exigence de provenance, notamment pour les jeux antérieurs à 2025."
+      "rationale_fr": "La politique écarte explicitement l'exigence de provenance, notamment pour les jeux antérieurs à 2025.",
+      "split": "test"
     },
     {
       "id": "G-018",
@@ -149,7 +176,8 @@
       "verdict": "compliant",
       "document": "data_governance_policy.md",
       "evidence_quote_fr": "Les opérations de préparation des données (nettoyage, déduplication, transformation, annotation, échantillonnage) sont réalisées selon la procédure LUM-DATA-PR-02, qui précise les méthodes autorisées et les critères de choix de ces méthodes.",
-      "rationale_fr": "Méthodes de préparation définies, critères documentés et journal de préparation par jeu de données."
+      "rationale_fr": "Méthodes de préparation définies, critères documentés et journal de préparation par jeu de données.",
+      "split": "dev"
     },
     {
       "id": "G-019",
@@ -157,7 +185,8 @@
       "verdict": "compliant",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Lumen AI applique un processus d'appréciation des risques IA documenté et répétable, exécuté pour chaque système d'IA avant sa mise en production puis réexaminé au moins une fois par an.",
-      "rationale_fr": "Identification, analyse et évaluation selon des critères approuvés, de façon répétable et documentée."
+      "rationale_fr": "Identification, analyse et évaluation selon des critères approuvés, de façon répétable et documentée.",
+      "split": "dev"
     },
     {
       "id": "G-020",
@@ -165,7 +194,8 @@
       "verdict": "partial",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Pour chaque risque évalué comme inacceptable, une option de traitement est retenue : réduction par des mesures techniques ou organisationnelles, transfert, évitement ou acceptation motivée.",
-      "rationale_fr": "Le traitement des risques existe mais sans comparaison avec les contrôles de référence ni déclaration d'applicabilité."
+      "rationale_fr": "Le traitement des risques existe mais sans comparaison avec les contrôles de référence ni déclaration d'applicabilité.",
+      "split": "dev"
     },
     {
       "id": "G-021",
@@ -173,7 +203,8 @@
       "verdict": "compliant",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
-      "rationale_fr": "Processus d'évaluation d'impact défini, avec déclencheurs précis (mise en production, évolution significative)."
+      "rationale_fr": "Processus d'évaluation d'impact défini, avec déclencheurs précis (mise en production, évolution significative).",
+      "split": "test"
     },
     {
       "id": "G-022",
@@ -181,7 +212,8 @@
       "verdict": "compliant",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "L'évaluation d'impact examine systématiquement les effets potentiels du système d'IA sur les individus et les groupes, notamment : les risques de discrimination ou de traitement inéquitable, les atteintes possibles à la vie privée, les risques pour la sécurité des personnes",
-      "rationale_fr": "Les impacts sur les individus et les groupes sont couverts : discrimination, vie privée, sécurité, accès aux droits."
+      "rationale_fr": "Les impacts sur les individus et les groupes sont couverts : discrimination, vie privée, sécurité, accès aux droits.",
+      "split": "dev"
     },
     {
       "id": "G-023",
@@ -189,7 +221,8 @@
       "verdict": "non_compliant",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact",
-      "rationale_fr": "La politique exclut explicitement les impacts sociétaux, à rebours de l'exigence."
+      "rationale_fr": "La politique exclut explicitement les impacts sociétaux, à rebours de l'exigence.",
+      "split": "dev"
     },
     {
       "id": "G-024",
@@ -197,7 +230,8 @@
       "verdict": "partial",
       "document": "ai_risk_management_policy.md",
       "evidence_quote_fr": "Les résultats des évaluations d'impact sont documentés dans le dossier du système d'IA concerné.",
-      "rationale_fr": "Les résultats sont documentés mais aucune durée de conservation n'est définie."
+      "rationale_fr": "Les résultats sont documentés mais aucune durée de conservation n'est définie.",
+      "split": "dev"
     },
     {
       "id": "G-025",
@@ -205,7 +239,8 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "des objectifs de développement responsable définis et documentés : équité des sorties, robustesse face aux entrées inattendues, transparence du fonctionnement vis-à-vis des utilisateurs internes et explicabilité des résultats",
-      "rationale_fr": "Objectifs de développement responsable définis, documentés et vérifiés aux jalons du cycle."
+      "rationale_fr": "Objectifs de développement responsable définis, documentés et vérifiés aux jalons du cycle.",
+      "split": "dev"
     },
     {
       "id": "G-026",
@@ -213,7 +248,8 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "Tout nouveau système d'IA, et toute évolution significative d'un système existant, fait l'objet d'un document d'exigences et de spécifications validé avant le début du développement.",
-      "rationale_fr": "Exigences et spécifications documentées et validées pour chaque système ou évolution significative."
+      "rationale_fr": "Exigences et spécifications documentées et validées pour chaque système ou évolution significative.",
+      "split": "dev"
     },
     {
       "id": "G-027",
@@ -221,7 +257,8 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système",
-      "rationale_fr": "La conception et le développement sont documentés dans un dossier tenu à jour."
+      "rationale_fr": "La conception et le développement sont documentés dans un dossier tenu à jour.",
+      "split": "test"
     },
     {
       "id": "G-028",
@@ -229,7 +266,8 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "chaque système d'IA est soumis à une phase de vérification et de validation formelle : exécution du plan de tests, mesure des performances sur un jeu d'évaluation indépendant du jeu d'entraînement, et comparaison des résultats aux seuils d'acceptation définis dans le document d'exigences.",
-      "rationale_fr": "Vérification et validation formelles avec seuils d'acceptation bloquants avant mise en production."
+      "rationale_fr": "Vérification et validation formelles avec seuils d'acceptation bloquants avant mise en production.",
+      "split": "dev"
     },
     {
       "id": "G-029",
@@ -237,7 +275,8 @@
       "verdict": "partial",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé.",
-      "rationale_fr": "Un plan de déploiement existe pour les systèmes majeurs, mais une brèche non encadrée subsiste pour les systèmes « mineurs »."
+      "rationale_fr": "Un plan de déploiement existe pour les systèmes majeurs, mais une brèche non encadrée subsiste pour les systèmes « mineurs ».",
+      "split": "test"
     },
     {
       "id": "G-030",
@@ -245,7 +284,8 @@
       "verdict": "compliant",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "Les systèmes d'IA en production font l'objet d'une surveillance continue : suivi des indicateurs de performance définis en phase de spécification, détection des dérives de comportement par rapport aux performances de validation",
-      "rationale_fr": "Surveillance en production : indicateurs, détection de dérive, incidents, et retrait ou correction sur décision identifiée."
+      "rationale_fr": "Le passage cité atteste la surveillance et la détection de dérive ; le traitement des incidents et le retrait figurent dans la même section 7.",
+      "split": "dev"
     },
     {
       "id": "G-031",
@@ -253,7 +293,8 @@
       "verdict": "partial",
       "document": "model_lifecycle_policy.md",
       "evidence_quote_fr": "Ces journaux sont conservés pendant trente jours. Les systèmes non critiques ne sont pas soumis à une obligation de journalisation.",
-      "rationale_fr": "Journalisation limitée aux systèmes critiques avec une conservation de trente jours seulement : couverture incomplète."
+      "rationale_fr": "Journalisation limitée aux systèmes critiques avec une conservation de trente jours seulement : couverture incomplète.",
+      "split": "dev"
     },
     {
       "id": "G-032",
@@ -261,7 +302,8 @@
       "verdict": "compliant",
       "document": "third_party_ai_policy.md",
       "evidence_quote_fr": "les responsabilités de chaque partie sont réparties et documentées dans une matrice de responsabilités annexée au contrat.",
-      "rationale_fr": "Répartition documentée des responsabilités entre organisations sur l'ensemble du cycle de vie."
+      "rationale_fr": "Répartition documentée des responsabilités entre organisations sur l'ensemble du cycle de vie.",
+      "split": "dev"
     },
     {
       "id": "G-033",
@@ -269,7 +311,8 @@
       "verdict": "partial",
       "document": "third_party_ai_policy.md",
       "evidence_quote_fr": "Le questionnaire d'évaluation utilisé à cette fin ne comporte pas à ce jour de volet spécifique aux pratiques d'IA responsable du fournisseur, et aucun réexamen périodique des fournisseurs référencés n'est organisé après la contractualisation.",
-      "rationale_fr": "Une évaluation initiale existe mais sans volet IA responsable ni suivi périodique des fournisseurs."
+      "rationale_fr": "Une évaluation initiale existe mais sans volet IA responsable ni suivi périodique des fournisseurs.",
+      "split": "dev"
     },
     {
       "id": "G-034",
@@ -277,7 +320,8 @@
       "verdict": "partial",
       "document": "third_party_ai_policy.md",
       "evidence_quote_fr": "aucune démarche systématique de recueil des attentes des clients en matière d'IA n'est mise en œuvre.",
-      "rationale_fr": "Les attentes des clients ne sont prises en compte que sur exigence contractuelle explicite."
+      "rationale_fr": "Les attentes des clients ne sont prises en compte que sur exigence contractuelle explicite.",
+      "split": "dev"
     },
     {
       "id": "G-035",
@@ -285,7 +329,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne recense les outils et composants (bibliothèques, algorithmes, plateformes) utilisés pour les systèmes d'IA."
+      "rationale_fr": "Aucun document ne recense les outils et composants (bibliothèques, algorithmes, plateformes) utilisés pour les systèmes d'IA.",
+      "split": "test"
     },
     {
       "id": "G-036",
@@ -293,7 +338,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne documente les ressources système et de calcul (infrastructure, capacités, localisation)."
+      "rationale_fr": "Aucun document ne documente les ressources système et de calcul (infrastructure, capacités, localisation).",
+      "split": "dev"
     },
     {
       "id": "G-037",
@@ -301,7 +347,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne recense les compétences et ressources humaines nécessaires au cycle de vie des systèmes d'IA."
+      "rationale_fr": "Aucun document ne recense les compétences et ressources humaines nécessaires au cycle de vie des systèmes d'IA.",
+      "split": "dev"
     },
     {
       "id": "G-038",
@@ -309,7 +356,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne prévoit la mise à disposition de la documentation technique des systèmes d'IA aux parties intéressées."
+      "rationale_fr": "Aucun document ne prévoit la mise à disposition de la documentation technique des systèmes d'IA aux parties intéressées.",
+      "split": "dev"
     },
     {
       "id": "G-039",
@@ -317,7 +365,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne définit comment les parties intéressées externes peuvent signaler les effets négatifs d'un système d'IA."
+      "rationale_fr": "Aucun document ne définit comment les parties intéressées externes peuvent signaler les effets négatifs d'un système d'IA.",
+      "split": "test"
     },
     {
       "id": "G-040",
@@ -325,7 +374,8 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne prévoit d'audit interne du système de management de l'IA."
+      "rationale_fr": "Aucun document ne prévoit d'audit interne du système de management de l'IA.",
+      "split": "dev"
     },
     {
       "id": "G-041",
@@ -333,7 +383,224 @@
       "verdict": "missing",
       "document": null,
       "evidence_quote_fr": null,
-      "rationale_fr": "Aucun document ne définit de processus de traitement des non-conformités ni d'actions correctives pour le système de management de l'IA."
+      "rationale_fr": "Aucun document ne définit de processus de traitement des non-conformités ni d'actions correctives pour le système de management de l'IA.",
+      "split": "dev"
+    },
+    {
+      "id": "G-042",
+      "requirement_id": "4.1",
+      "verdict": "compliant",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "l'entreprise identifie les enjeux internes (culture d'ingénierie, dépendance croissante à l'assistant interne) et externes (évolutions réglementaires européennes, attentes des clients, état de l'art technologique) pertinents pour sa gouvernance de l'IA",
+      "rationale_fr": "Enjeux internes et externes identifiés, ainsi que le rôle de l'organisation (développeur et utilisateur).",
+      "split": "test"
+    },
+    {
+      "id": "G-043",
+      "requirement_id": "4.2",
+      "verdict": "partial",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Les parties intéressées du dispositif sont recensées : collaborateurs, clients, fournisseurs de composants d'IA et autorités de contrôle.",
+      "rationale_fr": "Les parties intéressées sont recensées mais leurs exigences et attentes ne sont pas déterminées.",
+      "split": "test"
+    },
+    {
+      "id": "G-044",
+      "requirement_id": "4.4",
+      "verdict": "compliant",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Lumen AI établit, met en œuvre et maintient un système de management de l'IA couvrant l'ensemble du cycle de vie de ses systèmes d'IA",
+      "rationale_fr": "Le système de management de l'IA est établi et adossé à un référentiel documentaire de processus.",
+      "split": "dev"
+    },
+    {
+      "id": "G-045",
+      "requirement_id": "5.1",
+      "verdict": "compliant",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "La Direction Générale s'engage à ce que tout système d'IA conçu, déployé ou utilisé par Lumen AI le soit de manière responsable, conformément à nos valeurs d'entreprise, à la réglementation applicable et à notre niveau de tolérance au risque approuvé par le Comité Exécutif.",
+      "rationale_fr": "Engagement explicite de la direction, compatible avec la stratégie et porté au plus haut niveau.",
+      "split": "dev"
+    },
+    {
+      "id": "G-046",
+      "requirement_id": "5.3",
+      "verdict": "compliant",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Le Comité IA est l'organe de gouvernance des systèmes d'IA de Lumen AI. Il se réunit trimestriellement et rend compte au Comité Exécutif. Il approuve la mise en production de tout nouveau système d'IA et statue sur les arbitrages de risque.",
+      "rationale_fr": "Les autorités et responsabilités de gouvernance sont attribuées et communiquées (Comité IA, rôles nominatifs en section 5).",
+      "split": "dev"
+    },
+    {
+      "id": "G-047",
+      "requirement_id": "6.1.1",
+      "verdict": "partial",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "La présente politique définit le dispositif d'identification, d'analyse, d'évaluation et de traitement des risques liés aux systèmes d'intelligence artificielle de Lumen AI, ainsi que le processus d'évaluation de leurs impacts.",
+      "rationale_fr": "Les risques sont planifiés et traités, mais les opportunités ne sont jamais considérées.",
+      "split": "dev"
+    },
+    {
+      "id": "G-048",
+      "requirement_id": "6.1.4",
+      "verdict": "compliant",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
+      "rationale_fr": "Un processus d'évaluation d'impact est défini avec des déclencheurs précis et des résultats documentés.",
+      "split": "test"
+    },
+    {
+      "id": "G-049",
+      "requirement_id": "6.2",
+      "verdict": "partial",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Lumen AI vise à maintenir l'ensemble de ses systèmes d'IA en production dans les limites de risque acceptées par le Comité IA et à améliorer son dispositif de gestion des risques.",
+      "rationale_fr": "Des objectifs existent mais ne sont ni mesurables ni assortis d'un plan (actions, ressources, responsables, échéances).",
+      "split": "dev"
+    },
+    {
+      "id": "G-050",
+      "requirement_id": "6.3",
+      "verdict": "missing",
+      "document": null,
+      "evidence_quote_fr": null,
+      "rationale_fr": "Aucun document ne prévoit que les modifications du système de management de l'IA soient réalisées de façon planifiée (la section 6 de LUM-LCM-001 traite des changements des systèmes, pas du système de management).",
+      "split": "dev"
+    },
+    {
+      "id": "G-051",
+      "requirement_id": "7.1",
+      "verdict": "missing",
+      "document": null,
+      "evidence_quote_fr": null,
+      "rationale_fr": "Aucun document ne détermine les ressources allouées à l'établissement et au maintien du système de management de l'IA.",
+      "split": "test"
+    },
+    {
+      "id": "G-052",
+      "requirement_id": "7.4",
+      "verdict": "partial",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
+      "rationale_fr": "Des communications ponctuelles existent mais sans détermination de quoi, quand, avec qui et comment communiquer.",
+      "split": "dev"
+    },
+    {
+      "id": "G-053",
+      "requirement_id": "7.5",
+      "verdict": "missing",
+      "document": null,
+      "evidence_quote_fr": null,
+      "rationale_fr": "Aucun document ne définit la maîtrise des informations documentées du système de management (création, revue, approbation, versions, accès) ; les cartouches de version des politiques n'en tiennent pas lieu.",
+      "split": "dev"
+    },
+    {
+      "id": "G-054",
+      "requirement_id": "8.1",
+      "verdict": "partial",
+      "document": "ai_usage_policy.md",
+      "evidence_quote_fr": "seuls les systèmes d'IA approuvés par le Comité IA et inscrits au registre des systèmes autorisés peuvent être utilisés dans un cadre professionnel.",
+      "rationale_fr": "Une maîtrise opérationnelle existe (registre, validation) mais la maîtrise des processus externalisés n'est pas traitée.",
+      "split": "test"
+    },
+    {
+      "id": "G-055",
+      "requirement_id": "8.2",
+      "verdict": "compliant",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Lumen AI applique un processus d'appréciation des risques IA documenté et répétable, exécuté pour chaque système d'IA avant sa mise en production puis réexaminé au moins une fois par an.",
+      "rationale_fr": "L'appréciation des risques est réalisée à intervalles planifiés et ses résultats sont consignés au registre des risques.",
+      "split": "dev"
+    },
+    {
+      "id": "G-056",
+      "requirement_id": "8.3",
+      "verdict": "compliant",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Le plan de traitement, ses responsables et ses échéances sont validés par le Comité IA et suivis en revue trimestrielle.",
+      "rationale_fr": "Le plan de traitement est mis en œuvre et suivi trimestriellement, avec des résultats documentés.",
+      "split": "dev"
+    },
+    {
+      "id": "G-057",
+      "requirement_id": "8.4",
+      "verdict": "compliant",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Chaque système d'IA fait l'objet, avant sa mise en production et lors de toute évolution significative, d'une évaluation d'impact documentée selon la procédure LUM-RISK-PR-02.",
+      "rationale_fr": "Les évaluations d'impact sont réalisées lors des changements significatifs et documentées.",
+      "split": "dev"
+    },
+    {
+      "id": "G-058",
+      "requirement_id": "9.1",
+      "verdict": "non_compliant",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Aucun indicateur de suivi ni de mesure de l'efficacité du dispositif de gouvernance de l'IA n'est défini à ce jour, l'entreprise estimant le dispositif trop récent pour faire l'objet d'une mesure pertinente.",
+      "rationale_fr": "La charte écarte explicitement toute surveillance et mesure du dispositif.",
+      "split": "dev"
+    },
+    {
+      "id": "G-059",
+      "requirement_id": "9.3",
+      "verdict": "partial",
+      "document": "ai_governance_charter.md",
+      "evidence_quote_fr": "Il se réunit trimestriellement et rend compte au Comité Exécutif.",
+      "rationale_fr": "Un reporting trimestriel existe mais aucune revue de direction formelle du système de management (entrées/sorties définies) n'est prévue.",
+      "split": "dev"
+    },
+    {
+      "id": "G-060",
+      "requirement_id": "10.1",
+      "verdict": "partial",
+      "document": "ai_risk_management_policy.md",
+      "evidence_quote_fr": "Lumen AI vise à maintenir l'ensemble de ses systèmes d'IA en production dans les limites de risque acceptées par le Comité IA et à améliorer son dispositif de gestion des risques.",
+      "rationale_fr": "L'amélioration continue n'est visée que pour le dispositif de risques, pas pour l'ensemble du système de management.",
+      "split": "dev"
+    },
+    {
+      "id": "G-061",
+      "requirement_id": "A.4.2",
+      "verdict": "partial",
+      "document": "data_governance_policy.md",
+      "evidence_quote_fr": "Chaque jeu de données utilisé par un système d'IA est enregistré dans l'inventaire des données IA",
+      "rationale_fr": "Seules les ressources de données sont documentées ; outils, ressources de calcul et ressources humaines ne sont recensés nulle part.",
+      "split": "dev"
+    },
+    {
+      "id": "G-062",
+      "requirement_id": "A.6.1.3",
+      "verdict": "compliant",
+      "document": "model_lifecycle_policy.md",
+      "evidence_quote_fr": "La présente politique encadre le cycle de vie des systèmes d'intelligence artificielle développés ou adaptés par Lumen AI, de l'expression du besoin jusqu'au retrait du système.",
+      "rationale_fr": "Des processus de conception et de développement responsables sont définis et documentés pour chaque étape du cycle de vie (sections 2 à 8).",
+      "split": "dev"
+    },
+    {
+      "id": "G-063",
+      "requirement_id": "A.8.2",
+      "verdict": "partial",
+      "document": "ai_usage_policy.md",
+      "evidence_quote_fr": "Chaque système d'IA autorisé dispose d'une fiche d'usage précisant sa finalité, ses cas d'usage approuvés et ses limites connues.",
+      "rationale_fr": "Une information existe pour les utilisateurs internes, mais les besoins d'information ne sont pas déterminés par catégorie d'utilisateurs.",
+      "split": "dev"
+    },
+    {
+      "id": "G-064",
+      "requirement_id": "A.8.4",
+      "verdict": "non_compliant",
+      "document": "third_party_ai_policy.md",
+      "evidence_quote_fr": "les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
+      "rationale_fr": "La politique exclut explicitement la communication des incidents aux utilisateurs.",
+      "split": "dev"
+    },
+    {
+      "id": "G-065",
+      "requirement_id": "A.8.5",
+      "verdict": "missing",
+      "document": null,
+      "evidence_quote_fr": null,
+      "rationale_fr": "Aucun document ne détermine les obligations d'information envers les parties intéressées (clients, autorités, partenaires) concernant les systèmes d'IA.",
+      "split": "dev"
     }
   ]
 }
