@@ -13,7 +13,15 @@ from app.db import Base, engine
 
 
 def run_migrations() -> None:
-    command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    # A database created before Alembic was introduced (M1a create_all) has the
+    # tables but no alembic_version: adopt it by stamping the initial revision.
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    if inspector.has_table("organizations") and not inspector.has_table("alembic_version"):
+        command.stamp(cfg, "0001")
+    command.upgrade(cfg, "head")
 
 
 @asynccontextmanager

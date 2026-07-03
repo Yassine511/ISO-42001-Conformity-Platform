@@ -1,4 +1,4 @@
-"""Initial schema: organizations, documents (with provenance columns), document_pages.
+"""Initial schema (M1a): organizations, documents, document_pages.
 
 Revision ID: 0001
 Revises:
@@ -35,8 +35,6 @@ def upgrade() -> None:
         sa.Column("status", sa.String(20), nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("page_count", sa.Integer(), nullable=False),
-        sa.Column("checksum", sa.String(64), nullable=False),
-        sa.Column("parser_version", sa.String(20), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_table(
