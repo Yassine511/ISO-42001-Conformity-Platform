@@ -89,3 +89,11 @@ def test_cp1252_fallback():
     # "café" encoded in Windows-1252 (0xE9 is invalid UTF-8)
     pages = parse_document("note.txt", b"caf\xe9 gouvernance")
     assert pages == ["café gouvernance"]
+
+
+def test_invalid_encoding_rejected():
+    from app.services.parsing import InvalidEncoding
+
+    # 0x81/0x8D/0x90 are undefined in both UTF-8 (continuation bytes) and cp1252
+    with pytest.raises(InvalidEncoding):
+        parse_document("binaire.txt", b"\x81\x8d\x90")

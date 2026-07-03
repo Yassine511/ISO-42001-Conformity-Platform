@@ -1,3 +1,6 @@
+#starts persistence , vector storage , fast api backend and react frontend together
+
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -16,7 +19,7 @@ services:
       timeout: 3s
       retries: 10
 
-  qdrant:
+  qdrant: #vector db for indexing and retrieval
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333"

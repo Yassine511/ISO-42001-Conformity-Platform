@@ -7,7 +7,7 @@ Ce dossier contient le livrable du jalon **M1b** : tout ce que les jalons aval c
 
 | Chemin | Rôle |
 |--------|------|
-| `kb/iso42001_kb.json` | 65 exigences atomiques **paraphrasées** de l'ISO/IEC 42001:2023 (clauses 4–10 + Annexe A A.2–A.10, contrôles A.2.2 → A.10.4), en français |
+| `kb/iso42001_kb.json` | 65 exigences **paraphrasées** de l'ISO/IEC 42001:2023 (clauses 4–10 + Annexe A A.2–A.10, contrôles A.2.2 → A.10.4), en français — atomiques sauf les trois entrées agrégées ci-dessous |
 | `documents/*.md` | Les 6 politiques de l'organisation fictive **Lumen AI** (français), avec des écarts volontairement semés |
 | `gold/gold_labels.json` | 65 vérités terrain (couverture 100 % de la KB) : verdict + citation d'évidence verbatim — c'est le gold set de l'évaluation M6 |
 
