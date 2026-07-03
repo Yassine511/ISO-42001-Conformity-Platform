@@ -1,0 +1,416 @@
+{
+  "meta": {
+    "standard": "ISO/IEC 42001:2023",
+    "language": "fr",
+    "note": "Exigences atomiques PARAPHRASÉES dans nos propres mots. Aucun texte verbatim de la norme (le texte ISO est protégé par le droit d'auteur). Chaque entrée ne porte qu'une référence de clause vers la norme.",
+    "version": "1.0"
+  },
+  "requirements": [
+    {
+      "id": "4.1",
+      "domain": "4",
+      "domain_title_fr": "Contexte de l'organisation",
+      "requirement_fr": "L'organisation doit identifier les enjeux internes et externes pertinents pour son système de management de l'IA, y compris son rôle (fournisseur, utilisateur, développeur) vis-à-vis des systèmes d'IA.",
+      "keywords_fr": ["contexte", "enjeux internes et externes", "rôle de l'organisation", "SMIA"]
+    },
+    {
+      "id": "4.2",
+      "domain": "4",
+      "domain_title_fr": "Contexte de l'organisation",
+      "requirement_fr": "L'organisation doit identifier les parties intéressées concernées par le système de management de l'IA ainsi que leurs exigences et attentes pertinentes.",
+      "keywords_fr": ["parties intéressées", "parties prenantes", "attentes", "exigences"]
+    },
+    {
+      "id": "4.3",
+      "domain": "4",
+      "domain_title_fr": "Contexte de l'organisation",
+      "requirement_fr": "L'organisation doit déterminer et documenter le périmètre d'application de son système de management de l'IA (activités, produits, services couverts).",
+      "keywords_fr": ["périmètre", "domaine d'application", "champ d'application"]
+    },
+    {
+      "id": "4.4",
+      "domain": "4",
+      "domain_title_fr": "Contexte de l'organisation",
+      "requirement_fr": "L'organisation doit établir, mettre en œuvre, maintenir et améliorer en continu un système de management de l'IA, avec les processus nécessaires et leurs interactions.",
+      "keywords_fr": ["système de management de l'IA", "processus", "amélioration continue"]
+    },
+    {
+      "id": "5.1",
+      "domain": "5",
+      "domain_title_fr": "Leadership",
+      "requirement_fr": "La direction doit démontrer son engagement envers le système de management de l'IA : compatibilité avec la stratégie, ressources disponibles, importance communiquée, résultats atteints.",
+      "keywords_fr": ["direction", "engagement", "leadership", "ressources"]
+    },
+    {
+      "id": "5.2",
+      "domain": "5",
+      "domain_title_fr": "Leadership",
+      "requirement_fr": "La direction doit établir une politique d'IA adaptée à l'organisation, communiquée en interne et disponible pour les parties intéressées.",
+      "keywords_fr": ["politique d'IA", "direction", "communication de la politique"]
+    },
+    {
+      "id": "5.3",
+      "domain": "5",
+      "domain_title_fr": "Leadership",
+      "requirement_fr": "La direction doit attribuer et communiquer les rôles, responsabilités et autorités pertinents pour le système de management de l'IA.",
+      "keywords_fr": ["rôles", "responsabilités", "autorités", "attribution"]
+    },
+    {
+      "id": "6.1.2",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "L'organisation doit définir et appliquer un processus d'appréciation des risques liés à l'IA : identification, analyse et évaluation des risques selon des critères établis, de façon répétable et documentée.",
+      "keywords_fr": ["appréciation des risques", "analyse de risque", "critères de risque", "identification des risques"]
+    },
+    {
+      "id": "6.1.3",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "L'organisation doit définir un processus de traitement des risques IA : sélection des options de traitement, détermination des contrôles nécessaires, comparaison avec l'Annexe A et déclaration d'applicabilité, plan de traitement approuvé.",
+      "keywords_fr": ["traitement des risques", "plan de traitement", "déclaration d'applicabilité", "contrôles"]
+    },
+    {
+      "id": "6.1.4",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "L'organisation doit définir un processus d'évaluation des impacts des systèmes d'IA sur les individus, les groupes et la société, et en conserver les résultats documentés.",
+      "keywords_fr": ["évaluation d'impact", "impacts sur les individus", "impacts sociétaux", "conséquences"]
+    },
+    {
+      "id": "6.2",
+      "domain": "6",
+      "domain_title_fr": "Planification",
+      "requirement_fr": "L'organisation doit établir des objectifs mesurables pour le système de management de l'IA, les documenter, et planifier comment les atteindre (actions, ressources, responsables, échéances, évaluation des résultats).",
+      "keywords_fr": ["objectifs", "planification", "indicateurs", "échéances"]
+    },
+    {
+      "id": "7.2",
+      "domain": "7",
+      "domain_title_fr": "Support",
+      "requirement_fr": "L'organisation doit déterminer et assurer les compétences nécessaires des personnes travaillant sur les systèmes d'IA, par la formation ou d'autres moyens, avec des preuves documentées.",
+      "keywords_fr": ["compétences", "formation", "sensibilisation", "preuves de compétence"]
+    },
+    {
+      "id": "7.3",
+      "domain": "7",
+      "domain_title_fr": "Support",
+      "requirement_fr": "Les personnes travaillant pour l'organisation doivent être sensibilisées à la politique d'IA, à leur contribution au système de management et aux conséquences d'un non-respect.",
+      "keywords_fr": ["sensibilisation", "politique d'IA", "personnel"]
+    },
+    {
+      "id": "7.5",
+      "domain": "7",
+      "domain_title_fr": "Support",
+      "requirement_fr": "L'organisation doit créer, mettre à jour et maîtriser les informations documentées requises par le système de management de l'IA (identification, format, revue, approbation, contrôle des versions et de l'accès).",
+      "keywords_fr": ["informations documentées", "gestion documentaire", "versions", "approbation"]
+    },
+    {
+      "id": "8.1",
+      "domain": "8",
+      "domain_title_fr": "Fonctionnement",
+      "requirement_fr": "L'organisation doit planifier, mettre en œuvre et maîtriser les processus nécessaires pour satisfaire les exigences du système de management de l'IA, y compris la maîtrise des changements et des processus externalisés.",
+      "keywords_fr": ["maîtrise opérationnelle", "processus", "changements", "externalisation"]
+    },
+    {
+      "id": "9.1",
+      "domain": "9",
+      "domain_title_fr": "Évaluation des performances",
+      "requirement_fr": "L'organisation doit déterminer ce qui doit être surveillé et mesuré concernant le système de management de l'IA, avec quelles méthodes, à quelle fréquence, et analyser les résultats.",
+      "keywords_fr": ["surveillance", "mesure", "indicateurs de performance", "analyse"]
+    },
+    {
+      "id": "9.2",
+      "domain": "9",
+      "domain_title_fr": "Évaluation des performances",
+      "requirement_fr": "L'organisation doit réaliser des audits internes à intervalles planifiés pour vérifier que le système de management de l'IA est conforme et effectivement mis en œuvre, selon un programme d'audit défini.",
+      "keywords_fr": ["audit interne", "programme d'audit", "conformité"]
+    },
+    {
+      "id": "9.3",
+      "domain": "9",
+      "domain_title_fr": "Évaluation des performances",
+      "requirement_fr": "La direction doit revoir le système de management de l'IA à intervalles planifiés pour garantir qu'il reste approprié, adapté et efficace, avec des décisions d'amélioration en sortie.",
+      "keywords_fr": ["revue de direction", "efficacité", "décisions d'amélioration"]
+    },
+    {
+      "id": "10.1",
+      "domain": "10",
+      "domain_title_fr": "Amélioration",
+      "requirement_fr": "L'organisation doit améliorer en continu la pertinence, l'adéquation et l'efficacité du système de management de l'IA.",
+      "keywords_fr": ["amélioration continue", "efficacité"]
+    },
+    {
+      "id": "10.2",
+      "domain": "10",
+      "domain_title_fr": "Amélioration",
+      "requirement_fr": "En cas de non-conformité, l'organisation doit réagir, en traiter les conséquences, analyser les causes, mettre en œuvre des actions correctives et en conserver la trace documentée.",
+      "keywords_fr": ["non-conformité", "actions correctives", "causes racines"]
+    },
+    {
+      "id": "A.2.2",
+      "domain": "A.2",
+      "domain_title_fr": "Politiques relatives à l'IA",
+      "requirement_fr": "L'organisation doit documenter une politique de développement et d'utilisation des systèmes d'IA, guidée par la stratégie d'entreprise, les valeurs et le niveau de risque acceptable.",
+      "keywords_fr": ["politique d'IA", "document de politique", "principes directeurs"]
+    },
+    {
+      "id": "A.2.3",
+      "domain": "A.2",
+      "domain_title_fr": "Politiques relatives à l'IA",
+      "requirement_fr": "L'organisation doit déterminer comment sa politique d'IA s'articule avec ses autres politiques existantes (sécurité de l'information, protection des données, qualité, etc.).",
+      "keywords_fr": ["alignement des politiques", "cohérence", "sécurité de l'information", "RGPD"]
+    },
+    {
+      "id": "A.2.4",
+      "domain": "A.2",
+      "domain_title_fr": "Politiques relatives à l'IA",
+      "requirement_fr": "La politique d'IA doit être revue à intervalles planifiés, ou lors de changements significatifs, pour rester appropriée et efficace.",
+      "keywords_fr": ["revue de la politique", "révision périodique", "mise à jour"]
+    },
+    {
+      "id": "A.3.2",
+      "domain": "A.3",
+      "domain_title_fr": "Organisation interne",
+      "requirement_fr": "Les rôles et responsabilités relatifs à l'IA doivent être définis et attribués en fonction des besoins de l'organisation (gouvernance, développement, exploitation, supervision).",
+      "keywords_fr": ["rôles IA", "responsabilités", "comité IA", "gouvernance"]
+    },
+    {
+      "id": "A.3.3",
+      "domain": "A.3",
+      "domain_title_fr": "Organisation interne",
+      "requirement_fr": "L'organisation doit définir un processus permettant au personnel de signaler ses préoccupations concernant le rôle de l'organisation vis-à-vis d'un système d'IA, tout au long de son cycle de vie.",
+      "keywords_fr": ["signalement", "préoccupations", "alerte", "canal de remontée"]
+    },
+    {
+      "id": "A.4.2",
+      "domain": "A.4",
+      "domain_title_fr": "Ressources pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit identifier et documenter les ressources pertinentes pour chaque système d'IA (données, outils, ressources humaines, systèmes et capacités de calcul).",
+      "keywords_fr": ["documentation des ressources", "inventaire", "ressources IA"]
+    },
+    {
+      "id": "A.4.3",
+      "domain": "A.4",
+      "domain_title_fr": "Ressources pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit documenter les ressources de données utilisées par les systèmes d'IA (provenance, catégories, usage prévu).",
+      "keywords_fr": ["ressources de données", "inventaire des données", "catégories de données"]
+    },
+    {
+      "id": "A.4.4",
+      "domain": "A.4",
+      "domain_title_fr": "Ressources pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit documenter les outils et composants utilisés pour développer et exploiter les systèmes d'IA (bibliothèques, algorithmes, plateformes).",
+      "keywords_fr": ["outils", "bibliothèques", "composants logiciels", "plateformes"]
+    },
+    {
+      "id": "A.4.5",
+      "domain": "A.4",
+      "domain_title_fr": "Ressources pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit documenter les ressources système et de calcul utilisées par les systèmes d'IA (infrastructure, capacités, localisation).",
+      "keywords_fr": ["ressources de calcul", "infrastructure", "hébergement", "capacités"]
+    },
+    {
+      "id": "A.4.6",
+      "domain": "A.4",
+      "domain_title_fr": "Ressources pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit documenter les compétences et ressources humaines nécessaires au cycle de vie des systèmes d'IA (développement, déploiement, supervision, maintenance).",
+      "keywords_fr": ["ressources humaines", "compétences", "expertise", "équipes"]
+    },
+    {
+      "id": "A.5.2",
+      "domain": "A.5",
+      "domain_title_fr": "Évaluation des impacts des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir un processus d'évaluation des impacts potentiels des systèmes d'IA sur les individus, les groupes et la société, précisant quand et comment il s'applique.",
+      "keywords_fr": ["processus d'évaluation d'impact", "impacts potentiels", "déclencheurs"]
+    },
+    {
+      "id": "A.5.3",
+      "domain": "A.5",
+      "domain_title_fr": "Évaluation des impacts des systèmes d'IA",
+      "requirement_fr": "Les résultats des évaluations d'impact des systèmes d'IA doivent être documentés et conservés pendant une durée définie.",
+      "keywords_fr": ["documentation des impacts", "conservation", "résultats d'évaluation"]
+    },
+    {
+      "id": "A.5.4",
+      "domain": "A.5",
+      "domain_title_fr": "Évaluation des impacts des systèmes d'IA",
+      "requirement_fr": "L'évaluation d'impact doit considérer les effets des systèmes d'IA sur les individus et les groupes (équité, discrimination, vie privée, sécurité, droits).",
+      "keywords_fr": ["impacts individuels", "équité", "discrimination", "vie privée"]
+    },
+    {
+      "id": "A.5.5",
+      "domain": "A.5",
+      "domain_title_fr": "Évaluation des impacts des systèmes d'IA",
+      "requirement_fr": "L'évaluation d'impact doit considérer les effets sociétaux des systèmes d'IA (environnement, économie, normes sociales, culture).",
+      "keywords_fr": ["impacts sociétaux", "environnement", "société"]
+    },
+    {
+      "id": "A.6.1.2",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir des objectifs guidant le développement responsable des systèmes d'IA (équité, transparence, robustesse, explicabilité) et les intégrer au cycle de développement.",
+      "keywords_fr": ["développement responsable", "objectifs de conception", "équité", "transparence"]
+    },
+    {
+      "id": "A.6.1.3",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir des processus de conception et de développement responsables des systèmes d'IA, couvrant chaque étape du cycle de vie.",
+      "keywords_fr": ["processus de développement", "conception responsable", "cycle de vie"]
+    },
+    {
+      "id": "A.6.2.2",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "Les exigences et spécifications de chaque nouveau système d'IA (ou amélioration significative) doivent être définies et documentées.",
+      "keywords_fr": ["exigences", "spécifications", "cahier des charges"]
+    },
+    {
+      "id": "A.6.2.3",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "La conception et le développement du système d'IA doivent être documentés (choix d'architecture, de modèle, de données, critères de décision).",
+      "keywords_fr": ["documentation de conception", "architecture", "choix de modèle"]
+    },
+    {
+      "id": "A.6.2.4",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir des critères et des mesures de vérification et de validation des systèmes d'IA avant leur mise en service (tests, performance, seuils d'acceptation).",
+      "keywords_fr": ["vérification", "validation", "tests", "critères d'acceptation"]
+    },
+    {
+      "id": "A.6.2.5",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "Le déploiement des systèmes d'IA doit suivre un plan documenté avec des exigences vérifiées avant la mise en production.",
+      "keywords_fr": ["déploiement", "mise en production", "plan de déploiement"]
+    },
+    {
+      "id": "A.6.2.6",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "L'organisation doit exploiter et surveiller les systèmes d'IA en fonctionnement (performance, dérives, incidents, actions correctives, retrait éventuel).",
+      "keywords_fr": ["surveillance en production", "dérive", "monitoring", "retrait", "maintenance"]
+    },
+    {
+      "id": "A.6.2.7",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "La documentation technique du système d'IA doit être disponible pour les parties intéressées concernées (utilisateurs, partenaires, autorités le cas échéant).",
+      "keywords_fr": ["documentation technique", "notice", "mise à disposition"]
+    },
+    {
+      "id": "A.6.2.8",
+      "domain": "A.6",
+      "domain_title_fr": "Cycle de vie des systèmes d'IA",
+      "requirement_fr": "Les systèmes d'IA doivent enregistrer des journaux d'événements permettant la traçabilité de leur fonctionnement, sur une période définie.",
+      "keywords_fr": ["journaux", "logs", "traçabilité", "enregistrement des événements"]
+    },
+    {
+      "id": "A.7.2",
+      "domain": "A.7",
+      "domain_title_fr": "Données pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir, documenter et mettre en œuvre des processus de gestion des données utilisées pour développer et améliorer les systèmes d'IA.",
+      "keywords_fr": ["gestion des données", "données de développement", "processus de données"]
+    },
+    {
+      "id": "A.7.3",
+      "domain": "A.7",
+      "domain_title_fr": "Données pour les systèmes d'IA",
+      "requirement_fr": "L'acquisition des données pour les systèmes d'IA doit être encadrée : détails et sources des données documentés (origine, droits d'utilisation, conditions de collecte).",
+      "keywords_fr": ["acquisition des données", "sources", "collecte", "droits d'utilisation"]
+    },
+    {
+      "id": "A.7.4",
+      "domain": "A.7",
+      "domain_title_fr": "Données pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir et documenter des exigences de qualité des données pour les systèmes d'IA et vérifier que les données utilisées y répondent.",
+      "keywords_fr": ["qualité des données", "exigences de qualité", "exactitude", "représentativité"]
+    },
+    {
+      "id": "A.7.5",
+      "domain": "A.7",
+      "domain_title_fr": "Données pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit documenter la provenance des données utilisées par ses systèmes d'IA et pouvoir la retracer tout au long du cycle de vie.",
+      "keywords_fr": ["provenance des données", "traçabilité", "lignage", "origine"]
+    },
+    {
+      "id": "A.7.6",
+      "domain": "A.7",
+      "domain_title_fr": "Données pour les systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir et documenter ses méthodes de préparation des données (nettoyage, transformation, annotation, échantillonnage) et leurs critères de choix.",
+      "keywords_fr": ["préparation des données", "nettoyage", "annotation", "transformation"]
+    },
+    {
+      "id": "A.8.2",
+      "domain": "A.8",
+      "domain_title_fr": "Information des parties intéressées",
+      "requirement_fr": "L'organisation doit fournir aux utilisateurs une documentation et des informations sur le système d'IA (finalités, usage prévu, limites, précision attendue).",
+      "keywords_fr": ["information des utilisateurs", "documentation utilisateur", "limites du système"]
+    },
+    {
+      "id": "A.8.3",
+      "domain": "A.8",
+      "domain_title_fr": "Information des parties intéressées",
+      "requirement_fr": "L'organisation doit définir comment les parties intéressées peuvent signaler les effets négatifs d'un système d'IA, et comment ces signalements sont traités.",
+      "keywords_fr": ["signalement externe", "effets négatifs", "réclamations"]
+    },
+    {
+      "id": "A.8.4",
+      "domain": "A.8",
+      "domain_title_fr": "Information des parties intéressées",
+      "requirement_fr": "L'organisation doit définir un plan de communication des incidents liés aux systèmes d'IA aux utilisateurs et parties intéressées concernées.",
+      "keywords_fr": ["communication d'incident", "notification", "plan de communication"]
+    },
+    {
+      "id": "A.8.5",
+      "domain": "A.8",
+      "domain_title_fr": "Information des parties intéressées",
+      "requirement_fr": "L'organisation doit déterminer les obligations d'information envers les parties intéressées (clients, autorités, partenaires) concernant ses systèmes d'IA et y répondre.",
+      "keywords_fr": ["obligations d'information", "autorités", "parties intéressées"]
+    },
+    {
+      "id": "A.9.2",
+      "domain": "A.9",
+      "domain_title_fr": "Utilisation des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir des processus encadrant l'utilisation responsable des systèmes d'IA (règles d'usage, validation avant usage, supervision humaine).",
+      "keywords_fr": ["utilisation responsable", "règles d'usage", "supervision humaine"]
+    },
+    {
+      "id": "A.9.3",
+      "domain": "A.9",
+      "domain_title_fr": "Utilisation des systèmes d'IA",
+      "requirement_fr": "L'organisation doit définir des objectifs d'utilisation responsable des systèmes d'IA (légalité, équité, transparence vis-à-vis des personnes concernées) et les appliquer.",
+      "keywords_fr": ["objectifs d'utilisation", "usage éthique", "transparence"]
+    },
+    {
+      "id": "A.9.4",
+      "domain": "A.9",
+      "domain_title_fr": "Utilisation des systèmes d'IA",
+      "requirement_fr": "Les systèmes d'IA doivent être utilisés conformément à leur usage prévu et à leur documentation ; les détournements d'usage doivent être prévenus.",
+      "keywords_fr": ["usage prévu", "conformité d'usage", "détournement"]
+    },
+    {
+      "id": "A.10.2",
+      "domain": "A.10",
+      "domain_title_fr": "Relations avec les tiers et les clients",
+      "requirement_fr": "Lorsque plusieurs organisations interviennent dans le cycle de vie d'un système d'IA, les responsabilités de chacune doivent être réparties et documentées.",
+      "keywords_fr": ["répartition des responsabilités", "tiers", "chaîne de responsabilité"]
+    },
+    {
+      "id": "A.10.3",
+      "domain": "A.10",
+      "domain_title_fr": "Relations avec les tiers et les clients",
+      "requirement_fr": "L'organisation doit définir un processus pour s'assurer que ses fournisseurs de systèmes, composants ou services d'IA s'alignent sur son approche de développement et d'utilisation responsables (due diligence, exigences contractuelles, suivi).",
+      "keywords_fr": ["fournisseurs", "due diligence", "exigences contractuelles", "sous-traitance"]
+    },
+    {
+      "id": "A.10.4",
+      "domain": "A.10",
+      "domain_title_fr": "Relations avec les tiers et les clients",
+      "requirement_fr": "L'organisation doit s'assurer que son approche responsable de l'IA prend en compte les besoins et attentes de ses clients (exigences, information, support).",
+      "keywords_fr": ["clients", "attentes des clients", "exigences clients"]
+    }
+  ]
+}
