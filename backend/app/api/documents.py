@@ -2,6 +2,7 @@ import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -67,7 +68,13 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
         doc.error = f"Échec de l'analyse : {exc}"
 
     db.add(doc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Concurrent identical upload slipped past the pre-check; the DB
+        # constraint (organization_id, checksum) is the atomic gate.
+        db.rollback()
+        raise HTTPException(409, "Document au contenu identique déjà téléversé.")
     return doc
 
 

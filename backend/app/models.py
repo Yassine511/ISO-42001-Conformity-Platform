@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -43,9 +43,13 @@ class Document(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     # Provenance/lifecycle anchors for M2 indexing: detect re-uploads of the
-    # same content and parses produced by an outdated extractor.
-    checksum: Mapped[str] = mapped_column(String(64), default="")
+    # same content and parses produced by an outdated extractor. checksum is
+    # NULL only for legacy pre-M2 rows; uniqueness per org is DB-enforced so
+    # concurrent identical uploads cannot both pass the API pre-check.
+    checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     parser_version: Mapped[str] = mapped_column(String(20), default="")
+
+    __table_args__ = (UniqueConstraint("organization_id", "checksum", name="uq_documents_org_checksum"),)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     organization: Mapped[Organization] = relationship(back_populates="documents")

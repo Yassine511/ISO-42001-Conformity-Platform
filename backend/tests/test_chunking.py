@@ -127,3 +127,17 @@ def test_sentence_boundary_between_target_and_hard_max_preferred():
     assert any(
         abs(c.char_end - boundary) <= 1 for c in chunks
     ), f"no cut at the sentence boundary {boundary}: {[(c.char_start, c.char_end) for c in chunks]}"
+
+
+def test_no_degenerate_creeping_chunks():
+    """Audit R3 P1: the overlap must not let the previous cut be reused —
+    a 3300-char paragraph once produced 28 creeping duplicates."""
+    # sentences longer than TARGET force the pathological window
+    text = ("y" * 1050 + ". ") * 3 + "fin du paragraphe."
+    chunks = chunk_page(text)
+    _assert_invariants(text, chunks)
+    assert len(chunks) <= 8, f"degenerate chunking: {len(chunks)} chunks"
+    ends = [c.char_end for c in chunks]
+    assert ends == sorted(set(ends)), "duplicate or non-advancing cut positions"
+    for a, b in zip(chunks, chunks[1:]):
+        assert b.char_end > a.char_end

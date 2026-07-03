@@ -21,6 +21,7 @@ Usage: backend/.venv/Scripts/python scripts/retrieval_sanity.py [--org "Lumen AI
 """
 
 import argparse
+import hashlib
 import json
 import sys
 import unicodedata
@@ -112,6 +113,8 @@ def main() -> int:
     print("Réconciliation de l'index (premier run : téléchargement du modèle ~220 Mo)…")
     report = retrieval.index_organization(db, org.id)
     print(f"Index : {report}")
+    kb_report = retrieval.index_kb()  # the KB gate must exercise KB VECTORS too
+    print(f"KB : {kb_report}")
     kb = retrieval.load_kb()
 
     docs_by_name = {
@@ -119,20 +122,29 @@ def main() -> int:
         for d in db.scalars(select(Document).where(Document.organization_id == org.id)).all()
     }
     items = load_gold_dev()
-    corpus_filenames = {p.name for p in sorted((ROOT / "corpus" / "documents").glob("*.md"))}
-    missing_docs = corpus_filenames - set(docs_by_name)
-    extra_docs = set(docs_by_name) - corpus_filenames
+    all_docs = db.scalars(select(Document).where(Document.organization_id == org.id)).all()
+    corpus_files = sorted((ROOT / "corpus" / "documents").glob("*.md"))
+    corpus_checksums = {
+        p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in corpus_files
+    }
+    problems = []
+    if len(all_docs) != len(corpus_files):
+        problems.append(f"{len(all_docs)} documents dans l'organisation, {len(corpus_files)} attendus")
+    missing_docs = set(corpus_checksums) - {d.filename for d in all_docs}
     if missing_docs:
-        print(f"Documents gold absents de l'organisation : {sorted(missing_docs)}")
-        return 1
-    if extra_docs:
-        print(
-            "Baseline non propre : documents hors corpus présents dans l'organisation "
-            f"{sorted(extra_docs)} — supprimez-les ou utilisez une organisation dédiée."
-        )
-        return 1
+        problems.append(f"documents gold absents : {sorted(missing_docs)}")
+    for d in all_docs:
+        expected = corpus_checksums.get(d.filename)
+        if expected is None:
+            problems.append(f"document hors corpus : {d.filename}")
+        elif d.checksum != expected:
+            problems.append(f"contenu modifié (checksum différent du corpus) : {d.filename}")
     if report.get("stale_parser"):
-        print(f"Baseline non propre : documents parsés par un extracteur obsolète {report['stale_parser']}")
+        problems.append(f"documents parsés par un extracteur obsolète : {report['stale_parser']}")
+    if problems:
+        print("Baseline non propre :")
+        for p in problems:
+            print(f"  - {p}")
         return 1
 
     arms = ["BM25", "Vector", "Hybrid"]
@@ -194,19 +206,30 @@ def main() -> int:
             print(f"  - {m}")
 
     # KB-scope gate: natural-language queries (gold rationales) must surface
-    # the right requirement. Rationales describe the finding, not the
-    # requirement text, so this is a genuine paraphrase test.
+    # the right requirement — measured per arm, because a hybrid-only number
+    # can hide a dead vector index behind a strong BM25.
     gold = json.loads((ROOT / "corpus" / "gold" / "gold_labels.json").read_text(encoding="utf-8"))
     kb_cases = [g for g in gold["items"] if g["split"] == "dev"]
-    kb_hits = 0
+    kb_entries = retrieval._bm25_entries(db, "kb", org.id, kb)
+    kb_arm_hits = {"BM25": 0, "Vector": 0, "Hybrid": 0}
     for g in kb_cases:
-        results = retrieval.hybrid_search(db, org.id, g["rationale_fr"], 5, "kb")
-        if any(r.requirement_id == g["requirement_id"] for r in results):
-            kb_hits += 1
-    kb_r5 = kb_hits / len(kb_cases)
-    kb_fail = kb_r5 < KB_FLOOR_R5
-    print(f"\nKB (requêtes NL = rationales dev, n={len(kb_cases)}) : R@5 = {kb_r5:.2f}"
-          f" (plancher {KB_FLOOR_R5:.2f})" + ("  ✗ ÉCHEC" if kb_fail else ""))
+        want = retrieval.kb_result_id(kb["corpus_version"], g["requirement_id"])
+        bm25_ids = [rid for rid, _ in Bm25Index(kb_entries).search(g["rationale_fr"], 5)]
+        vec_ids = retrieval._vector_arm(
+            embed_texts([g["rationale_fr"]])[0], "kb", org.id, kb["corpus_version"], 5
+        )
+        hybrid = retrieval.hybrid_search(db, org.id, g["rationale_fr"], 5, "kb")
+        kb_arm_hits["BM25"] += want in bm25_ids
+        kb_arm_hits["Vector"] += want in vec_ids
+        kb_arm_hits["Hybrid"] += any(r.requirement_id == g["requirement_id"] for r in hybrid)
+    n_kb = len(kb_cases)
+    kb_fail = kb_arm_hits["Hybrid"] / n_kb < KB_FLOOR_R5
+    print(f"\nKB (requêtes NL = rationales dev, n={n_kb}) R@5 :")
+    print("  " + " | ".join(f"{a} {kb_arm_hits[a] / n_kb:.2f}" for a in ("BM25", "Vector", "Hybrid"))
+          + f" (plancher hybride {KB_FLOOR_R5:.2f})" + ("  ✗ ÉCHEC" if kb_fail else ""))
+    if kb_arm_hits["Vector"] == 0:
+        print("  !! bras vectoriel KB à zéro — index KB vectoriel absent ?")
+        kb_fail = True
     failed = failed or kb_fail
 
     print("\n" + ("ÉCHEC : plancher(s) manqué(s)." if failed else "Tous les planchers M2 sont atteints."))

@@ -87,20 +87,26 @@ def _split_long_paragraph(text: str, p_start: int, p_end: int) -> list[tuple[int
     cuts = [m.end() for m in _SENTENCE_END.finditer(text, p_start, p_end)]
     pieces: list[tuple[int, int]] = []
     seg_start = p_start
+    # Forward-only cut cursor: the overlap moves seg_start BACKWARD, so
+    # without this floor the previous cut stays eligible and the loop
+    # degenerates into tiny creeping duplicates (e.g. 804-900, 808-900, ...).
+    last_cut = p_start
     while p_end - seg_start > HARD_MAX_CHARS:
+        low = max(seg_start, last_cut)
         # Prefer a sentence boundary within the target; failing that, accept
         # one anywhere up to the hard max — a sentence cut at 1101 beats a
         # mid-sentence whitespace cut at 1196.
-        in_target = [c for c in cuts if seg_start < c <= seg_start + TARGET_CHARS]
-        in_hard_max = [c for c in cuts if seg_start < c <= seg_start + HARD_MAX_CHARS]
+        in_target = [c for c in cuts if low < c <= seg_start + TARGET_CHARS]
+        in_hard_max = [c for c in cuts if low < c <= seg_start + HARD_MAX_CHARS]
         if in_target:
             cut = in_target[-1]
         elif in_hard_max:
             cut = in_hard_max[-1]
         else:
-            cut = _last_whitespace_before(text, seg_start + HARD_MAX_CHARS, seg_start)
+            cut = _last_whitespace_before(text, seg_start + HARD_MAX_CHARS, low)
             if cut is None:
                 cut = seg_start + HARD_MAX_CHARS  # pathological: no whitespace at all
+        last_cut = cut
         pieces.append((seg_start, cut))
         # Forced split: back the next piece up by a small overlap, whitespace-
         # aligned. First skip the whitespace run at the cut itself (the

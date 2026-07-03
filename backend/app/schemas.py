@@ -26,7 +26,7 @@ class DocumentOut(BaseModel):
     status: str
     error: str | None
     page_count: int
-    checksum: str
+    checksum: str | None
     parser_version: str
     created_at: datetime
 

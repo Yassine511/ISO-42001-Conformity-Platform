@@ -407,3 +407,114 @@ def test_index_report_flags_stale_parser(client):
 
     report = client.post(f"/api/organizations/{org_id}/index").json()
     assert report["stale_parser"] == ["data.txt"]
+
+
+def test_reconciliation_handles_int_ids_and_noncanonical_duplicates(client):
+    """Audit R3 P1: delete by RAW point id (int 42 != '42'), and purge a
+    non-canonical point that claims a VALID desired result_id."""
+    from qdrant_client import models as qm
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+
+    org_id, _ = _setup_org(client)
+    client.post(f"/api/organizations/{org_id}/index")
+
+    valid_rid = client.post(
+        f"/api/organizations/{org_id}/search",
+        json={"query": "provenance des données d'entraînement", "k": 1},
+    ).json()[0]["result_id"]
+
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(  # integer id, garbage result_id
+                id=42,
+                vector=emb.embed_texts(["orphelin entier"])[0],
+                payload={"source_type": "policy", "result_id": "ghost", "org_id": org_id},
+            ),
+            qm.PointStruct(  # non-canonical duplicate of a DESIRED result_id
+                id=q.point_id("not-the-canonical-key"),
+                vector=emb.embed_texts(["duplicata"])[0],
+                payload={"source_type": "policy", "result_id": valid_rid, "org_id": org_id},
+            ),
+        ],
+        wait=True,
+    )
+    client.post(f"/api/organizations/{org_id}/index")
+    assert q.get_client().retrieve(collection_name=settings.qdrant_collection, ids=[42]) == []
+    assert (
+        q.get_client().retrieve(
+            collection_name=settings.qdrant_collection, ids=[q.point_id("not-the-canonical-key")]
+        )
+        == []
+    )
+    # the canonical point of the valid result_id must survive
+    assert q.get_client().retrieve(
+        collection_name=settings.qdrant_collection, ids=[q.point_id(valid_rid)]
+    )
+
+
+def test_kb_index_is_full_reconciliation(client):
+    """Audit R3 P2: a fabricated point claiming the CURRENT corpus_version
+    must be purged by /kb/index."""
+    from qdrant_client import models as qm
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+    from app.services import retrieval as retrieval_service
+
+    client.post("/api/kb/index")
+    version = retrieval_service.load_kb()["corpus_version"]
+    fake_rid = f"kb:{version}:FAKE"
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(
+                id=q.point_id(fake_rid),
+                vector=emb.embed_texts(["exigence fabriquée"])[0],
+                payload={
+                    "source_type": "iso_requirement",
+                    "result_id": fake_rid,
+                    "requirement_id": "FAKE",
+                    "corpus_version": version,
+                },
+            )
+        ],
+        wait=True,
+    )
+    client.post("/api/kb/index")
+    assert (
+        q.get_client().retrieve(collection_name=settings.qdrant_collection, ids=[q.point_id(fake_rid)])
+        == []
+    )
+
+
+def test_org_checksum_uniqueness_is_db_enforced(client):
+    """Audit R3 P3: the (organization_id, checksum) constraint must exist so
+    concurrent duplicates cannot both commit."""
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db import get_db
+    from app.main import app as fastapi_app
+    from app.models import Document as Doc
+
+    org_id, docs = _setup_org(client)
+    override = fastapi_app.dependency_overrides[get_db]
+    db = next(override())
+    existing = db.get(Doc, docs["data.txt"])
+    clone = Doc(
+        organization_id=org_id,
+        filename="clone.txt",
+        content_type="text/plain",
+        checksum=existing.checksum,
+        parser_version="2",
+        status="parsed",
+    )
+    db.add(clone)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()

@@ -135,16 +135,22 @@ def index_organization(db: Session, org_id: str) -> dict:
             db.add(row)
     db.commit()
 
-    # 3) drop stale points BY ACTUAL POINT ID: any point of this org whose
-    # result_id is missing or not desired, plus PG leftovers (whose point ids
-    # are recomputable because we created them).
-    stale_point_ids = [
-        pid for pid, rid in org_points.items() if rid is None or rid not in desired_ids
+    # 3) drop stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
+    # for deletion: deleting "42" does not delete point 42). Stale =
+    #   - result_id missing or not desired, or
+    #   - a NON-CANONICAL point claiming a desired result_id (its actual id
+    #     differs from UUID5(result_id)) — otherwise it duplicates candidates.
+    # Plus PG leftovers, whose canonical ids we can recompute.
+    stale_point_ids: list = [
+        raw_id
+        for raw_id, (canonical_key, rid) in org_points.items()
+        if rid is None or rid not in desired_ids or canonical_key != qdrant.point_id(rid)
     ]
+    seen_keys = {canonical_key for canonical_key, _ in org_points.values()}
     stale_point_ids += [
         qdrant.point_id(cid)
         for cid in previous_ids - desired_ids
-        if qdrant.point_id(cid) not in org_points
+        if qdrant.point_id(cid) not in seen_keys
     ]
     qdrant.delete_points_by_ids(stale_point_ids)
 
@@ -161,30 +167,34 @@ def index_organization(db: Session, org_id: str) -> dict:
     }
 
 
-def _scroll_org_points(org_id: str) -> dict[str, str | None]:
-    """Actual point id -> payload result_id (None if absent) for an org's policy points."""
+def _scroll_points(conditions: list) -> dict:
+    """raw point id -> (str(id) for canonical comparison, payload result_id | None)."""
     client = qdrant.get_client()
-    points_map: dict[str, str | None] = {}
+    points_map: dict = {}
     offset = None
     while True:
         points, offset = client.scroll(
             collection_name=settings.qdrant_collection,
-            scroll_filter=qm.Filter(
-                must=[
-                    qm.FieldCondition(key="source_type", match=qm.MatchValue(value="policy")),
-                    qm.FieldCondition(key="org_id", match=qm.MatchValue(value=org_id)),
-                ]
-            ),
+            scroll_filter=qm.Filter(must=conditions),
             limit=256,
             offset=offset,
             with_payload=["result_id"],
             with_vectors=False,
         )
         for p in points:
-            points_map[str(p.id)] = (p.payload or {}).get("result_id")
+            points_map[p.id] = (str(p.id), (p.payload or {}).get("result_id"))
         if offset is None:
             break
     return points_map
+
+
+def _scroll_org_points(org_id: str) -> dict:
+    return _scroll_points(
+        [
+            qm.FieldCondition(key="source_type", match=qm.MatchValue(value="policy")),
+            qm.FieldCondition(key="org_id", match=qm.MatchValue(value=org_id)),
+        ]
+    )
 
 
 def index_kb() -> dict:
@@ -207,19 +217,19 @@ def index_kb() -> dict:
         for e, vec in zip(entries, vectors)
     ]
     qdrant.upsert_points(points)
-    # purge stale versions
-    qdrant.get_client().delete(
-        collection_name=settings.qdrant_collection,
-        points_selector=qm.FilterSelector(
-            filter=qm.Filter(
-                must=[qm.FieldCondition(key="source_type", match=qm.MatchValue(value="iso_requirement"))],
-                must_not=[
-                    qm.FieldCondition(key="corpus_version", match=qm.MatchValue(value=kb["corpus_version"]))
-                ],
-            )
-        ),
-        wait=True,
+    # Full reconciliation over ALL iso_requirement points (any corpus_version):
+    # anything that is not a canonical point of a current KB entry is stale —
+    # old versions, fabricated requirement ids, and non-canonical duplicates.
+    desired_rids = {kb_result_id(kb["corpus_version"], e["id"]) for e in entries}
+    kb_points = _scroll_points(
+        [qm.FieldCondition(key="source_type", match=qm.MatchValue(value="iso_requirement"))]
     )
+    stale = [
+        raw_id
+        for raw_id, (canonical_key, rid) in kb_points.items()
+        if rid is None or rid not in desired_rids or canonical_key != qdrant.point_id(rid)
+    ]
+    qdrant.delete_points_by_ids(stale)
     return {"requirements": len(entries), "corpus_version": kb["corpus_version"]}
 
 
