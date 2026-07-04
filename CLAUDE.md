@@ -7,8 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
 abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§13 = milestone
-roadmap). Currently through **M2** (hybrid retrieval); next is **M3** (LangGraph pipeline:
-retrieve → judge → verify, citation verifier, repair-retry-then-abstain).
+roadmap). Currently through **M3** (LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
+verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
+`assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`); next is
+**M4** (chat copilot reusing the same retrieval + citation verification). M3 semantics: `VERIFIED`
+means **citation/schema-verified** (quote exists in source, clause matches, schema valid) — never
+"verdict proven correct"; verdict accuracy is measured in M6, human review (M5) produces CONFIRMED.
 
 User-facing text (UI, API error messages, corpus, gold labels) is **French**. Code, comments and
 commits are English.
@@ -16,7 +20,7 @@ commits are English.
 ## Commands
 
 ```bash
-# backend tests (run from backend/ — 55 tests, no Docker/model needed)
+# backend tests (run from backend/ — 100+ tests, no Docker/model/LLM needed)
 cd backend && .venv/Scripts/python -m pytest -q
 .venv/Scripts/python -m pytest tests/test_retrieval.py::test_index_and_search_policy -q  # single test
 

@@ -121,6 +121,42 @@ def test_changed_number_rejected():
     assert find_quote(tampered, SOURCE) is None
 
 
+# Meaning-flipping single-word substitutions score >92 partial_ratio on long
+# quotes (audit-reproduced: doivent->peuvent 98.4, obligatoirement->librement
+# 95.3) — the token-alignment guard must reject them while keeping typos.
+LONG_SOURCE = (
+    "Les collaborateurs doivent signaler tout incident dans les meilleurs délais "
+    "au responsable de la conformité qui tient le registre à jour et informe la "
+    "direction générale après chaque revue trimestrielle du dispositif."
+)
+
+
+@pytest.mark.parametrize(
+    ("original", "tampered"),
+    [
+        ("doivent", "peuvent"),          # obligation -> permission
+        ("après", "avant"),              # temporal inversion
+        ("doivent", "devraient"),        # obligation -> recommendation
+    ],
+)
+def test_meaning_flipping_substitution_rejected(original, tampered):
+    assert find_quote(LONG_SOURCE, LONG_SOURCE) is not None  # sanity
+    assert find_quote(LONG_SOURCE.replace(original, tampered), LONG_SOURCE) is None
+
+
+def test_obligation_adverb_swap_rejected():
+    source = (
+        "La formation est suivie obligatoirement par tous les collaborateurs "
+        "concernés avant toute utilisation des systèmes en production."
+    )
+    assert find_quote(source.replace("obligatoirement", "librement"), source) is None
+
+
+def test_single_char_typo_still_accepted_by_token_guard():
+    typo = LONG_SOURCE.replace("registre", "registtre")
+    assert find_quote(typo, LONG_SOURCE) is not None
+
+
 def test_too_short_and_too_long_quotes_rejected():
     assert find_quote("Comité IA", SOURCE) is None  # < MIN_QUOTE_LEN
     long_source = "a" * 400
@@ -165,6 +201,15 @@ def test_missing_verdict_needs_no_quote():
     draft = _draft(None, verdict=Verdict.MISSING)
     result = verify(draft, [], "A.9.2")
     assert result.ok
+
+
+def test_missing_verdict_with_nonnull_quote_rejected():
+    # "no evidence exists" + a citation is incoherent (prompt requires null)
+    draft = _draft("Une citation fabriquée qui ne devrait pas être là.", verdict=Verdict.MISSING)
+    result = verify(draft, [], "A.9.2")
+    assert not result.ok
+    assert any("doit être null" in e for e in result.errors)
+    assert result.repair_errors  # retryable
 
 
 def test_missing_verdict_with_wrong_clause_is_retryable():

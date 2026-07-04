@@ -75,7 +75,8 @@ def main() -> int:
     assessment_id = create_assessment(SessionLocal, org.id)
     print(f"assessment {assessment_id} — org « {args.org} » — {len(requirement_ids)} exigence(s)\n")
 
-    failures = 0
+    failures = 0       # unhandled operational errors (exceptions)
+    infra_abstains = 0  # ABSTAINED(llm_error): pipeline completed, providers did not
     try:
         with lifespan as checkpointer:
             graph = build_graph(SessionLocal, checkpointer=checkpointer)
@@ -88,20 +89,34 @@ def main() -> int:
                     failures += 1
                     print(f"[{req_id}] ERREUR OPÉRATIONNELLE : {exc}", file=sys.stderr)
                     continue
+                if result.abstain_reason == "llm_error":
+                    infra_abstains += 1
                 _print_result(result)
     except Exception as exc:
         finalize_assessment(
             SessionLocal, assessment_id, AssessmentStatus.FAILED, error=str(exc)
         )
         raise
+    # Assessment-level status distinguishes evidentiary abstention (a valid
+    # outcome -> COMPLETED) from infrastructure failure: if NO requirement got
+    # a real judge answer, the assessment itself failed.
+    total = len(requirement_ids)
+    all_infra = failures + infra_abstains >= total and total > 0
+    error_note = None
+    if failures or infra_abstains:
+        error_note = (
+            f"{failures} erreur(s) opérationnelle(s), "
+            f"{infra_abstains} abstention(s) pour panne LLM (llm_error)"
+        )
     finalize_assessment(
         SessionLocal,
         assessment_id,
-        AssessmentStatus.FAILED if failures == len(requirement_ids) else AssessmentStatus.COMPLETED,
-        error=f"{failures} exigence(s) en erreur opérationnelle" if failures else None,
+        AssessmentStatus.FAILED if all_infra else AssessmentStatus.COMPLETED,
+        error=error_note,
     )
-    print(f"\nassessment {assessment_id} finalisé ({failures} erreur(s) opérationnelle(s))")
-    return 1 if failures else 0
+    print(f"\nassessment {assessment_id} finalisé"
+          + (f" — {error_note}" if error_note else ""))
+    return 1 if failures or infra_abstains else 0
 
 
 def _print_result(result) -> None:

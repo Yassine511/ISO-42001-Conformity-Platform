@@ -402,6 +402,116 @@ def test_to_psycopg_dsn_strips_driver_suffix():
     assert psycopg.conninfo.conninfo_to_dict(dsn)["dbname"] == "db"
 
 
+# ------------------------------------------------------- audit regressions
+
+
+def test_malformed_200_stays_inside_llm_outcome(monkeypatch):
+    """HTTP 200 with an unparseable body (proxy HTML page) must produce an
+    LLMOutcome with BAD_RESPONSE and still try the fallback provider."""
+    from unittest.mock import MagicMock
+
+    from app.pipeline import llm as L
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.side_effect = ValueError("not json")
+    resp.text = "<html>proxy interception page</html>"
+    monkeypatch.setattr(L.settings, "mistral_api_key", "k")
+    monkeypatch.setattr(L.settings, "groq_api_key", "")
+    monkeypatch.setattr(L.httpx, "post", lambda *a, **kw: resp)
+
+    out = L.HttpJsonLLM().complete_json([{"role": "user", "content": "x"}])
+    assert out.content is None and out.error
+    assert [c.status for c in out.calls] == ["BAD_RESPONSE", "SKIPPED_NO_KEY"]
+    assert "proxy" in out.calls[0].raw_response
+
+
+def test_corpus_version_drift_raises(env, monkeypatch):
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(session_factory, org_id)
+
+    from app.pipeline import graph as graph_module
+
+    real_kb = graph_module.load_kb()
+    monkeypatch.setattr(
+        graph_module, "load_kb", lambda: {**real_kb, "corpus_version": "999.0.0"}
+    )
+    with pytest.raises(ValueError, match="corpus_version a changé"):
+        run_requirement(session_factory, assessment_id, REQUIREMENT)
+
+
+def test_attempt_residue_from_crash_is_overwritten_not_violated(env):
+    """A crash between the judge's attempt commit and the LangGraph checkpoint
+    leaves a residue attempt row; the re-run must upsert, not raise on
+    uq_attempts_key."""
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(session_factory, org_id)
+
+    db = session_factory()
+    db.add(
+        AssessmentAttempt(
+            assessment_id=assessment_id,
+            requirement_id=REQUIREMENT,
+            attempt_number=1,
+            prompt_version="0",
+            parsed_ok=False,
+        )
+    )
+    db.commit()
+    db.close()
+
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "VERIFIED"
+    db = session_factory()
+    attempts = db.scalars(select(AssessmentAttempt)).all()
+    assert len(attempts) == 1
+    assert attempts[0].parsed_ok and attempts[0].prompt_version != "0"
+    db.close()
+
+
+def test_app_level_resume_continues_instead_of_rerunning(env, monkeypatch):
+    """After a mid-run crash, run_requirement must resume the checkpointed
+    thread with invoke(None) — not resubmit initial state and rerun retrieve."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from app.pipeline import nodes as N
+
+    session_factory, org_id = env
+
+    retrieve_calls = {"n": 0}
+    real_search = N.hybrid_search
+
+    def counting_search(*a, **kw):
+        retrieve_calls["n"] += 1
+        return real_search(*a, **kw)
+
+    monkeypatch.setattr(N, "hybrid_search", counting_search)
+
+    class CrashingLLM:
+        def __init__(self):
+            self.crashed = False
+
+        def complete_json(self, messages, *, json_schema=None):
+            if not self.crashed:
+                self.crashed = True
+                raise RuntimeError("crash before checkpoint")
+            return FakeLLM([_valid_draft()]).complete_json(messages, json_schema=json_schema)
+
+    llm_service.set_provider(CrashingLLM())
+    assessment_id = create_assessment(session_factory, org_id)
+    graph = build_graph(session_factory, checkpointer=InMemorySaver())
+
+    with pytest.raises(RuntimeError):
+        run_requirement(session_factory, assessment_id, REQUIREMENT, compiled_graph=graph)
+    assert retrieve_calls["n"] == 1
+
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT, compiled_graph=graph)
+    assert result.status == "VERIFIED"
+    assert retrieve_calls["n"] == 1  # resumed: retrieve did NOT rerun
+
+
 # ---------------------------------------------------------------- gold guard
 
 

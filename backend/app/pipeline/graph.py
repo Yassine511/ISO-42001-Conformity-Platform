@@ -177,6 +177,7 @@ def run_requirement(
         if assessment is None:
             raise ValueError(f"assessment inconnu : {assessment_id}")
         org_id = assessment.organization_id
+        assessment_corpus_version = assessment.corpus_version
         existing = db.scalars(
             select(Finding).where(
                 Finding.assessment_id == assessment_id,
@@ -189,11 +190,30 @@ def run_requirement(
         return _result_from_row(session_factory, existing)
 
     kb = load_kb()
+    # Provenance guard: a long-running assessment must not silently mix
+    # requirement definitions from different corpus versions.
+    if kb["corpus_version"] != assessment_corpus_version:
+        raise ValueError(
+            f"corpus_version a changé pendant l'assessment : "
+            f"{assessment_corpus_version} (assessment) != {kb['corpus_version']} (KB) ; "
+            f"créez un nouvel assessment."
+        )
     entry = kb["by_id"].get(requirement_id)
     if entry is None:
         raise ValueError(f"exigence inconnue dans la base ISO 42001 : {requirement_id}")
 
     graph = compiled_graph or build_graph(session_factory, checkpointer=checkpointer)
+    config = {"configurable": {"thread_id": f"{assessment_id}:{requirement_id}"}}
+
+    # Application-level resume: if a checkpointed run for this thread is
+    # mid-flight (interrupted or crashed), continue it with invoke(None) —
+    # re-submitting the initial state would RERUN prior nodes, not resume.
+    if getattr(graph, "checkpointer", None):
+        snapshot = graph.get_state(config)
+        if snapshot is not None and snapshot.next:
+            final_state = graph.invoke(None, config)
+            return _result_from_state(final_state, assessment_id, requirement_id)
+
     initial: GovernanceState = {
         "assessment_id": assessment_id,
         "organization_id": org_id,
@@ -208,9 +228,13 @@ def run_requirement(
         "audit_log": [],
         "attempt_history": [],
     }
-    config = {"configurable": {"thread_id": f"{assessment_id}:{requirement_id}"}}
     final_state = graph.invoke(initial, config)
+    return _result_from_state(final_state, assessment_id, requirement_id)
 
+
+def _result_from_state(
+    final_state: dict, assessment_id: str, requirement_id: str
+) -> AssessmentResult:
     finding = final_state.get("finding") or {}
     match = None
     if finding.get("match"):

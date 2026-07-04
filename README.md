@@ -96,5 +96,22 @@ rationale queries (floor 0.60).
 
 ## Milestones
 
-M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG (this state) → M3 pipeline core
-(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation → M7 scoring & artifacts → M8 deliverables.
+M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
+(judge/verify/abstain, this state) → M4 chat copilot → M5 frontend HITL → M6 evaluation → M7 scoring & artifacts → M8 deliverables.
+
+## Pipeline (M3)
+
+LangGraph pipeline (`backend/app/pipeline/`): ① retrieve (hybrid RAG) → ② judge (Mistral, JSON
+mode, French prompts; Groq fallback) → ③ verify (deterministic fuzzy citation verifier with
+token-alignment guards + clause/schema/threshold checks; one bounded repair retry, then abstention).
+`VERIFIED` = **citation/schema-verified** — the quote exists near-verbatim in source with exact page
+offsets — not "verdict proven correct" (M6 measures verdict accuracy; M5 human review confirms).
+Full per-attempt provenance (`assessments`, `findings`, `assessment_attempts`, `llm_calls`) and a
+PostgreSQL checkpointer (`LANGGRAPH_STRICT_MSGPACK=true`). Exit-criterion demo (run with services up
+and `MISTRAL_API_KEY` in `backend/.env`):
+
+```
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.9.2  # VERIFIED
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.4.5  # ABSTAINED
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --all-dev            # dev split only
+```

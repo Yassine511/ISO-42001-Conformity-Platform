@@ -9,7 +9,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     """Application settings, overridable via environment variables (.env)."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # env_file is anchored to backend/ (not the process CWD): scripts run from
+    # the repo root must load the same backend/.env as uvicorn run from backend/.
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parents[1] / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
     #utf-8 is a text encoder that converts text to bytes
     #it tells Pydantic how to read the .env file. This prevents characters in configuration values from being decoded incorrectly.
     #for example you have APP_NAME=Copilote de conformité without it conformité could appear corrupted as conformitÃ©
@@ -27,8 +33,10 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     groq_api_key: str = ""
 
-    # Judge node (M3). Fallback model configurable: swap in one setting if
-    # Groq retires it. temperature 0 for determinism (still not guaranteed).
+    # Judge node (M3). Fallback model configurable: Groq has announced the
+    # retirement of llama-3.3-70b-versatile for free/dev tiers (2026-08-16) —
+    # select and VALIDATE a replacement (e.g. openai/gpt-oss-120b) before M6.
+    # temperature 0 for determinism (still not guaranteed).
     judge_model: str = "mistral-large-latest"
     judge_fallback_model: str = "llama-3.3-70b-versatile"
     judge_temperature: float = 0.0

@@ -232,7 +232,8 @@ class LlmCall(Base):
     __table_args__ = (
         UniqueConstraint("assessment_attempt_id", "call_number", name="uq_llm_calls_key"),
         CheckConstraint(
-            "status IN ('SUCCESS', 'HTTP_ERROR', 'NETWORK_ERROR', 'SKIPPED_NO_KEY')",
+            "status IN ('SUCCESS', 'HTTP_ERROR', 'NETWORK_ERROR', 'BAD_RESPONSE', "
+            "'SKIPPED_NO_KEY')",
             name="ck_llm_calls_status",
         ),
     )

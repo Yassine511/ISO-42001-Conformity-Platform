@@ -38,6 +38,7 @@ REQUEST_TIMEOUT = 60.0
 CALL_SUCCESS = "SUCCESS"
 CALL_HTTP_ERROR = "HTTP_ERROR"
 CALL_NETWORK_ERROR = "NETWORK_ERROR"
+CALL_BAD_RESPONSE = "BAD_RESPONSE"  # HTTP 200 but unparseable body (proxy pages…)
 CALL_SKIPPED_NO_KEY = "SKIPPED_NO_KEY"
 
 
@@ -159,12 +160,25 @@ class HttpJsonLLM:
                 # 4xx other than 429 will fail identically on retry elsewhere,
                 # but the fallback provider may still succeed — always try it.
                 continue
-            data = resp.json()
+            # HTTP 200 does not guarantee a well-formed body (intercepting
+            # proxies return HTML pages with 200): parsing failures must stay
+            # inside the failure-capable abstraction, not escape as exceptions.
+            try:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                if not isinstance(content, str):
+                    raise TypeError(f"content is {type(content).__name__}")
+            except Exception as exc:
+                call.status = CALL_BAD_RESPONSE
+                call.error = f"réponse 200 malformée — {type(exc).__name__}: {exc}"
+                call.raw_response = resp.text[:2000]
+                calls.append(call)
+                continue  # the fallback provider may still succeed
             call.status = CALL_SUCCESS
             call.reported_model = data.get("model")
-            call.raw_response = data["choices"][0]["message"]["content"]
+            call.raw_response = content
             calls.append(call)
-            return LLMOutcome(content=call.raw_response, calls=calls)
+            return LLMOutcome(content=content, calls=calls)
         return LLMOutcome(
             content=None,
             calls=calls,

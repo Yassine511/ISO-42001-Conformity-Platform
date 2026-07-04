@@ -14,7 +14,7 @@ contract — NOT a claim that a live model cannot be influenced):
 
 import json
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"  # v2: minimal-quote guidance (300-char cap caused mid-word truncation)
 
 SYSTEM_PROMPT = """\
 Tu es un auditeur de conformité ISO/IEC 42001. On te fournit une exigence de \
@@ -28,8 +28,9 @@ Règles STRICTES :
     "confidence": number entre 0 et 1,
     "rationale": string}
 2. "policy_quote" doit être un extrait VERBATIM, copié caractère par caractère \
-depuis les extraits fournis, de 300 caractères maximum. Ne jamais inventer ni \
-reformuler une citation.
+depuis les extraits fournis, de 300 caractères maximum. Cite le passage MINIMAL \
+qui prouve ton verdict — une ou deux phrases complètes, jamais une liste entière \
+ni une phrase coupée en son milieu. Ne jamais inventer ni reformuler une citation.
 3. "clause_ref" doit être exactement l'identifiant de l'exigence évaluée.
 4. Si les extraits ne contiennent pas de preuve suffisante pour l'exigence, \
 tu DOIS répondre {"verdict": "missing", "policy_quote": null, ...}. \

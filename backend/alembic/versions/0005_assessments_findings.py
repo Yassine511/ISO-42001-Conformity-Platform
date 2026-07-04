@@ -133,7 +133,8 @@ def upgrade() -> None:
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint("assessment_attempt_id", "call_number", name="uq_llm_calls_key"),
         sa.CheckConstraint(
-            "status IN ('SUCCESS', 'HTTP_ERROR', 'NETWORK_ERROR', 'SKIPPED_NO_KEY')",
+            "status IN ('SUCCESS', 'HTTP_ERROR', 'NETWORK_ERROR', 'BAD_RESPONSE', "
+            "'SKIPPED_NO_KEY')",
             name="ck_llm_calls_status",
         ),
     )

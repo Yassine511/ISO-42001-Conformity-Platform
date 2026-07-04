@@ -119,18 +119,37 @@ def make_judge_node(session_factory: SessionFactory):
             draft, parse_errors = _parse_draft(outcome.content)
 
         final_call = outcome.final_call
-        # persist the semantic attempt + every provider call
+        # Persist the semantic attempt + every provider call. UPSERT on the
+        # unique key: the attempt commit happens BEFORE LangGraph checkpoints
+        # this node's output, so a crash in that window leaves a residue row —
+        # the resumed run must overwrite it, not violate uq_attempts_key.
         db = session_factory()
         try:
-            attempt = AssessmentAttempt(
-                assessment_id=state["assessment_id"],
-                requirement_id=state["requirement_id"],
-                attempt_number=attempt_number,
-                prompt_version=PROMPT_VERSION,
-                parsed_ok=draft is not None,
-                started_at=started,
-            )
-            db.add(attempt)
+            attempt = db.scalars(
+                select(AssessmentAttempt).where(
+                    AssessmentAttempt.assessment_id == state["assessment_id"],
+                    AssessmentAttempt.requirement_id == state["requirement_id"],
+                    AssessmentAttempt.attempt_number == attempt_number,
+                )
+            ).first()
+            if attempt is not None:
+                for stale_call in list(attempt.llm_calls):
+                    db.delete(stale_call)
+                attempt.prompt_version = PROMPT_VERSION
+                attempt.parsed_ok = draft is not None
+                attempt.verifier_errors = None
+                attempt.started_at = started
+                attempt.finished_at = None
+            else:
+                attempt = AssessmentAttempt(
+                    assessment_id=state["assessment_id"],
+                    requirement_id=state["requirement_id"],
+                    attempt_number=attempt_number,
+                    prompt_version=PROMPT_VERSION,
+                    parsed_ok=draft is not None,
+                    started_at=started,
+                )
+                db.add(attempt)
             db.flush()
             for i, call in enumerate(outcome.calls, start=1):
                 db.add(

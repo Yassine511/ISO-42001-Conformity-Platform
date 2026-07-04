@@ -14,10 +14,15 @@ must never be applied to citation matching.
 
 Thresholds are documented policy constants, pinned by boundary tests:
 - PARTIAL_RATIO_MIN = 92.0 tolerates roughly one typo per ~12 characters while
-  rejecting paraphrase. Fuzzy acceptance additionally requires the digit
-  sequence and the French negation-token multiset of the quote to match the
-  aligned source window — a high partial_ratio alone would accept a deleted
-  "ne … pas" in a long quote (~96 for a 200-char quote), which flips meaning.
+  rejecting paraphrase. A high partial_ratio alone is NOT sufficient: on long
+  quotes it accepts meaning-flipping single-word edits (deleted "ne … pas"
+  ~96, "doivent"->"peuvent" ~98, "obligatoirement"->"librement" ~95 — all
+  reproduced). Fuzzy acceptance therefore additionally requires token-level
+  alignment against the aligned source window: no token may be inserted or
+  deleted, and a substituted token pair must be within edit distance 1
+  (character-level typos pass; word swaps like doivent/peuvent, distance 3,
+  fail). The digit-sequence guard stays on top: "48"->"49" is distance 1 at
+  the token level but changes the requirement's meaning.
 - CONFIDENCE_MIN is an UNCALIBRATED policy threshold on a model-generated
   number, kept because the spec (§6) gates on it; the raw value is persisted
   as telemetry and M6 measures whether it correlates with correctness. A
@@ -25,12 +30,13 @@ Thresholds are documented policy constants, pinned by boundary tests:
   teaches it to emit a higher number).
 """
 
+import difflib
 import re
 import unicodedata
-from collections import Counter
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
+from rapidfuzz.distance import Levenshtein
 
 from app.pipeline.state import DraftFinding, QuoteMatch, Verdict, VerificationResult
 
@@ -50,7 +56,9 @@ _TRANSLATE = {
     "…": "...",
 }
 
-_NEGATION_TOKENS = {"ne", "n", "pas", "non", "jamais", "aucun", "aucune", "sans", "interdit"}
+# Max character edit distance between a substituted token pair in the fuzzy
+# path: 1 = a typo, 2+ = a different word (doivent/peuvent is 3).
+TOKEN_EDIT_MAX = 1
 
 
 @dataclass
@@ -104,9 +112,36 @@ def _digit_sequence(text: str) -> list[str]:
     return re.findall(r"\d+", text)
 
 
-def _negation_counts(text: str) -> Counter:
-    tokens = re.findall(r"\w+", text, flags=re.UNICODE)
-    return Counter(t for t in tokens if t in _NEGATION_TOKENS)
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"\w+", text, flags=re.UNICODE)
+
+
+def _tokens_aligned(quote: str, window: str) -> bool:
+    """Token-level guard for the fuzzy path: character-level typos pass, any
+    inserted/deleted token or word substitution beyond TOKEN_EDIT_MAX fails.
+    This is what rejects meaning-flipping edits (deleted negation, modal or
+    temporal swaps) that survive the partial_ratio threshold on long quotes."""
+    q_tokens, w_tokens = _tokens(quote), _tokens(window)
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        a=q_tokens, b=w_tokens, autojunk=False
+    ).get_opcodes():
+        if op == "equal":
+            continue
+        if op != "replace" or (i2 - i1) != (j2 - j1):
+            return False  # token inserted or deleted
+        for qt, wt in zip(q_tokens[i1:i2], w_tokens[j1:j2]):
+            if Levenshtein.distance(qt, wt) > TOKEN_EDIT_MAX:
+                return False  # different word, not a typo
+    return True
+
+
+def _expand_to_word_boundaries(text: str, start: int, end: int) -> tuple[int, int]:
+    """Alignment windows can cut words at their edges; compare whole tokens."""
+    while start > 0 and text[start - 1] != " ":
+        start -= 1
+    while end < len(text) and text[end] != " ":
+        end += 1
+    return start, end
 
 
 def find_quote(quote: str, chunk_text: str) -> tuple[int, int, str, float] | None:
@@ -127,14 +162,17 @@ def find_quote(quote: str, chunk_text: str) -> tuple[int, int, str, float] | Non
     alignment = fuzz.partial_ratio_alignment(nq.text, nc.text)
     if alignment is None or alignment.score < PARTIAL_RATIO_MIN:
         return None
-    window = nc.text[alignment.dest_start:alignment.dest_end]
-    if _digit_sequence(nq.text) != _digit_sequence(window):
-        return None
-    if _negation_counts(nq.text) != _negation_counts(window):
-        return None
     if alignment.dest_end <= alignment.dest_start:
         return None
-    start, end = nc.to_original_span(alignment.dest_start, alignment.dest_end)
+    w_start, w_end = _expand_to_word_boundaries(
+        nc.text, alignment.dest_start, alignment.dest_end
+    )
+    window = nc.text[w_start:w_end]
+    if _digit_sequence(nq.text) != _digit_sequence(window):
+        return None
+    if not _tokens_aligned(nq.text, window):
+        return None
+    start, end = nc.to_original_span(w_start, w_end)
     return start, end, "fuzzy", float(alignment.score)
 
 
@@ -177,7 +215,17 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
         errors.append(msg)
         repair_errors.append(msg)
 
-    if draft.verdict != Verdict.MISSING:
+    if draft.verdict == Verdict.MISSING:
+        # the prompt contract requires a null quote with `missing`: a verdict
+        # that claims "no evidence" while citing text is incoherent
+        if (draft.policy_quote or "").strip():
+            msg = (
+                "policy_quote incohérente : le verdict « missing » signifie "
+                "qu'aucune preuve n'existe ; policy_quote doit être null."
+            )
+            errors.append(msg)
+            repair_errors.append(msg)
+    else:
         quote = (draft.policy_quote or "").strip()
         if not quote:
             msg = (
