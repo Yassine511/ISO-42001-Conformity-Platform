@@ -82,7 +82,7 @@ def test_planted_fake_quote_rejected():
         "LES COLLABORATEURS DOIVENT SIGNALER TOUT INCIDENT DANS UN DÉLAI DE 48 HEURES.",
         "Les collaborateurs doivent signaler tout incident dans un delai de 48 heures.",  # accents stripped
         "Les collaborateurs doivent signaler tout incident dans un délai de 48 heures.",  # NBSP
-        "Les collaborateurs doivent signaler tout incident dens un délai de 48 heures.",  # 1-char typo
+        "Les collaborateurs doivent signaler tout incident dnas un délai de 48 heures.",  # transposition typo
     ],
 )
 def test_honest_variants_accepted(variant):
@@ -152,9 +152,27 @@ def test_obligation_adverb_swap_rejected():
     assert find_quote(source.replace("obligatoirement", "librement"), source) is None
 
 
-def test_single_char_typo_still_accepted_by_token_guard():
-    typo = LONG_SOURCE.replace("registre", "registtre")
-    assert find_quote(typo, LONG_SOURCE) is not None
+def test_mechanical_typos_still_accepted_by_token_guard():
+    assert find_quote(LONG_SOURCE.replace("registre", "registtre"), LONG_SOURCE) is not None
+    assert find_quote(LONG_SOURCE.replace("dans", "dnas"), LONG_SOURCE) is not None
+
+
+@pytest.mark.parametrize(
+    ("original", "tampered"),
+    [
+        ("six mois", "dix mois"),   # written number (digit guard can't see it)
+        ("les", "des"),             # grammatical change, edit distance 1
+        ("dans", "dens"),           # plain substitution: indistinguishable from tampering
+    ],
+)
+def test_one_edit_substitutions_rejected(original, tampered):
+    source = (
+        "La revue de direction du dispositif de gouvernance est organisée tous "
+        "les six mois par le responsable conformité et donne lieu à un compte "
+        "rendu diffusé dans les meilleurs délais à la direction générale."
+    )
+    assert find_quote(source, source) is not None  # sanity
+    assert find_quote(source.replace(original, tampered, 1), source) is None
 
 
 def test_too_short_and_too_long_quotes_rejected():

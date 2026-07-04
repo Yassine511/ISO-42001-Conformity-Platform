@@ -47,12 +47,17 @@ def main() -> int:
     parser.add_argument(
         "--no-checkpointer", action="store_true", help="skip the PostgresSaver checkpointer"
     )
+    parser.add_argument(
+        "--assessment",
+        help="resume an existing RUNNING assessment id after a crash "
+        "(same thread ids -> checkpointed requirements resume, terminal ones are skipped)",
+    )
     args = parser.parse_args()
 
     from sqlalchemy import select
 
     from app.db import SessionLocal
-    from app.models import Organization
+    from app.models import Assessment, Organization
     from app.pipeline.graph import (
         build_graph,
         checkpointer_lifespan,
@@ -72,7 +77,20 @@ def main() -> int:
     requirement_ids = dev_requirement_ids() if args.all_dev else [args.requirement]
 
     lifespan = nullcontext(None) if args.no_checkpointer else checkpointer_lifespan()
-    assessment_id = create_assessment(SessionLocal, org.id)
+    if args.assessment:
+        db = SessionLocal()
+        existing = db.get(Assessment, args.assessment)
+        db.close()
+        if existing is None or existing.organization_id != org.id:
+            print(f"assessment introuvable pour cette organisation : {args.assessment}", file=sys.stderr)
+            return 2
+        if existing.status != AssessmentStatus.RUNNING.value:
+            print(f"assessment non repris : statut {existing.status} (RUNNING requis)", file=sys.stderr)
+            return 2
+        assessment_id = existing.id
+        print(f"reprise de l'assessment {assessment_id}")
+    else:
+        assessment_id = create_assessment(SessionLocal, org.id)
     print(f"assessment {assessment_id} — org « {args.org} » — {len(requirement_ids)} exigence(s)\n")
 
     failures = 0       # unhandled operational errors (exceptions)

@@ -109,20 +109,38 @@ def make_judge_node(session_factory: SessionFactory):
         else:
             messages = base_messages
 
-        outcome = llm_service.complete_json(
-            messages, json_schema=DraftFinding.model_json_schema()
-        )
+        # Crash recovery: the attempt row commits BEFORE LangGraph checkpoints
+        # this node's output. If a crash in that window left a residue attempt
+        # with a SUCCESSFUL call, reuse its persisted response — a second paid
+        # provider call would duplicate cost and desynchronize provenance.
+        reused = _reusable_residue(session_factory, state, attempt_number)
+        if reused is not None:
+            content, reused_provider, reused_model = reused
+            outcome = None
+            final_provider, final_model = reused_provider, reused_model
+            llm_error = None
+        else:
+            outcome = llm_service.complete_json(
+                messages, json_schema=DraftFinding.model_json_schema()
+            )
+            content = outcome.content
+            final_call = outcome.final_call
+            final_provider = final_call.provider if final_call else None
+            final_model = (
+                (final_call.reported_model or final_call.requested_model)
+                if final_call
+                else None
+            )
+            llm_error = outcome.error
 
-        if outcome.content is None:
+        if content is None:
             draft, parse_errors = None, []
         else:
-            draft, parse_errors = _parse_draft(outcome.content)
+            draft, parse_errors = _parse_draft(content)
 
-        final_call = outcome.final_call
         # Persist the semantic attempt + every provider call. UPSERT on the
-        # unique key: the attempt commit happens BEFORE LangGraph checkpoints
-        # this node's output, so a crash in that window leaves a residue row —
-        # the resumed run must overwrite it, not violate uq_attempts_key.
+        # unique key; superseded calls from a crashed run are PRESERVED (new
+        # calls continue the call_number sequence) — provenance is append-only.
         db = session_factory()
         try:
             attempt = db.scalars(
@@ -133,12 +151,9 @@ def make_judge_node(session_factory: SessionFactory):
                 )
             ).first()
             if attempt is not None:
-                for stale_call in list(attempt.llm_calls):
-                    db.delete(stale_call)
                 attempt.prompt_version = PROMPT_VERSION
                 attempt.parsed_ok = draft is not None
                 attempt.verifier_errors = None
-                attempt.started_at = started
                 attempt.finished_at = None
             else:
                 attempt = AssessmentAttempt(
@@ -151,7 +166,9 @@ def make_judge_node(session_factory: SessionFactory):
                 )
                 db.add(attempt)
             db.flush()
-            for i, call in enumerate(outcome.calls, start=1):
+            next_call_number = max((c.call_number for c in attempt.llm_calls), default=0) + 1
+            new_calls = outcome.calls if outcome is not None else []
+            for i, call in enumerate(new_calls, start=next_call_number):
                 db.add(
                     LlmCall(
                         assessment_attempt_id=attempt.id,
@@ -180,20 +197,19 @@ def make_judge_node(session_factory: SessionFactory):
         # the next verify pass (parse errors, if any, are this attempt's own).
         return {
             "draft": draft,
-            "raw_response": outcome.content,
+            "raw_response": content,
             "judge_attempts": attempt_number,
-            "llm_failed": outcome.content is None,
+            "llm_failed": content is None,
             "verification_errors": parse_errors,
-            "final_model": final_call.reported_model or final_call.requested_model
-            if final_call
-            else None,
-            "final_provider": final_call.provider if final_call else None,
+            "final_model": final_model,
+            "final_provider": final_provider,
             "attempt_history": [
                 {
                     "attempt": attempt_number,
                     "prompt_version": PROMPT_VERSION,
                     "parsed_ok": draft is not None,
-                    "llm_error": outcome.error,
+                    "llm_error": llm_error,
+                    "reused_persisted_response": reused is not None,
                     "calls": [
                         {
                             "provider": c.provider,
@@ -202,9 +218,9 @@ def make_judge_node(session_factory: SessionFactory):
                             "status": c.status,
                             "http_status": c.http_status,
                         }
-                        for c in outcome.calls
+                        for c in new_calls
                     ],
-                    "raw_response": outcome.content,
+                    "raw_response": content,
                 }
             ],
             "audit_log": [
@@ -212,12 +228,37 @@ def make_judge_node(session_factory: SessionFactory):
                     "judge",
                     "draft_produced" if draft is not None else "draft_failed",
                     attempt=attempt_number,
-                    provider=final_call.provider if final_call else None,
+                    provider=final_provider,
+                    reused_persisted_response=reused is not None,
                 )
             ],
         }
 
     return judge_node
+
+
+def _reusable_residue(
+    session_factory: SessionFactory, state: GovernanceState, attempt_number: int
+) -> tuple[str, str, str | None] | None:
+    """(content, provider, model) from a crashed run's persisted SUCCESS call,
+    or None. Only complete responses are reused; failed calls rerun normally."""
+    db = session_factory()
+    try:
+        attempt = db.scalars(
+            select(AssessmentAttempt).where(
+                AssessmentAttempt.assessment_id == state["assessment_id"],
+                AssessmentAttempt.requirement_id == state["requirement_id"],
+                AssessmentAttempt.attempt_number == attempt_number,
+            )
+        ).first()
+        if attempt is None:
+            return None
+        for call in sorted(attempt.llm_calls, key=lambda c: c.call_number, reverse=True):
+            if call.status == llm_service.CALL_SUCCESS and call.raw_response:
+                return call.raw_response, call.provider, call.reported_model
+        return None
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------- verify

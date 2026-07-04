@@ -19,10 +19,12 @@ Thresholds are documented policy constants, pinned by boundary tests:
   ~96, "doivent"->"peuvent" ~98, "obligatoirement"->"librement" ~95 — all
   reproduced). Fuzzy acceptance therefore additionally requires token-level
   alignment against the aligned source window: no token may be inserted or
-  deleted, and a substituted token pair must be within edit distance 1
-  (character-level typos pass; word swaps like doivent/peuvent, distance 3,
-  fail). The digit-sequence guard stays on top: "48"->"49" is distance 1 at
-  the token level but changes the requirement's meaning.
+  deleted, and a substituted token pair must be a NARROW TYPO FORM — adjacent
+  transposition ("dnas"/"dans") or repeated-character insertion/deletion
+  ("registtre"/"registre"). Arbitrary single-character substitutions are
+  rejected: valid words sit one edit apart ("six"/"dix", "les"/"des",
+  audit-reproduced at 99.4 partial_ratio), so edit distance alone cannot
+  separate typos from meaning changes. The digit-sequence guard stays on top.
 - CONFIDENCE_MIN is an UNCALIBRATED policy threshold on a model-generated
   number, kept because the spec (§6) gates on it; the raw value is persisted
   as telemetry and M6 measures whether it correlates with correctness. A
@@ -36,7 +38,6 @@ import unicodedata
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
-from rapidfuzz.distance import Levenshtein
 
 from app.pipeline.state import DraftFinding, QuoteMatch, Verdict, VerificationResult
 
@@ -56,9 +57,6 @@ _TRANSLATE = {
     "…": "...",
 }
 
-# Max character edit distance between a substituted token pair in the fuzzy
-# path: 1 = a typo, 2+ = a different word (doivent/peuvent is 3).
-TOKEN_EDIT_MAX = 1
 
 
 @dataclass
@@ -116,11 +114,42 @@ def _tokens(text: str) -> list[str]:
     return re.findall(r"\w+", text, flags=re.UNICODE)
 
 
+def _is_typo_pair(a: str, b: str) -> bool:
+    """True only for narrow mechanical typo forms; never for substitutions.
+
+    Accepted: adjacent transposition ("dnas"/"dans") and repeated-character
+    insertion/deletion ("registtre"/"registre"). A plain one-character
+    substitution is rejected — French words routinely sit one edit apart
+    ("six"/"dix", "les"/"des"), so it cannot be distinguished from tampering.
+    """
+    if a == b:
+        return True
+    if len(a) == len(b):
+        # adjacent transposition: exactly two neighbouring chars swapped
+        diffs = [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
+        return (
+            len(diffs) == 2
+            and diffs[1] == diffs[0] + 1
+            and a[diffs[0]] == b[diffs[1]]
+            and a[diffs[1]] == b[diffs[0]]
+        )
+    if abs(len(a) - len(b)) == 1:
+        longer, shorter = (a, b) if len(a) > len(b) else (b, a)
+        for i in range(len(longer)):
+            if longer[:i] + longer[i + 1:] == shorter:
+                # the extra char must double one of its neighbours
+                return (i > 0 and longer[i] == longer[i - 1]) or (
+                    i + 1 < len(longer) and longer[i] == longer[i + 1]
+                )
+        return False
+    return False
+
+
 def _tokens_aligned(quote: str, window: str) -> bool:
-    """Token-level guard for the fuzzy path: character-level typos pass, any
-    inserted/deleted token or word substitution beyond TOKEN_EDIT_MAX fails.
-    This is what rejects meaning-flipping edits (deleted negation, modal or
-    temporal swaps) that survive the partial_ratio threshold on long quotes."""
+    """Token-level guard for the fuzzy path: narrow mechanical typos pass, any
+    inserted/deleted token or word substitution fails. This is what rejects
+    meaning-flipping edits (deleted negation, modal/temporal swaps, written
+    numbers) that survive the partial_ratio threshold on long quotes."""
     q_tokens, w_tokens = _tokens(quote), _tokens(window)
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(
         a=q_tokens, b=w_tokens, autojunk=False
@@ -130,8 +159,8 @@ def _tokens_aligned(quote: str, window: str) -> bool:
         if op != "replace" or (i2 - i1) != (j2 - j1):
             return False  # token inserted or deleted
         for qt, wt in zip(q_tokens[i1:i2], w_tokens[j1:j2]):
-            if Levenshtein.distance(qt, wt) > TOKEN_EDIT_MAX:
-                return False  # different word, not a typo
+            if not _is_typo_pair(qt, wt):
+                return False  # substitution or different word, not a typo
     return True
 
 

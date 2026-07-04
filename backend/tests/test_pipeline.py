@@ -82,6 +82,10 @@ class FakeLLM:
         self.scripts = list(scripts)
         self.requests: list[list[dict]] = []
 
+    @property
+    def call_count(self) -> int:
+        return len(self.requests)
+
     def complete_json(self, messages, *, json_schema=None):
         self.requests.append(messages)
         content = self.scripts.pop(0)
@@ -468,6 +472,97 @@ def test_attempt_residue_from_crash_is_overwritten_not_violated(env):
     attempts = db.scalars(select(AssessmentAttempt)).all()
     assert len(attempts) == 1
     assert attempts[0].parsed_ok and attempts[0].prompt_version != "0"
+    db.close()
+
+
+def test_crash_residue_with_success_call_reuses_response(env):
+    """Realistic commit-before-checkpoint crash residue: attempt row + a
+    SUCCESSFUL llm_call. The resumed judge must reuse the persisted response
+    (no second paid provider call) and preserve the original call row."""
+    session_factory, org_id = env
+    fake = _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(session_factory, org_id)
+
+    db = session_factory()
+    residue = AssessmentAttempt(
+        assessment_id=assessment_id,
+        requirement_id=REQUIREMENT,
+        attempt_number=1,
+        prompt_version="0",
+        parsed_ok=True,
+    )
+    db.add(residue)
+    db.flush()
+    db.add(
+        LlmCall(
+            assessment_attempt_id=residue.id,
+            call_number=1,
+            provider="mistral",
+            requested_model="mistral-large-latest",
+            status=CALL_SUCCESS,
+            reported_model="mistral-large-2411",
+            raw_response=_valid_draft(),
+            request_messages=[],
+            response_format={},
+            temperature=0.0,
+        )
+    )
+    db.commit()
+    db.close()
+
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "VERIFIED"
+    assert fake.call_count == 0  # persisted response reused, not re-billed
+    assert result.final_provider == "mistral"
+    assert result.final_model == "mistral-large-2411"
+    assert result.attempt_history[0]["reused_persisted_response"] is True
+
+    db = session_factory()
+    calls = db.scalars(select(LlmCall)).all()
+    assert len(calls) == 1 and calls[0].raw_response == _valid_draft()  # preserved
+    db.close()
+
+
+def test_crash_residue_with_failed_call_appends_not_deletes(env):
+    """Residue whose only call failed: the provider IS re-called, and the old
+    call row is preserved — provenance is append-only."""
+    session_factory, org_id = env
+    fake = _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(session_factory, org_id)
+
+    db = session_factory()
+    residue = AssessmentAttempt(
+        assessment_id=assessment_id,
+        requirement_id=REQUIREMENT,
+        attempt_number=1,
+        prompt_version="0",
+        parsed_ok=False,
+    )
+    db.add(residue)
+    db.flush()
+    db.add(
+        LlmCall(
+            assessment_attempt_id=residue.id,
+            call_number=1,
+            provider="mistral",
+            requested_model="mistral-large-latest",
+            status=CALL_HTTP_ERROR,
+            http_status=429,
+            request_messages=[],
+            response_format={},
+            temperature=0.0,
+        )
+    )
+    db.commit()
+    db.close()
+
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "VERIFIED"
+    assert fake.call_count == 1
+    db = session_factory()
+    calls = sorted(db.scalars(select(LlmCall)).all(), key=lambda c: c.call_number)
+    assert [c.status for c in calls] == [CALL_HTTP_ERROR, CALL_SUCCESS]
+    assert [c.call_number for c in calls] == [1, 2]  # appended, nothing erased
     db.close()
 
 
