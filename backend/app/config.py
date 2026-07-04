@@ -33,9 +33,13 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     groq_api_key: str = ""
 
-    # Judge node (M3). Fallback model configurable: Groq has announced the
-    # retirement of llama-3.3-70b-versatile for free/dev tiers (2026-08-16) —
-    # select and VALIDATE a replacement (e.g. openai/gpt-oss-120b) before M6.
+    # Judge node (M3). Fallback model configurable: Groq announced (2026-06-17)
+    # the retirement of llama-3.3-70b-versatile for free/dev tiers (~2026-08-16).
+    # A replacement must be SELECTED AND VALIDATED (JSON mode + grounding on the
+    # dev split) before the cutoff — do NOT swap the default blindly: Groq's own
+    # suggestion openai/gpt-oss-120b has reported structured-output regressions
+    # (json_schema ignored, free-form text), so the json_object path + Pydantic
+    # gate must be re-checked; qwen3 is an alternative candidate.
     # temperature 0 for determinism (still not guaranteed).
     judge_model: str = "mistral-large-latest"
     judge_fallback_model: str = "llama-3.3-70b-versatile"

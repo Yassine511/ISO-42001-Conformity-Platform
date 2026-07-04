@@ -25,12 +25,18 @@ def client():
 
     app.dependency_overrides[get_db] = override_get_db
     # No context manager: skips lifespan (which would hit Postgres); tables are created above.
-    yield TestClient(app)
+    tc = TestClient(app)
+    tc.session_factory = TestSession  # tests needing direct DB setup use this
+    yield tc
     app.dependency_overrides.clear()
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"status": "ok"}
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["dependencies"]["database"] == "ok"
 
 
 def test_org_and_document_flow(client):
@@ -96,3 +102,70 @@ def test_document_has_checksum_and_parser_version(client):
     ).json()
     assert doc["checksum"] == hashlib.sha256(data).hexdigest()
     assert doc["parser_version"]
+
+
+def test_oversized_upload_rejected_by_content_length(client, monkeypatch):
+    """The Content-Length guard rejects an oversized upload with 413 before the
+    body is parsed/persisted (limit shrunk for the test)."""
+    import app.api.documents as docs_mod
+
+    monkeypatch.setattr(docs_mod, "MAX_FILE_SIZE", 50)
+    org_id = client.post("/api/organizations", json={"name": "Big SA"}).json()["id"]
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("big.txt", b"A" * 500, "text/plain")},
+    )
+    assert r.status_code == 413
+    assert client.get(f"/api/organizations/{org_id}/documents").json() == []
+
+
+def test_cited_document_cannot_be_deleted(client):
+    """Audit-trail guard: a document cited by a finding must not be deletable —
+    its removal would leave the citation dangling."""
+    from app.models import Assessment, Chunk, Document, DocumentPage, Finding, Organization
+
+    db = client.session_factory()
+    org = Organization(name="Cite SA")
+    db.add(org)
+    db.commit()
+    doc = Document(
+        organization_id=org.id,
+        filename="p.txt",
+        content_type="text/plain",
+        status="parsed",
+        page_count=1,
+        checksum="c1",
+        parser_version="2",
+    )
+    db.add(doc)
+    db.commit()
+    db.add(DocumentPage(document_id=doc.id, page_number=1, text="x" * 50))
+    db.add(
+        Chunk(
+            id="chunk-cite-1",
+            document_id=doc.id,
+            page_number=1,
+            char_start=0,
+            char_end=10,
+            text="x" * 10,
+        )
+    )
+    assessment = Assessment(organization_id=org.id, corpus_version="1.0.0", status="RUNNING")
+    db.add(assessment)
+    db.commit()
+    db.add(
+        Finding(
+            assessment_id=assessment.id,
+            requirement_id="A.9.2",
+            status="VERIFIED",
+            matched_chunk_id="chunk-cite-1",
+            attempts=1,
+        )
+    )
+    db.commit()
+    org_id, doc_id = org.id, doc.id
+    db.close()
+
+    assert client.delete(f"/api/documents/{doc_id}").status_code == 409
+    # still present: the guard fired before any deletion
+    assert len(client.get(f"/api/organizations/{org_id}/documents").json()) == 1

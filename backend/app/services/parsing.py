@@ -8,6 +8,7 @@ and why documents with no extractable text are rejected instead of stored.
 """
 
 import io
+import zipfile
 
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
@@ -27,7 +28,19 @@ class InvalidEncoding(Exception):
     pass
 
 
+class DocumentTooLarge(Exception):
+    """A DOCX whose declared uncompressed size exceeds the expansion cap
+    (zip-bomb guard): the on-disk file passed the upload limit but would
+    inflate far beyond it in memory."""
+
+
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+
+# Cap on total DECOMPRESSED DOCX content. A .docx is a zip; a small upload can
+# declare gigabytes of expanded parts. Checked against the central directory's
+# declared sizes — a first-line guard against the common inflate-bomb, not a
+# defence against a crafted archive that understates its sizes.
+MAX_DOCX_UNCOMPRESSED = 100 * 1024 * 1024  # 100 MB
 
 # Bump whenever extraction logic changes: stored on each Document so M2 can
 # detect stale parses and reindex idempotently.
@@ -73,6 +86,13 @@ def _parse_pdf(data: bytes) -> list[str]:
 
 def _parse_docx(data: bytes) -> list[str]:
     """Extract paragraphs and tables in true document order (body XML order)."""
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        expanded = sum(info.file_size for info in zf.infolist())
+    if expanded > MAX_DOCX_UNCOMPRESSED:
+        raise DocumentTooLarge(
+            f"Document DOCX trop volumineux une fois décompressé "
+            f"({expanded // (1024 * 1024)} Mo, limite {MAX_DOCX_UNCOMPRESSED // (1024 * 1024)} Mo)."
+        )
     doc = DocxDocument(io.BytesIO(data))
     parts: list[str] = []
     for child in doc.element.body.iterchildren():

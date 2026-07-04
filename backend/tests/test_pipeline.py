@@ -833,3 +833,123 @@ def test_demo_selection_uses_dev_split_only():
     assert all(by_req[r] == "dev" for r in ids)
     # M6-reserved ids must never be selectable
     assert "5.2" not in ids and "7.1" not in ids
+
+
+# ------------------------------------------------- lifecycle / schema guards
+
+
+def test_create_assessment_rejects_unknown_requirement_ids(env):
+    """Validate the manifest at creation: an unknown id would otherwise trap
+    the assessment RUNNING forever (never reaches coverage)."""
+    session_factory, org_id = env
+    with pytest.raises(ValueError, match="inconnue"):
+        create_assessment(session_factory, org_id, requirement_ids=["A.9.2", "NOPE.1"])
+
+
+def test_off_manifest_requirement_rejected_on_running_assessment(env):
+    """A requirement outside the stored manifest must not create a finding."""
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(
+        session_factory, org_id, requirement_ids=[REQUIREMENT]
+    )
+    with pytest.raises(ValueError, match="hors manifeste"):
+        run_requirement(session_factory, assessment_id, "A.4.5")
+    db = session_factory()
+    assert not db.scalars(select(Finding)).all()  # nothing persisted
+    db.close()
+
+
+def test_completed_assessment_rejects_new_finding_but_stays_readable(env):
+    """Reproduction of the reported corruption: a COMPLETED assessment accepted
+    a new off-manifest finding while staying COMPLETED. New work must now raise;
+    reading back an existing finding stays idempotent."""
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(
+        session_factory, org_id, requirement_ids=[REQUIREMENT]
+    )
+    run_requirement(session_factory, assessment_id, REQUIREMENT)
+    finalize_assessment(session_factory, assessment_id, AssessmentStatus.COMPLETED)
+
+    # idempotent read of the existing finding still works on a terminal assessment
+    again = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert again.status == "VERIFIED"
+    # but a NEW finding on a terminal assessment must raise, not be created
+    with pytest.raises(ValueError, match="non modifiable"):
+        run_requirement(session_factory, assessment_id, "A.4.5")
+
+    from app.models import Assessment
+
+    db = session_factory()
+    assert db.get(Assessment, assessment_id).status == "COMPLETED"
+    assert len(db.scalars(select(Finding)).all()) == 1  # no A.4.5 finding leaked
+    db.close()
+
+
+def test_over_long_clause_ref_is_rejected_by_schema():
+    """clause_ref longer than Finding.clause_ref VARCHAR(20) must fail schema
+    validation, not reach PostgreSQL as a DataError."""
+    from pydantic import ValidationError
+
+    from app.pipeline.state import DraftFinding
+
+    with pytest.raises(ValidationError):
+        DraftFinding.model_validate(
+            {
+                "verdict": "compliant",
+                "policy_quote": "x" * 40,
+                "clause_ref": "A" * 100,
+                "confidence": 0.9,
+                "rationale": "r",
+            }
+        )
+
+
+def test_over_long_clause_ref_routes_to_abstain_not_crash(env):
+    """End-to-end: a model emitting an over-long clause_ref abstains via the
+    designed failure path (schema error -> repair -> abstain), never crashing
+    and leaving the assessment RUNNING with no terminal finding."""
+    bad = _valid_draft(clause="A" * 100)
+    session_factory, _, fake, result = _run(env, [bad, bad])
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "verification_failed"
+    assert len(fake.requests) == 2  # schema failure -> exactly one repair
+    assert "clause_ref" in fake.requests[1][-1]["content"]  # repair names the field
+    db = session_factory()
+    assert db.scalars(select(Finding)).one().status == "ABSTAINED"  # terminal row exists
+    db.close()
+
+
+def test_429_then_hard_failure_is_llm_error_not_rate_limited(env):
+    """An early 429 followed by an unrelated terminal failure (500) is
+    llm_error, not rate_limited: throttling was not the decisive cause."""
+    from app.pipeline.llm import CALL_HTTP_ERROR as _HE
+    from app.pipeline.llm import LLMCall as _LC
+    from app.pipeline.llm import LLMOutcome as _LO
+
+    class MixedFailureLLM:
+        def complete_json(self, messages, *, json_schema=None):
+            def call(provider, http_status):
+                return _LC(
+                    provider=provider,
+                    requested_model="m",
+                    status=_HE,
+                    http_status=http_status,
+                    request_messages=messages,
+                    response_format={},
+                    temperature=0.0,
+                )
+
+            return _LO(
+                content=None,
+                calls=[call("mistral", 429), call("groq", 500)],
+                error="tous les fournisseurs LLM ont échoué",
+            )
+
+    session_factory, org_id = env
+    llm_service.set_provider(MixedFailureLLM())
+    assessment_id = create_assessment(session_factory, org_id)
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "llm_error"  # NOT rate_limited

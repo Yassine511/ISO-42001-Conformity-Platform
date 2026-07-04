@@ -49,6 +49,26 @@ def test_unsupported_type():
         parse_document("image.png", b"\x89PNG")
 
 
+def test_docx_expanded_size_guard(monkeypatch):
+    """A DOCX whose declared uncompressed size exceeds the cap is rejected as a
+    zip-bomb before python-docx inflates it."""
+    import io
+
+    from docx import Document as DocxDocument
+
+    from app.services import parsing
+    from app.services.parsing import DocumentTooLarge
+
+    d = DocxDocument()
+    d.add_paragraph("Contenu normal.")
+    buf = io.BytesIO()
+    d.save(buf)
+    # a real .docx expands to several KB; a tiny cap must reject it
+    monkeypatch.setattr(parsing, "MAX_DOCX_UNCOMPRESSED", 10)
+    with pytest.raises(DocumentTooLarge):
+        parse_document("bombe.docx", buf.getvalue())
+
+
 def test_parse_docx_preserves_table_position():
     import io
 

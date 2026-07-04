@@ -82,6 +82,15 @@ def create_assessment(
     """requirement_ids is the run MANIFEST: what this assessment is meant to
     cover. Resume paths validate against it (see resume_manifest)."""
     kb = load_kb()
+    # Validate the manifest at creation: an unknown id would otherwise leave
+    # the assessment RUNNING forever (run_requirement raises "exigence inconnue"
+    # for it every resume, and coverage is never reached).
+    if requirement_ids is not None:
+        unknown = [rid for rid in requirement_ids if rid not in kb["by_id"]]
+        if unknown:
+            raise ValueError(
+                "exigence(s) inconnue(s) dans la base ISO 42001 : " + ", ".join(unknown)
+            )
     db = session_factory()
     try:
         assessment = Assessment(
@@ -274,6 +283,8 @@ def run_requirement(
             raise ValueError(f"assessment inconnu : {assessment_id}")
         org_id = assessment.organization_id
         assessment_corpus_version = assessment.corpus_version
+        assessment_status = assessment.status
+        assessment_manifest = assessment.requirement_ids
         existing = db.scalars(
             select(Finding).where(
                 Finding.assessment_id == assessment_id,
@@ -282,8 +293,26 @@ def run_requirement(
         ).first()
     finally:
         db.close()
+    # Idempotency: reading back an already-terminal finding is always safe,
+    # even on a COMPLETED/FAILED assessment (M4 result display re-reads these).
     if existing is not None:
         return _result_from_row(session_factory, existing)
+
+    # Lifecycle guard: a NEW finding may only be created on a RUNNING assessment
+    # that actually planned this requirement. Without this, a COMPLETED
+    # assessment silently accepts an out-of-manifest finding and stays COMPLETED
+    # (corrupt lifecycle), and an off-manifest requirement inflates coverage.
+    if assessment_status != AssessmentStatus.RUNNING.value:
+        raise ValueError(
+            f"assessment non modifiable : statut {assessment_status} "
+            f"(RUNNING requis pour produire un nouveau constat)."
+        )
+    if assessment_manifest is not None and requirement_id not in assessment_manifest:
+        raise ValueError(
+            f"exigence hors manifeste : « {requirement_id} » ne fait pas partie "
+            f"des {len(assessment_manifest)} exigence(s) planifiée(s) pour cet "
+            f"assessment ; créez un nouvel assessment pour l'évaluer."
+        )
 
     kb = load_kb()
     # Provenance guard: a long-running assessment must not silently mix

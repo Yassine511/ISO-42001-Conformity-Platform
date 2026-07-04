@@ -3,13 +3,17 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from starlette.responses import JSONResponse
 
 from app import models  # noqa: F401 — register tables on Base metadata
 from app.api import documents, organizations, retrieval
 from app.config import settings
-from app.db import Base, engine
+from app.db import Base, engine, get_db
+from app.services import qdrant
 
 
 def run_migrations() -> None:
@@ -35,6 +39,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="INT102 — Copilote de conformité ISO/IEC 42001", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def reject_oversized_upload(request: Request, call_next):
+    """Reject an oversized upload by its declared Content-Length BEFORE Starlette
+    parses (and buffers) the multipart body. A chunked request without the
+    header slips through here and is bounded instead by the capped read in the
+    documents handler."""
+    if request.method == "POST" and request.url.path.endswith("/documents"):
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                oversized = int(declared) > documents.MAX_FILE_SIZE
+            except ValueError:
+                oversized = False
+            if oversized:
+                return JSONResponse(
+                    {"detail": "Fichier trop volumineux (limite : 20 Mo)."},
+                    status_code=413,
+                )
+    return await call_next(request)
+
+
+# Added AFTER the upload guard so CORS is the outermost layer (its headers apply
+# even to the early 413).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -48,5 +76,23 @@ app.include_router(retrieval.router)
 
 
 @app.get("/api/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    """Liveness + dependency readiness: probes PostgreSQL and Qdrant so an
+    orchestrator (and the container healthcheck) sees 503 when a backing store
+    is down instead of a misleading 200."""
+    deps: dict[str, str] = {}
+    healthy = True
+    try:
+        db.execute(text("SELECT 1"))
+        deps["database"] = "ok"
+    except Exception:
+        deps["database"] = "unavailable"
+        healthy = False
+    try:
+        qdrant.get_client().get_collections()
+        deps["qdrant"] = "ok"
+    except Exception:
+        deps["qdrant"] = "unavailable"
+        healthy = False
+    body = {"status": "ok" if healthy else "degraded", "dependencies": deps}
+    return body if healthy else JSONResponse(body, status_code=503)

@@ -80,7 +80,12 @@ class DraftFinding(BaseModel):
     # "compliant" for an Enum; membership is still fully validated.
     verdict: Verdict = Field(strict=False)
     policy_quote: str | None = Field(default=None, max_length=300)
-    clause_ref: str
+    # max_length mirrors Finding.clause_ref VARCHAR(20): an over-long value from
+    # the model must fail validation HERE (-> repair -> abstain via the designed
+    # failure path), never reach PostgreSQL as a DataError that leaves the
+    # assessment RUNNING with no terminal finding. Every bounded DB column that
+    # stores untrusted model output has a matching Pydantic bound.
+    clause_ref: str = Field(max_length=20)
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
 

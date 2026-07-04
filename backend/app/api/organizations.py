@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -16,7 +17,13 @@ def create_organization(payload: OrganizationCreate, db: Session = Depends(get_d
         raise HTTPException(409, "Une organisation portant ce nom existe déjà.")
     org = Organization(name=payload.name)
     db.add(org)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Concurrent create slipped past the pre-check; the UNIQUE(name)
+        # constraint is the atomic gate (mirrors documents upload).
+        db.rollback()
+        raise HTTPException(409, "Une organisation portant ce nom existe déjà.")
     return org
 
 
