@@ -31,6 +31,14 @@ from app.pipeline.state import AssessmentResult, AssessmentStatus, GovernanceSta
 from app.services.retrieval import load_kb
 
 
+class CorpusVersionMismatchError(ValueError):
+    """The KB corpus_version changed after the assessment was created.
+
+    Permanent for the assessment: no retry or resume can succeed, so callers
+    must finalize it FAILED (a bare exception would leave it RUNNING forever,
+    with every resume attempt hitting the same guard)."""
+
+
 def to_psycopg_dsn(url: str) -> str:
     """SQLAlchemy URL -> plain libpq DSN (psycopg rejects '+driver' schemes)."""
     scheme, sep, rest = url.partition("://")
@@ -147,6 +155,16 @@ def finalize_assessment(
         db.close()
 
 
+def resolve_run_status(total: int, infra_abstains: int) -> AssessmentStatus:
+    """Final status of a fully-covered run: evidentiary abstention is a valid
+    outcome -> COMPLETED; a run where EVERY finding is an infrastructure
+    failure (llm_error/rate_limited) failed as a whole. This decision lives
+    here — not in callers — so the CLI and the M4 API cannot diverge."""
+    if total > 0 and infra_abstains >= total:
+        return AssessmentStatus.FAILED
+    return AssessmentStatus.COMPLETED
+
+
 def unfinished_requirements(
     session_factory: SessionFactory, assessment_id: str, requirement_ids: list[str]
 ) -> list[str]:
@@ -230,7 +248,7 @@ def _result_from_row(session_factory: SessionFactory, row: Finding) -> Assessmen
         final_provider=row.final_provider,
         retrieved=row.retrieved or [],
         attempt_history=history,
-        audit_log=[],
+        audit_log=row.audit_log or [],
     )
 
 
@@ -271,7 +289,7 @@ def run_requirement(
     # Provenance guard: a long-running assessment must not silently mix
     # requirement definitions from different corpus versions.
     if kb["corpus_version"] != assessment_corpus_version:
-        raise ValueError(
+        raise CorpusVersionMismatchError(
             f"corpus_version a changé pendant l'assessment : "
             f"{assessment_corpus_version} (assessment) != {kb['corpus_version']} (KB) ; "
             f"créez un nouvel assessment."

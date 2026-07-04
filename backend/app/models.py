@@ -196,6 +196,9 @@ class Finding(Base):
     final_model: Mapped[str | None] = mapped_column(String(100), nullable=True)  # NULL on llm_error
     final_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     retrieved: Mapped[list] = mapped_column(JSON, default=list)
+    # terminal per-node audit trail (retrieve->judge->verify events); NULL for
+    # findings persisted before revision 0007
+    audit_log: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     assessment: Mapped[Assessment] = relationship(back_populates="findings")

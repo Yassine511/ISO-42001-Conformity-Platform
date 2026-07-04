@@ -189,7 +189,14 @@ def _expand_to_word_boundaries(text: str, start: int, end: int) -> tuple[int, in
 def find_quote(quote: str, chunk_text: str) -> tuple[int, int, str, float] | None:
     """Locate `quote` in `chunk_text`. Returns raw (start, end, method, score)
     offsets into chunk_text, or None if the quote cannot be verified."""
-    nq = normalize(quote)
+    return _find_normalized(normalize(quote), chunk_text)
+
+
+def _find_normalized(
+    nq: NormalizedText, chunk_text: str
+) -> tuple[int, int, str, float] | None:
+    """find_quote with the quote already normalized — callers matching one
+    quote against several chunks normalize it once, not once per chunk."""
     nc = normalize(chunk_text)
     if not (MIN_QUOTE_LEN <= len(nq.text) <= MAX_QUOTE_LEN):
         return None
@@ -218,12 +225,15 @@ def find_quote(quote: str, chunk_text: str) -> tuple[int, int, str, float] | Non
     return start, end, "fuzzy", float(alignment.score)
 
 
-def find_quote_in_retrieved(quote: str, retrieved: list[dict]) -> QuoteMatch | None:
+def find_quote_in_retrieved(
+    quote: str | NormalizedText, retrieved: list[dict]
+) -> QuoteMatch | None:
     """Try each retrieved policy chunk; return page-relative raw offsets."""
+    nq = quote if isinstance(quote, NormalizedText) else normalize(quote)
     for item in retrieved:
         if item.get("source_type") != "policy":
             continue
-        located = find_quote(quote, item["text"])
+        located = _find_normalized(nq, item["text"])
         if located is not None:
             start, end, method, score = located
             base = item.get("char_start") or 0
@@ -277,7 +287,8 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
             errors.append(msg)
             repair_errors.append(msg)
         else:
-            nq_len = len(normalize(quote).text)
+            nq = normalize(quote)  # once; reused across every retrieved chunk
+            nq_len = len(nq.text)
             if nq_len < MIN_QUOTE_LEN:
                 msg = (
                     f"policy_quote trop courte ({nq_len} caractères utiles) : "
@@ -293,7 +304,7 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
                 errors.append(msg)
                 repair_errors.append(msg)
             else:
-                match = find_quote_in_retrieved(quote, retrieved)
+                match = find_quote_in_retrieved(nq, retrieved)
                 if match is None:
                     msg = (
                         "citation introuvable : la policy_quote doit exister mot pour "

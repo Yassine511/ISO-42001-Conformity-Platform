@@ -16,7 +16,10 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-CHUNKER_VERSION = "1"
+# "2": the forward-only cut cursor (last_cut) changed cut-point selection for
+# long paragraphs; that change shipped without a bump, so "1" ambiguously
+# covers both behaviours. Reindex after deploying.
+CHUNKER_VERSION = "2"
 TARGET_CHARS = 1000
 HARD_MAX_CHARS = 1200
 FORCED_SPLIT_OVERLAP = 100

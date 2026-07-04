@@ -48,6 +48,19 @@ class AbstainReason(str, Enum):
     RATE_LIMITED = "rate_limited"                # throttled (429) — infra, not evidence
 
 
+# Abstentions caused by provider infrastructure (outage, throttling), not by
+# an evidentiary judgment. Kept next to the enum so every consumer (CLI, M4
+# API) classifies identically.
+INFRASTRUCTURE_ABSTAIN_REASONS = frozenset(
+    {AbstainReason.LLM_ERROR.value, AbstainReason.RATE_LIMITED.value}
+)
+
+
+def is_infrastructure_failure(abstain_reason: str | None) -> bool:
+    """True when an abstention reflects provider failure, not evidence."""
+    return abstain_reason in INFRASTRUCTURE_ABSTAIN_REASONS
+
+
 class AssessmentStatus(str, Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"

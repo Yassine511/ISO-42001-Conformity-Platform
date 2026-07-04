@@ -76,7 +76,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "abstain_reason IS NULL OR abstain_reason IN "
             "('model_abstained', 'verification_failed', 'fuzzy_citation', "
-            "'low_confidence', 'llm_error', 'rate_limited')",
+            "'low_confidence', 'llm_error')",
             name="ck_findings_abstain_reason",
         ),
         sa.CheckConstraint(
@@ -121,7 +121,6 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("call_number", sa.Integer(), nullable=False),
-        sa.Column("prompt_version", sa.String(20), nullable=False, server_default=""),
         sa.Column("provider", sa.String(20), nullable=False),
         sa.Column("requested_model", sa.String(100), nullable=False),
         sa.Column("status", sa.String(20), nullable=False),

@@ -335,9 +335,19 @@ def _record_verifier_errors(
         db.close()
 
 
-def _persist_finding(session_factory: SessionFactory, state: GovernanceState, finding: dict) -> str:
+def _persist_finding(
+    session_factory: SessionFactory,
+    state: GovernanceState,
+    finding: dict,
+    audit_event: dict | None = None,
+) -> str:
     """Idempotent terminal upsert keyed on (assessment_id, requirement_id):
-    checkpoint re-execution must not duplicate findings."""
+    checkpoint re-execution must not duplicate findings.
+
+    Sets finding["finding_id"] on the dict it was given and persists the full
+    audit trail (accumulated state events + this terminal event) so the
+    decision trace survives resume — the state audit_log otherwise lives only
+    in the LangGraph checkpoint."""
     match = finding.get("match") or {}
     db = session_factory()
     try:
@@ -372,7 +382,11 @@ def _persist_finding(session_factory: SessionFactory, state: GovernanceState, fi
         row.final_model = state.get("final_model")
         row.final_provider = state.get("final_provider")
         row.retrieved = state.get("retrieved") or []
+        row.audit_log = (state.get("audit_log") or []) + (
+            [audit_event] if audit_event is not None else []
+        )
         db.commit()
+        finding["finding_id"] = row.id
         return row.id
     finally:
         db.close()
@@ -392,12 +406,9 @@ def make_verify_node(session_factory: SessionFactory):
                 errors=["tous les fournisseurs LLM ont échoué"],
             )
             _record_verifier_errors(session_factory, state, finding["errors"])
-            fid = _persist_finding(session_factory, state, finding)
-            finding["finding_id"] = fid
-            return {
-                "finding": finding,
-                "audit_log": [_audit("verify", "abstained", reason=reason)],
-            }
+            event = _audit("verify", "abstained", reason=reason)
+            _persist_finding(session_factory, state, finding, audit_event=event)
+            return {"finding": finding, "audit_log": [event]}
 
         draft_payload = state.get("draft")
         if draft_payload is None:
@@ -419,12 +430,9 @@ def make_verify_node(session_factory: SessionFactory):
                 abstain_reason=AbstainReason.MODEL_ABSTAINED.value,
                 errors=result.errors,
             )
-            fid = _persist_finding(session_factory, state, finding)
-            finding["finding_id"] = fid
-            return {
-                "finding": finding,
-                "audit_log": [_audit("verify", "abstained", reason="model_abstained")],
-            }
+            event = _audit("verify", "abstained", reason="model_abstained")
+            _persist_finding(session_factory, state, finding, audit_event=event)
+            return {"finding": finding, "audit_log": [event]}
 
         # Precedence 3: low confidence as the ONLY failure — abstain without
         # retry (repair feedback would only teach confidence inflation).
@@ -436,12 +444,9 @@ def make_verify_node(session_factory: SessionFactory):
                 errors=result.errors,
                 match=result.match,
             )
-            fid = _persist_finding(session_factory, state, finding)
-            finding["finding_id"] = fid
-            return {
-                "finding": finding,
-                "audit_log": [_audit("verify", "abstained", reason="low_confidence")],
-            }
+            event = _audit("verify", "abstained", reason="low_confidence")
+            _persist_finding(session_factory, state, finding, audit_event=event)
+            return {"finding": finding, "audit_log": [event]}
 
         # Precedence 4: all checks pass — citation/schema-verified.
         if result.ok:
@@ -452,12 +457,11 @@ def make_verify_node(session_factory: SessionFactory):
                 errors=[],
                 match=result.match,
             )
-            fid = _persist_finding(session_factory, state, finding)
-            finding["finding_id"] = fid
-            return {
-                "finding": finding,
-                "audit_log": [_audit("verify", "verified", method=result.match.method if result.match else None)],
-            }
+            event = _audit(
+                "verify", "verified", method=result.match.method if result.match else None
+            )
+            _persist_finding(session_factory, state, finding, audit_event=event)
+            return {"finding": finding, "audit_log": [event]}
 
         # Precedence 5/6: retryable failure or exhausted retries.
         return _route_failure(
@@ -506,12 +510,9 @@ def make_verify_node(session_factory: SessionFactory):
             errors=errors,
             match=candidate_match,
         )
-        fid = _persist_finding(session_factory, state, finding)
-        finding["finding_id"] = fid
-        return {
-            "finding": finding,
-            "audit_log": [_audit("verify", "abstained", reason=finding["abstain_reason"])],
-        }
+        event = _audit("verify", "abstained", reason=finding["abstain_reason"])
+        _persist_finding(session_factory, state, finding, audit_event=event)
+        return {"finding": finding, "audit_log": [event]}
 
     return verify_node
 

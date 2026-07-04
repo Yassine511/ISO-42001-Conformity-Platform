@@ -62,16 +62,18 @@ def main() -> int:
     from app.db import SessionLocal
     from app.models import Assessment, Organization
     from app.pipeline.graph import (
+        CorpusVersionMismatchError,
         build_graph,
         checkpointer_lifespan,
         create_assessment,
         finalize_assessment,
         note_assessment_error,
+        resolve_run_status,
         resume_manifest,
         run_requirement,
         unfinished_requirements,
     )
-    from app.pipeline.state import AssessmentStatus
+    from app.pipeline.state import AssessmentStatus, is_infrastructure_failure
 
     db = SessionLocal()
     org = db.scalars(select(Organization).where(Organization.name == args.org)).first()
@@ -121,11 +123,19 @@ def main() -> int:
                     result = run_requirement(
                         SessionLocal, assessment_id, req_id, k=args.k, compiled_graph=graph
                     )
+                except CorpusVersionMismatchError as exc:
+                    # permanent: no resume can succeed — leaving the assessment
+                    # RUNNING would trap it in an unresumable loop
+                    finalize_assessment(
+                        SessionLocal, assessment_id, AssessmentStatus.FAILED, error=str(exc)
+                    )
+                    print(f"\nassessment {assessment_id} FAILED : {exc}", file=sys.stderr)
+                    return 1
                 except Exception as exc:  # operational failure, not a finding
                     failures += 1
                     print(f"[{req_id}] ERREUR OPÉRATIONNELLE : {exc}", file=sys.stderr)
                     continue
-                if result.abstain_reason in ("llm_error", "rate_limited"):
+                if is_infrastructure_failure(result.abstain_reason):
                     infra_abstains += 1
                 _print_result(result)
     except Exception as exc:
@@ -164,14 +174,12 @@ def main() -> int:
         )
         return 1
 
-    # Full coverage. Evidentiary abstention is a valid outcome -> COMPLETED;
-    # if EVERY finding is an infrastructure failure, the run failed as a whole.
-    total = len(requirement_ids)
-    all_infra = infra_abstains >= total and total > 0
+    # Full coverage: the COMPLETED/FAILED decision is owned by the pipeline
+    # layer (resolve_run_status), not this CLI.
     finalize_assessment(
         SessionLocal,
         assessment_id,
-        AssessmentStatus.FAILED if all_infra else AssessmentStatus.COMPLETED,
+        resolve_run_status(len(requirement_ids), infra_abstains),
         error=error_note,
     )
     print(f"\nassessment {assessment_id} finalisé"
