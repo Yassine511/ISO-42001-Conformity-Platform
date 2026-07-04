@@ -3,6 +3,15 @@
 Tolerant-but-strict quote matching: honest quotes survive whitespace, casing,
 accent and typographic differences; fabricated or paraphrased quotes do not.
 
+VERIFIED requires an EXACT match after normalization. The fuzzy path only
+produces a *candidate*: mechanical typo forms can still turn one valid French
+word into another ("lire"->"lier" by transposition, "Date"->"Datte" by
+doubling — audit-reproduced), so a fuzzy match is never fail-closed proof.
+verify() therefore treats a fuzzy-only match as a repairable error ("recopie
+exactement") and, if the retry still cannot produce an exact quote, the
+finding abstains with reason `fuzzy_citation`, carrying the match provenance
+for priority human review (M5).
+
 Normalization keeps an index map (normalized char -> original offsets) because
 whitespace collapse, ellipsis expansion and accent-mark removal change string
 lengths — offsets found in normalized space must be converted back to raw
@@ -50,8 +59,12 @@ CONFIDENCE_MIN = 0.5
 # non-breaking spaces). Multi-char expansions are supported by the index map.
 _TRANSLATE = {
     "’": "'", "‘": "'", "‛": "'",
-    "“": '"', "”": '"', "„": '"',
-    "«": '"', "»": '"',
+    # Double-quote marks map to a SPACE (then collapse): « critiques » and
+    # "critiques" both normalize to ' critiques ', so honest typographic
+    # quoting matches on the exact path instead of degrading to fuzzy.
+    # Apostrophes are kept — they are lexical in French (l'usage).
+    "“": " ", "”": " ", "„": " ",
+    "«": " ", "»": " ", '"': " ",
     " ": " ", " ": " ", " ": " ",
     "–": "-", "—": "-",
     "…": "...",
@@ -286,6 +299,17 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
                         "citation introuvable : la policy_quote doit exister mot pour "
                         "mot dans les extraits fournis ; citez un passage verbatim, "
                         "sans reformulation."
+                    )
+                    errors.append(msg)
+                    repair_errors.append(msg)
+                elif match.method != "exact":
+                    # A fuzzy match is a candidate, not proof: mechanical typo
+                    # forms can flip valid words (lire/lier, Date/Datte). Keep
+                    # the match provenance, but require an exact re-quote.
+                    msg = (
+                        f"citation approximative (similarité {match.score:.1f}) : "
+                        "la citation diffère légèrement du texte source ; recopie "
+                        "le passage EXACTEMENT, caractère par caractère."
                     )
                     errors.append(msg)
                     repair_errors.append(msg)

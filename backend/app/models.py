@@ -130,6 +130,10 @@ class Assessment(Base):
     )
     corpus_version: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="RUNNING")
+    # Run manifest: the requirement ids this assessment was created to cover.
+    # Resume validates against it so a crashed A.9.2 run cannot be "resumed"
+    # with A.4.5 and finalized COMPLETED while A.9.2 stays unfinished.
+    requirement_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -159,7 +163,8 @@ class Finding(Base):
         ),
         CheckConstraint(
             "abstain_reason IS NULL OR abstain_reason IN "
-            "('model_abstained', 'verification_failed', 'low_confidence', 'llm_error')",
+            "('model_abstained', 'verification_failed', 'fuzzy_citation', "
+            "'low_confidence', 'llm_error')",
             name="ck_findings_abstain_reason",
         ),
         CheckConstraint(

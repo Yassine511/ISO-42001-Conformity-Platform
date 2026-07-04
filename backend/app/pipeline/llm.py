@@ -13,6 +13,7 @@ provenance (which provider, which status, when) survives total failure and is
 persisted in llm_calls.
 """
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
@@ -33,6 +34,7 @@ from app.config import settings
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 REQUEST_TIMEOUT = 60.0
+MAX_BACKOFF_SECONDS = 30.0  # cap on Retry-After / exponential delay
 
 # llm_calls.status values
 CALL_SUCCESS = "SUCCESS"
@@ -82,6 +84,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _backoff_delay(resp: httpx.Response, backoff_round: int) -> float:
+    """Retry-After header when present, else exponential; always capped."""
+    retry_after = resp.headers.get("retry-after")
+    if retry_after:
+        try:
+            return min(float(retry_after), MAX_BACKOFF_SECONDS)
+        except ValueError:
+            pass
+    return min(settings.judge_429_base_delay * (2 ** backoff_round), MAX_BACKOFF_SECONDS)
+
+
 def mistral_response_format(json_schema: dict | None) -> dict:
     """Mistral's json_schema envelope is part of the API contract."""
     if json_schema is None:
@@ -119,66 +132,75 @@ class HttpJsonLLM:
             ),
         ]
         for provider, url, api_key, model, response_format in providers:
-            call = LLMCall(
-                provider=provider,
-                requested_model=model,
-                status=CALL_SKIPPED_NO_KEY,
-                request_messages=messages,
-                response_format=response_format,
-                temperature=settings.judge_temperature,
-                started_at=_now(),
-            )
-            if not api_key:
-                call.error = "clé API absente"
-                call.finished_at = _now()
-                calls.append(call)
-                continue
-            try:
-                resp = httpx.post(
-                    url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": model,
-                        "messages": messages,
-                        "temperature": settings.judge_temperature,
-                        "response_format": response_format,
-                    },
-                    timeout=REQUEST_TIMEOUT,
+            # Rate-limit handling (spec §12: batch runs must be throttled):
+            # a 429 is retried on the SAME provider with exponential backoff
+            # (honouring Retry-After), each retry logged as its own call —
+            # falling straight through to the fallback would pollute M6
+            # metrics with llm_error abstentions that are really throttling.
+            for backoff_round in range(settings.judge_429_retries + 1):
+                call = LLMCall(
+                    provider=provider,
+                    requested_model=model,
+                    status=CALL_SKIPPED_NO_KEY,
+                    request_messages=messages,
+                    response_format=response_format,
+                    temperature=settings.judge_temperature,
+                    started_at=_now(),
                 )
-            except httpx.HTTPError as exc:
-                call.status = CALL_NETWORK_ERROR
-                call.error = f"{type(exc).__name__}: {exc}"
+                if not api_key:
+                    call.error = "clé API absente"
+                    call.finished_at = _now()
+                    calls.append(call)
+                    break  # no key: retrying is pointless, go to fallback
+                try:
+                    resp = httpx.post(
+                        url,
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "temperature": settings.judge_temperature,
+                            "response_format": response_format,
+                        },
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                except httpx.HTTPError as exc:
+                    call.status = CALL_NETWORK_ERROR
+                    call.error = f"{type(exc).__name__}: {exc}"
+                    call.finished_at = _now()
+                    calls.append(call)
+                    break  # network error: try the fallback provider
+                call.http_status = resp.status_code
                 call.finished_at = _now()
+                if resp.status_code != 200:
+                    call.status = CALL_HTTP_ERROR
+                    call.error = resp.text[:2000]
+                    call.raw_response = resp.text[:2000]  # error body is provenance too
+                    calls.append(call)
+                    if resp.status_code == 429 and backoff_round < settings.judge_429_retries:
+                        time.sleep(_backoff_delay(resp, backoff_round))
+                        continue  # retry the same provider
+                    # other 4xx/5xx (or 429 budget exhausted): try the fallback
+                    break
+                # HTTP 200 does not guarantee a well-formed body (intercepting
+                # proxies return HTML pages with 200): parsing failures must
+                # stay inside the failure-capable abstraction.
+                try:
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"]
+                    if not isinstance(content, str):
+                        raise TypeError(f"content is {type(content).__name__}")
+                except Exception as exc:
+                    call.status = CALL_BAD_RESPONSE
+                    call.error = f"réponse 200 malformée — {type(exc).__name__}: {exc}"
+                    call.raw_response = resp.text[:2000]
+                    calls.append(call)
+                    break  # the fallback provider may still succeed
+                call.status = CALL_SUCCESS
+                call.reported_model = data.get("model")
+                call.raw_response = content
                 calls.append(call)
-                continue
-            call.http_status = resp.status_code
-            call.finished_at = _now()
-            if resp.status_code != 200:
-                call.status = CALL_HTTP_ERROR
-                call.error = resp.text[:2000]
-                calls.append(call)
-                # 4xx other than 429 will fail identically on retry elsewhere,
-                # but the fallback provider may still succeed — always try it.
-                continue
-            # HTTP 200 does not guarantee a well-formed body (intercepting
-            # proxies return HTML pages with 200): parsing failures must stay
-            # inside the failure-capable abstraction, not escape as exceptions.
-            try:
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                if not isinstance(content, str):
-                    raise TypeError(f"content is {type(content).__name__}")
-            except Exception as exc:
-                call.status = CALL_BAD_RESPONSE
-                call.error = f"réponse 200 malformée — {type(exc).__name__}: {exc}"
-                call.raw_response = resp.text[:2000]
-                calls.append(call)
-                continue  # the fallback provider may still succeed
-            call.status = CALL_SUCCESS
-            call.reported_model = data.get("model")
-            call.raw_response = content
-            calls.append(call)
-            return LLMOutcome(content=content, calls=calls)
+                return LLMOutcome(content=content, calls=calls)
         return LLMOutcome(
             content=None,
             calls=calls,

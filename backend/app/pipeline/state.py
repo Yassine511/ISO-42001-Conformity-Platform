@@ -42,6 +42,7 @@ class FindingStatus(str, Enum):
 class AbstainReason(str, Enum):
     MODEL_ABSTAINED = "model_abstained"          # valid `missing` verdict
     VERIFICATION_FAILED = "verification_failed"  # retry exhausted
+    FUZZY_CITATION = "fuzzy_citation"            # near-match only: human review
     LOW_CONFIDENCE = "low_confidence"            # policy threshold, no retry
     LLM_ERROR = "llm_error"                      # all providers failed
 

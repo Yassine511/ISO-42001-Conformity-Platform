@@ -26,6 +26,7 @@ def upgrade() -> None:
         ),
         sa.Column("corpus_version", sa.String(20), nullable=False),
         sa.Column("status", sa.String(20), nullable=False),
+        sa.Column("requirement_ids", sa.JSON(), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
@@ -74,7 +75,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "abstain_reason IS NULL OR abstain_reason IN "
-            "('model_abstained', 'verification_failed', 'low_confidence', 'llm_error')",
+            "('model_abstained', 'verification_failed', 'fuzzy_citation', "
+            "'low_confidence', 'llm_error')",
             name="ck_findings_abstain_reason",
         ),
         sa.CheckConstraint(

@@ -93,9 +93,26 @@ def test_smart_quotes_and_guillemets_accepted():
     source = "L’usage des systèmes dits « critiques » exige une validation préalable du comité."
     quote = 'L\'usage des systèmes dits "critiques" exige une validation préalable du comité.'
     located = find_quote(quote, source)
-    # guillemets carry inner spaces («␣critiques␣») the plain quote lacks, so
-    # this is a legitimate fuzzy match — acceptance is the contract here.
+    # double-quote marks normalize to spaces, so honest typographic quoting
+    # («␣critiques␣» vs "critiques") matches EXACTLY — it must not degrade to
+    # a fuzzy candidate now that only exact matches verify
     assert located is not None
+    assert located[2] == "exact"
+
+
+def test_verify_treats_fuzzy_match_as_repairable_error():
+    source = "Les collaborateurs doivent signaler tout incident dans un délai de 48 heures."
+    retrieved = [
+        {"source_type": "policy", "result_id": "c1", "text": source, "char_start": 0}
+    ]
+    fuzzy_quote = source.replace("dans", "dnas")  # transposition: fuzzy, not exact
+    result = verify(_draft(fuzzy_quote), retrieved, "A.9.2")
+    assert not result.ok
+    assert any("citation approximative" in e for e in result.repair_errors)
+    assert result.match is not None and result.match.method == "fuzzy"  # kept for review
+
+    exact = verify(_draft(source), retrieved, "A.9.2")
+    assert exact.ok and exact.match.method == "exact"
 
 
 def test_paraphrase_rejected():

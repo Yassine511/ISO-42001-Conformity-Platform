@@ -408,6 +408,101 @@ def test_to_psycopg_dsn_strips_driver_suffix():
 
 # ------------------------------------------------------- audit regressions
 
+FUZZY_QUOTE = QUOTE.replace("dans", "dnas")  # transposition: fuzzy match, not exact
+
+
+def test_fuzzy_quote_gets_retry_then_exact_verifies(env):
+    """A near-match citation is a candidate, not proof: the judge is asked to
+    re-quote exactly; an exact retry verifies."""
+    session_factory, assessment_id, fake, result = _run(
+        env, [_valid_draft(quote=FUZZY_QUOTE), _valid_draft()]
+    )
+    assert result.status == "VERIFIED"
+    assert result.attempts == 2
+    assert "citation approximative" in fake.requests[1][-1]["content"]
+
+
+def test_fuzzy_quote_twice_abstains_with_match_provenance(env):
+    session_factory, assessment_id, fake, result = _run(
+        env, [_valid_draft(quote=FUZZY_QUOTE), _valid_draft(quote=FUZZY_QUOTE)]
+    )
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "fuzzy_citation"
+    db = session_factory()
+    row = db.scalars(select(Finding)).one()
+    assert row.abstain_reason == "fuzzy_citation"
+    assert row.matched_chunk_id is not None  # near-match kept for human review
+    assert row.match_method == "fuzzy"
+    db.close()
+
+
+def test_429_retried_with_backoff_before_fallback(monkeypatch):
+    """Spec §12: batch runs throttled — a 429 retries the SAME provider with
+    backoff (each retry logged) instead of polluting results via fallback."""
+    from unittest.mock import MagicMock
+
+    from app.pipeline import llm as L
+
+    ok_body = {"model": "mistral-large-2411", "choices": [{"message": {"content": "{}"}}]}
+    resp_429 = MagicMock(status_code=429, text="rate limited", headers={"retry-after": "0"})
+    resp_ok = MagicMock(status_code=200, headers={})
+    resp_ok.json.return_value = ok_body
+    responses = [resp_429, resp_ok]
+    sleeps: list[float] = []
+    monkeypatch.setattr(L.settings, "mistral_api_key", "k")
+    monkeypatch.setattr(L.settings, "groq_api_key", "")
+    monkeypatch.setattr(L.httpx, "post", lambda *a, **kw: responses.pop(0))
+    monkeypatch.setattr(L.time, "sleep", sleeps.append)
+
+    out = L.HttpJsonLLM().complete_json([{"role": "user", "content": "x"}])
+    assert out.content == "{}"
+    assert [c.status for c in out.calls] == ["HTTP_ERROR", "SUCCESS"]
+    assert all(c.provider == "mistral" for c in out.calls)  # no fallback needed
+    assert out.calls[0].raw_response == "rate limited"  # error body is provenance
+    assert len(sleeps) == 1
+
+
+def test_provider_with_blank_timestamps_does_not_crash(env):
+    """LLMCall timestamps default to '': the judge must not crash on them."""
+    from app.pipeline.llm import CALL_SUCCESS as _CS
+    from app.pipeline.llm import LLMCall as _LC
+    from app.pipeline.llm import LLMOutcome as _LO
+
+    class BlankTsLLM:
+        def complete_json(self, messages, *, json_schema=None):
+            call = _LC(
+                provider="fake",
+                requested_model="fake-model",
+                status=_CS,
+                request_messages=messages,
+                response_format={},
+                temperature=0.0,
+                reported_model="fake-model-v1",
+                raw_response=_valid_draft(),
+            )  # started_at/finished_at left at ""
+            return _LO(content=_valid_draft(), calls=[call])
+
+    session_factory, org_id = env
+    llm_service.set_provider(BlankTsLLM())
+    assessment_id = create_assessment(session_factory, org_id)
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "VERIFIED"
+
+
+def test_resume_manifest_is_authoritative(env):
+    from app.pipeline.graph import resume_manifest
+
+    session_factory, org_id = env
+    aid = create_assessment(session_factory, org_id, requirement_ids=["A.9.2", "A.4.5"])
+    assert resume_manifest(session_factory, aid, None) == ["A.9.2", "A.4.5"]
+    assert resume_manifest(session_factory, aid, ["A.9.2", "A.4.5"]) == ["A.9.2", "A.4.5"]
+    with pytest.raises(ValueError, match="manifeste"):
+        resume_manifest(session_factory, aid, ["A.4.5"])  # partial resume forbidden
+    legacy = create_assessment(session_factory, org_id, requirement_ids=None)
+    with pytest.raises(ValueError, match="sans manifeste"):
+        resume_manifest(session_factory, legacy, None)
+    assert resume_manifest(session_factory, legacy, ["A.9.2"]) == ["A.9.2"]
+
 
 def test_malformed_200_stays_inside_llm_outcome(monkeypatch):
     """HTTP 200 with an unparseable body (proxy HTML page) must produce an
@@ -520,6 +615,10 @@ def test_crash_residue_with_success_call_reuses_response(env):
     db = session_factory()
     calls = db.scalars(select(LlmCall)).all()
     assert len(calls) == 1 and calls[0].raw_response == _valid_draft()  # preserved
+    attempt = db.scalars(select(AssessmentAttempt)).one()
+    # the reused response was generated under the residue's prompt version:
+    # overwriting it with the current constant would falsify provenance
+    assert attempt.prompt_version == "0"
     db.close()
 
 

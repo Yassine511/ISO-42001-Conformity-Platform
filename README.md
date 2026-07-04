@@ -102,16 +102,24 @@ M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipe
 ## Pipeline (M3)
 
 LangGraph pipeline (`backend/app/pipeline/`): ① retrieve (hybrid RAG) → ② judge (Mistral, JSON
-mode, French prompts; Groq fallback) → ③ verify (deterministic fuzzy citation verifier with
-token-alignment guards + clause/schema/threshold checks; one bounded repair retry, then abstention).
-`VERIFIED` = **citation/schema-verified** — the quote exists near-verbatim in source with exact page
-offsets — not "verdict proven correct" (M6 measures verdict accuracy; M5 human review confirms).
-Full per-attempt provenance (`assessments`, `findings`, `assessment_attempts`, `llm_calls`) and a
-PostgreSQL checkpointer (`LANGGRAPH_STRICT_MSGPACK=true`). Exit-criterion demo (run with services up
-and `MISTRAL_API_KEY` in `backend/.env`):
+mode, French prompts; Groq fallback, 429s retried with backoff before falling back) → ③ verify
+(deterministic citation verifier + clause/schema/threshold checks; one bounded repair retry, then
+abstention). `VERIFIED` = **citation/schema-verified with an EXACT match after normalization**
+(case, accents, whitespace, typographic quotes) — not "verdict proven correct" (M6 measures verdict
+accuracy; M5 human review confirms). A near-match (fuzzy) citation is only a candidate: the judge
+gets one retry to re-quote exactly, then the finding abstains with reason `fuzzy_citation`,
+keeping the match offsets for priority human review. Full per-attempt provenance (`assessments`,
+`findings`, `assessment_attempts`, `llm_calls`) and a PostgreSQL checkpointer
+(`LANGGRAPH_STRICT_MSGPACK=true`). Exit-criterion demo (services up, `MISTRAL_API_KEY` in
+`backend/.env`):
 
 ```
 backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.9.2  # VERIFIED
 backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.4.5  # ABSTAINED
 backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --all-dev            # dev split only
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --assessment <id>    # resume a crashed run
 ```
+
+`--assessment` resumes a RUNNING assessment after a process crash: the assessment's stored
+requirement manifest is authoritative (terminal findings are returned idempotently, checkpointed
+threads resume mid-flight; a mismatching `--requirement/--all-dev` selection is rejected).

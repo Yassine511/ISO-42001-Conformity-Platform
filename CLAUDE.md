@@ -11,8 +11,10 @@ roadmap). Currently through **M3** (LangGraph pipeline `backend/app/pipeline/`: 
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`); next is
 **M4** (chat copilot reusing the same retrieval + citation verification). M3 semantics: `VERIFIED`
-means **citation/schema-verified** (quote exists in source, clause matches, schema valid) — never
-"verdict proven correct"; verdict accuracy is measured in M6, human review (M5) produces CONFIRMED.
+means **citation/schema-verified via an EXACT match after normalization** (quote exists in source,
+clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
+repair retry then `ABSTAINED(fuzzy_citation)` for human review; verdict accuracy is measured in M6,
+human review (M5) produces CONFIRMED.
 
 User-facing text (UI, API error messages, corpus, gold labels) is **French**. Code, comments and
 commits are English.

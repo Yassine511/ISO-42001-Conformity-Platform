@@ -40,6 +40,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_ts(value: str | None) -> datetime | None:
+    """LLMCall timestamps default to "" (the Protocol permits providers that
+    leave them unset): never let fromisoformat crash the judge node."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _audit(node: str, event: str, **details) -> dict:
     return {"node": node, "event": event, "at": utcnow_iso(), **details}
 
@@ -151,7 +162,12 @@ def make_judge_node(session_factory: SessionFactory):
                 )
             ).first()
             if attempt is not None:
-                attempt.prompt_version = PROMPT_VERSION
+                if reused is None:
+                    # fresh provider call: this attempt now reflects the
+                    # current prompt. On reuse, the residue's prompt_version
+                    # is PRESERVED — the reused response was generated under
+                    # it, and overwriting would falsify provenance.
+                    attempt.prompt_version = PROMPT_VERSION
                 attempt.parsed_ok = draft is not None
                 attempt.verifier_errors = None
                 attempt.finished_at = None
@@ -183,10 +199,8 @@ def make_judge_node(session_factory: SessionFactory):
                         request_messages=call.request_messages,
                         response_format=call.response_format,
                         temperature=call.temperature,
-                        started_at=datetime.fromisoformat(call.started_at),
-                        finished_at=datetime.fromisoformat(call.finished_at)
-                        if call.finished_at
-                        else None,
+                        started_at=_parse_ts(call.started_at) or started,
+                        finished_at=_parse_ts(call.finished_at),
                     )
                 )
             db.commit()
@@ -425,13 +439,16 @@ def make_verify_node(session_factory: SessionFactory):
             }
 
         # Precedence 5/6: retryable failure or exhausted retries.
-        return _route_failure(session_factory, state, result.errors, result.repair_errors)
+        return _route_failure(
+            session_factory, state, result.errors, result.repair_errors, match=result.match
+        )
 
     def _route_failure(
         session_factory: SessionFactory,
         state: GovernanceState,
         errors: list[str],
         repair_errors: list[str],
+        match=None,
     ) -> dict:
         _record_verifier_errors(session_factory, state, errors)
         if state.get("judge_attempts", 0) < MAX_JUDGE_ATTEMPTS:
@@ -441,17 +458,24 @@ def make_verify_node(session_factory: SessionFactory):
                     _audit("verify", "retry_requested", errors=errors)
                 ],
             }
+        # Exhausted. A fuzzy-only citation gets its own reason and keeps the
+        # match provenance: it is a near-match candidate for priority human
+        # review (M5), not a fabrication.
+        fuzzy_only = match is not None and match.method != "exact"
         finding = _terminal_finding(
             state,
             status=FindingStatus.ABSTAINED.value,
-            abstain_reason=AbstainReason.VERIFICATION_FAILED.value,
+            abstain_reason=AbstainReason.FUZZY_CITATION.value
+            if fuzzy_only
+            else AbstainReason.VERIFICATION_FAILED.value,
             errors=errors,
+            match=match if fuzzy_only else None,
         )
         fid = _persist_finding(session_factory, state, finding)
         finding["finding_id"] = fid
         return {
             "finding": finding,
-            "audit_log": [_audit("verify", "abstained", reason="verification_failed")],
+            "audit_log": [_audit("verify", "abstained", reason=finding["abstain_reason"])],
         }
 
     return verify_node

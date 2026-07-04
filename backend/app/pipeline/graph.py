@@ -66,7 +66,13 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_assessment(session_factory: SessionFactory, org_id: str) -> str:
+def create_assessment(
+    session_factory: SessionFactory,
+    org_id: str,
+    requirement_ids: list[str] | None = None,
+) -> str:
+    """requirement_ids is the run MANIFEST: what this assessment is meant to
+    cover. Resume paths validate against it (see resume_manifest)."""
     kb = load_kb()
     db = session_factory()
     try:
@@ -74,12 +80,49 @@ def create_assessment(session_factory: SessionFactory, org_id: str) -> str:
             organization_id=org_id,
             corpus_version=kb["corpus_version"],
             status=AssessmentStatus.RUNNING.value,
+            requirement_ids=requirement_ids,
         )
         db.add(assessment)
         db.commit()
         return assessment.id
     finally:
         db.close()
+
+
+def resume_manifest(
+    session_factory: SessionFactory,
+    assessment_id: str,
+    requested_ids: list[str] | None,
+) -> list[str]:
+    """Requirement ids to run when resuming an assessment.
+
+    The stored manifest is authoritative: resuming with a DIFFERENT selection
+    would finalize the assessment while its planned requirements stay
+    unfinished. A selection may be passed only if it matches the manifest;
+    legacy assessments without a manifest require an explicit selection.
+    """
+    db = session_factory()
+    try:
+        assessment = db.get(Assessment, assessment_id)
+        if assessment is None:
+            raise ValueError(f"assessment inconnu : {assessment_id}")
+        stored = assessment.requirement_ids
+    finally:
+        db.close()
+    if stored:
+        if requested_ids is not None and list(requested_ids) != list(stored):
+            raise ValueError(
+                "la sélection demandée ne correspond pas au manifeste de "
+                f"l'assessment ({len(stored)} exigence(s) planifiée(s)) ; "
+                "reprenez sans sélection ou créez un nouvel assessment."
+            )
+        return list(stored)
+    if requested_ids is None:
+        raise ValueError(
+            "assessment sans manifeste (créé avant cette version) : "
+            "précisez explicitement la sélection d'exigences."
+        )
+    return list(requested_ids)
 
 
 def finalize_assessment(

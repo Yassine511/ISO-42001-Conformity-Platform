@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     judge_model: str = "mistral-large-latest"
     judge_fallback_model: str = "llama-3.3-70b-versatile"
     judge_temperature: float = 0.0
+    # 429 backoff (spec §12: batch runs throttled to provider rate limits):
+    # retries on the SAME provider before falling back, exponential from
+    # judge_429_base_delay seconds, Retry-After honoured, capped at 30 s.
+    judge_429_retries: int = 3
+    judge_429_base_delay: float = 2.0
 
 
 settings = Settings()

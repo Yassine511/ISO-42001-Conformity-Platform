@@ -40,7 +40,7 @@ def dev_requirement_ids() -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--org", required=True, help='organization name, e.g. "Lumen AI"')
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--requirement", help="single KB requirement id, e.g. A.9.2")
     group.add_argument("--all-dev", action="store_true", help="run every dev-split requirement")
     parser.add_argument("--k", type=int, default=6, help="retrieval depth (default 6)")
@@ -49,10 +49,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--assessment",
-        help="resume an existing RUNNING assessment id after a crash "
-        "(same thread ids -> checkpointed requirements resume, terminal ones are skipped)",
+        help="resume an existing RUNNING assessment id after a crash: its stored "
+        "requirement manifest is authoritative (checkpointed requirements resume, "
+        "terminal ones are returned idempotently)",
     )
     args = parser.parse_args()
+    if not args.assessment and not (args.requirement or args.all_dev):
+        parser.error("--requirement ou --all-dev requis (sauf en reprise --assessment)")
 
     from sqlalchemy import select
 
@@ -63,6 +66,7 @@ def main() -> int:
         checkpointer_lifespan,
         create_assessment,
         finalize_assessment,
+        resume_manifest,
         run_requirement,
     )
     from app.pipeline.state import AssessmentStatus
@@ -74,7 +78,11 @@ def main() -> int:
         print(f"organisation introuvable : {args.org}", file=sys.stderr)
         return 2
 
-    requirement_ids = dev_requirement_ids() if args.all_dev else [args.requirement]
+    selected: list[str] | None = None
+    if args.all_dev:
+        selected = dev_requirement_ids()
+    elif args.requirement:
+        selected = [args.requirement]
 
     lifespan = nullcontext(None) if args.no_checkpointer else checkpointer_lifespan()
     if args.assessment:
@@ -88,9 +96,17 @@ def main() -> int:
             print(f"assessment non repris : statut {existing.status} (RUNNING requis)", file=sys.stderr)
             return 2
         assessment_id = existing.id
+        try:
+            # the stored manifest is authoritative — a different selection
+            # would finalize COMPLETED with planned requirements unfinished
+            requirement_ids = resume_manifest(SessionLocal, assessment_id, selected)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         print(f"reprise de l'assessment {assessment_id}")
     else:
-        assessment_id = create_assessment(SessionLocal, org.id)
+        requirement_ids = selected
+        assessment_id = create_assessment(SessionLocal, org.id, requirement_ids=requirement_ids)
     print(f"assessment {assessment_id} — org « {args.org} » — {len(requirement_ids)} exigence(s)\n")
 
     failures = 0       # unhandled operational errors (exceptions)
