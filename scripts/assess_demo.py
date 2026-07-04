@@ -66,8 +66,10 @@ def main() -> int:
         checkpointer_lifespan,
         create_assessment,
         finalize_assessment,
+        note_assessment_error,
         resume_manifest,
         run_requirement,
+        unfinished_requirements,
     )
     from app.pipeline.state import AssessmentStatus
 
@@ -110,7 +112,7 @@ def main() -> int:
     print(f"assessment {assessment_id} — org « {args.org} » — {len(requirement_ids)} exigence(s)\n")
 
     failures = 0       # unhandled operational errors (exceptions)
-    infra_abstains = 0  # ABSTAINED(llm_error): pipeline completed, providers did not
+    infra_abstains = 0  # ABSTAINED(llm_error|rate_limited): providers failed
     try:
         with lifespan as checkpointer:
             graph = build_graph(SessionLocal, checkpointer=checkpointer)
@@ -123,25 +125,49 @@ def main() -> int:
                     failures += 1
                     print(f"[{req_id}] ERREUR OPÉRATIONNELLE : {exc}", file=sys.stderr)
                     continue
-                if result.abstain_reason == "llm_error":
+                if result.abstain_reason in ("llm_error", "rate_limited"):
                     infra_abstains += 1
                 _print_result(result)
     except Exception as exc:
-        finalize_assessment(
-            SessionLocal, assessment_id, AssessmentStatus.FAILED, error=str(exc)
+        # keep the assessment RUNNING (resumable) — FAILED would block resume
+        note_assessment_error(SessionLocal, assessment_id, str(exc))
+        print(
+            f"\nassessment {assessment_id} interrompu — reprenez avec "
+            f"--assessment {assessment_id}",
+            file=sys.stderr,
         )
         raise
-    # Assessment-level status distinguishes evidentiary abstention (a valid
-    # outcome -> COMPLETED) from infrastructure failure: if NO requirement got
-    # a real judge answer, the assessment itself failed.
-    total = len(requirement_ids)
-    all_infra = failures + infra_abstains >= total and total > 0
+
     error_note = None
     if failures or infra_abstains:
         error_note = (
             f"{failures} erreur(s) opérationnelle(s), "
-            f"{infra_abstains} abstention(s) pour panne LLM (llm_error)"
+            f"{infra_abstains} abstention(s) pour panne LLM (llm_error/rate_limited)"
         )
+
+    # Finalization requires MANIFEST COVERAGE: every planned requirement must
+    # have a terminal finding. A partially-covered run stays RUNNING so it can
+    # be resumed — completing it would silently drop the missing requirements.
+    missing = unfinished_requirements(SessionLocal, assessment_id, requirement_ids)
+    if missing:
+        note_assessment_error(
+            SessionLocal,
+            assessment_id,
+            (error_note or "") + f" ; {len(missing)} exigence(s) sans constat : "
+            + ", ".join(missing),
+        )
+        print(
+            f"\nassessment {assessment_id} INCOMPLET ({len(missing)} exigence(s) sans "
+            f"constat : {', '.join(missing)}) — resté RUNNING ; reprenez avec "
+            f"--assessment {assessment_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Full coverage. Evidentiary abstention is a valid outcome -> COMPLETED;
+    # if EVERY finding is an infrastructure failure, the run failed as a whole.
+    total = len(requirement_ids)
+    all_infra = infra_abstains >= total and total > 0
     finalize_assessment(
         SessionLocal,
         assessment_id,

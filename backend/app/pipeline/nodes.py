@@ -27,6 +27,7 @@ from app.pipeline.state import (
     DraftFinding,
     FindingStatus,
     GovernanceState,
+    QuoteMatch,
     Verdict,
     utcnow_iso,
 )
@@ -144,6 +145,18 @@ def make_judge_node(session_factory: SessionFactory):
             )
             llm_error = outcome.error
 
+        # Deterministic failure cause from the call trail: exhausted 429s are
+        # throttling (infrastructure), not a generic provider failure — M6
+        # must be able to separate them at the finding level.
+        failed_reason = None
+        if content is None:
+            throttled = outcome is not None and any(
+                c.http_status == 429 for c in outcome.calls
+            )
+            failed_reason = (
+                AbstainReason.RATE_LIMITED.value if throttled else AbstainReason.LLM_ERROR.value
+            )
+
         if content is None:
             draft, parse_errors = None, []
         else:
@@ -189,6 +202,10 @@ def make_judge_node(session_factory: SessionFactory):
                     LlmCall(
                         assessment_attempt_id=attempt.id,
                         call_number=i,
+                        # per-call prompt version: mixed-version recovery
+                        # (v0 failed residue + fresh v2 call in one attempt)
+                        # stays unambiguous at the call level
+                        prompt_version=PROMPT_VERSION,
                         provider=call.provider,
                         requested_model=call.requested_model,
                         status=call.status,
@@ -214,6 +231,7 @@ def make_judge_node(session_factory: SessionFactory):
             "raw_response": content,
             "judge_attempts": attempt_number,
             "llm_failed": content is None,
+            "llm_failed_reason": failed_reason,
             "verification_errors": parse_errors,
             "final_model": final_model,
             "final_provider": final_provider,
@@ -362,12 +380,15 @@ def _persist_finding(session_factory: SessionFactory, state: GovernanceState, fi
 
 def make_verify_node(session_factory: SessionFactory):
     def verify_node(state: GovernanceState) -> dict:
-        # Precedence 1: total LLM failure — nothing to verify, nothing to retry.
+        # Precedence 1: total LLM failure — nothing to verify, nothing to
+        # retry. The reason is derived from the call trail by the judge:
+        # exhausted 429s are RATE_LIMITED (throttling), not generic llm_error.
         if state.get("llm_failed"):
+            reason = state.get("llm_failed_reason") or AbstainReason.LLM_ERROR.value
             finding = _terminal_finding(
                 state,
                 status=FindingStatus.ABSTAINED.value,
-                abstain_reason=AbstainReason.LLM_ERROR.value,
+                abstain_reason=reason,
                 errors=["tous les fournisseurs LLM ont échoué"],
             )
             _record_verifier_errors(session_factory, state, finding["errors"])
@@ -375,7 +396,7 @@ def make_verify_node(session_factory: SessionFactory):
             finding["finding_id"] = fid
             return {
                 "finding": finding,
-                "audit_log": [_audit("verify", "abstained", reason="llm_error")],
+                "audit_log": [_audit("verify", "abstained", reason=reason)],
             }
 
         draft_payload = state.get("draft")
@@ -451,25 +472,39 @@ def make_verify_node(session_factory: SessionFactory):
         match=None,
     ) -> dict:
         _record_verifier_errors(session_factory, state, errors)
+        # keep the newest fuzzy candidate across retries: attempt 2 returning
+        # malformed JSON must not lose attempt 1's near-match offsets
+        fuzzy_candidate = (
+            asdict(match)
+            if match is not None and match.method != "exact"
+            else state.get("fuzzy_candidate")
+        )
         if state.get("judge_attempts", 0) < MAX_JUDGE_ATTEMPTS:
             return {
                 "verification_errors": repair_errors,
+                "fuzzy_candidate": fuzzy_candidate,
                 "audit_log": [
                     _audit("verify", "retry_requested", errors=errors)
                 ],
             }
-        # Exhausted. A fuzzy-only citation gets its own reason and keeps the
-        # match provenance: it is a near-match candidate for priority human
-        # review (M5), not a fabrication.
-        fuzzy_only = match is not None and match.method != "exact"
+        # Exhausted. fuzzy_citation applies only when the near-match is the
+        # ONLY remaining failure (a wrong clause alongside it is a real
+        # verification failure); either way the last candidate's offsets are
+        # persisted for human review — never lost.
+        fuzzy_is_sole_failure = (
+            match is not None and match.method != "exact" and len(repair_errors) == 1
+        )
+        candidate_match = None
+        if fuzzy_candidate is not None:
+            candidate_match = QuoteMatch(**fuzzy_candidate)
         finding = _terminal_finding(
             state,
             status=FindingStatus.ABSTAINED.value,
             abstain_reason=AbstainReason.FUZZY_CITATION.value
-            if fuzzy_only
+            if fuzzy_is_sole_failure
             else AbstainReason.VERIFICATION_FAILED.value,
             errors=errors,
-            match=match if fuzzy_only else None,
+            match=candidate_match,
         )
         fid = _persist_finding(session_factory, state, finding)
         finding["finding_id"] = fid

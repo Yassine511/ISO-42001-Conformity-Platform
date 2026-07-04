@@ -706,6 +706,110 @@ def test_app_level_resume_continues_instead_of_rerunning(env, monkeypatch):
     assert retrieve_calls["n"] == 1  # resumed: retrieve did NOT rerun
 
 
+def test_persistent_429_abstains_as_rate_limited(env):
+    """Exhausted throttling must be classified rate_limited, not generic
+    llm_error — M6 separates infrastructure noise at the finding level."""
+    from app.pipeline.llm import CALL_HTTP_ERROR as _HE
+    from app.pipeline.llm import CALL_SKIPPED_NO_KEY as _SK
+    from app.pipeline.llm import LLMCall as _LC
+    from app.pipeline.llm import LLMOutcome as _LO
+
+    class ThrottledLLM:
+        def complete_json(self, messages, *, json_schema=None):
+            def call(status, http_status=None):
+                return _LC(
+                    provider="mistral" if status == _HE else "groq",
+                    requested_model="m",
+                    status=status,
+                    http_status=http_status,
+                    request_messages=messages,
+                    response_format={},
+                    temperature=0.0,
+                )
+            return _LO(
+                content=None,
+                calls=[call(_HE, 429)] * 4 + [call(_SK)],
+                error="tous les fournisseurs LLM ont échoué",
+            )
+
+    session_factory, org_id = env
+    llm_service.set_provider(ThrottledLLM())
+    assessment_id = create_assessment(session_factory, org_id)
+    result = run_requirement(session_factory, assessment_id, REQUIREMENT)
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "rate_limited"
+    db = session_factory()
+    assert db.scalars(select(Finding)).one().abstain_reason == "rate_limited"
+    db.close()
+
+
+def test_unfinished_requirements_blocks_partial_completion(env):
+    """Manifest coverage: a requirement that produced no finding must be
+    reported as unfinished — finalizing would silently drop it."""
+    from app.pipeline.graph import unfinished_requirements
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    assessment_id = create_assessment(
+        session_factory, org_id, requirement_ids=[REQUIREMENT, "A.4.5"]
+    )
+    run_requirement(session_factory, assessment_id, REQUIREMENT)  # A.4.5 never runs
+    assert unfinished_requirements(
+        session_factory, assessment_id, [REQUIREMENT, "A.4.5"]
+    ) == ["A.4.5"]
+
+
+def test_backoff_delay_is_rfc_compliant():
+    from unittest.mock import MagicMock
+
+    from app.pipeline.llm import MAX_BACKOFF_SECONDS, _backoff_delay
+
+    def resp(header):
+        r = MagicMock()
+        r.headers = {"retry-after": header} if header is not None else {}
+        return r
+
+    assert _backoff_delay(resp("-1"), 0) == 0.0          # negative never reaches sleep
+    assert _backoff_delay(resp("5"), 0) == 5.0
+    assert _backoff_delay(resp("9999"), 0) == MAX_BACKOFF_SECONDS
+    # HTTP-date form is honoured (RFC 9110 §10.2.3), clamped to [0, cap]
+    assert _backoff_delay(resp("Wed, 01 Jan 2020 00:00:00 GMT"), 0) == 0.0  # past date
+    assert _backoff_delay(resp("garbage"), 1) == 4.0     # unparseable -> exponential
+    assert _backoff_delay(resp(None), 0) == 2.0
+
+
+def test_fuzzy_with_other_failure_is_verification_failed_but_keeps_candidate(env):
+    """fuzzy_citation only when the near-match is the SOLE failure; the
+    candidate offsets survive either way."""
+    session_factory, assessment_id, fake, result = _run(
+        env,
+        [
+            _valid_draft(quote=FUZZY_QUOTE, clause="A.7.2"),  # fuzzy + wrong clause
+            _valid_draft(quote=FUZZY_QUOTE, clause="A.7.2"),
+        ],
+    )
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "verification_failed"  # not fuzzy_citation
+    db = session_factory()
+    row = db.scalars(select(Finding)).one()
+    assert row.matched_chunk_id is not None  # candidate still kept for review
+    db.close()
+
+
+def test_fuzzy_then_malformed_preserves_first_candidate(env):
+    session_factory, assessment_id, fake, result = _run(
+        env, [_valid_draft(quote=FUZZY_QUOTE), "{pas du JSON"]
+    )
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "verification_failed"
+    db = session_factory()
+    row = db.scalars(select(Finding)).one()
+    # attempt 1's near-match offsets must not be lost to attempt 2's garbage
+    assert row.matched_chunk_id is not None
+    assert row.match_method == "fuzzy"
+    db.close()
+
+
 # ---------------------------------------------------------------- gold guard
 
 

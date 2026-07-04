@@ -164,7 +164,7 @@ class Finding(Base):
         CheckConstraint(
             "abstain_reason IS NULL OR abstain_reason IN "
             "('model_abstained', 'verification_failed', 'fuzzy_citation', "
-            "'low_confidence', 'llm_error')",
+            "'low_confidence', 'llm_error', 'rate_limited')",
             name="ck_findings_abstain_reason",
         ),
         CheckConstraint(
@@ -248,6 +248,9 @@ class LlmCall(Base):
         ForeignKey("assessment_attempts.id", ondelete="CASCADE"), index=True
     )
     call_number: Mapped[int] = mapped_column(Integer)  # 1-based
+    # per-call prompt version: one attempt can mix a failed residue call
+    # (older prompt) with a fresh call after crash recovery
+    prompt_version: Mapped[str] = mapped_column(String(20), default="")
     provider: Mapped[str] = mapped_column(String(20))
     requested_model: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20))

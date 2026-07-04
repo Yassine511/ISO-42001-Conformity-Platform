@@ -85,13 +85,26 @@ def _now() -> str:
 
 
 def _backoff_delay(resp: httpx.Response, backoff_round: int) -> float:
-    """Retry-After header when present, else exponential; always capped."""
+    """Retry-After when present, else exponential; always in [0, cap].
+
+    RFC 9110 §10.2.3: the header is a non-negative integer of seconds OR an
+    HTTP-date. Negative/garbage values must never reach time.sleep() (a
+    negative sleep raises and would escape the LLMOutcome abstraction).
+    """
     retry_after = resp.headers.get("retry-after")
     if retry_after:
         try:
-            return min(float(retry_after), MAX_BACKOFF_SECONDS)
+            return min(max(float(retry_after), 0.0), MAX_BACKOFF_SECONDS)
         except ValueError:
-            pass
+            try:  # HTTP-date form
+                from email.utils import parsedate_to_datetime
+
+                delta = (
+                    parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)
+                ).total_seconds()
+                return min(max(delta, 0.0), MAX_BACKOFF_SECONDS)
+            except (ValueError, TypeError):
+                pass  # unparseable header: fall through to exponential
     return min(settings.judge_429_base_delay * (2 ** backoff_round), MAX_BACKOFF_SECONDS)
 
 

@@ -147,6 +147,41 @@ def finalize_assessment(
         db.close()
 
 
+def unfinished_requirements(
+    session_factory: SessionFactory, assessment_id: str, requirement_ids: list[str]
+) -> list[str]:
+    """Manifest requirements that do NOT yet have a terminal finding.
+
+    Finalization must require full coverage: completing an assessment while a
+    planned requirement produced no finding would silently drop it (and block
+    resume, since resume demands RUNNING)."""
+    db = session_factory()
+    try:
+        done = set(
+            db.scalars(
+                select(Finding.requirement_id).where(Finding.assessment_id == assessment_id)
+            ).all()
+        )
+    finally:
+        db.close()
+    return [rid for rid in requirement_ids if rid not in done]
+
+
+def note_assessment_error(
+    session_factory: SessionFactory, assessment_id: str, error: str
+) -> None:
+    """Record an error WITHOUT changing status: the assessment stays RUNNING
+    and therefore resumable — FAILED is reserved for runs abandoned for good."""
+    db = session_factory()
+    try:
+        assessment = db.get(Assessment, assessment_id)
+        if assessment is not None:
+            assessment.error = error
+            db.commit()
+    finally:
+        db.close()
+
+
 def _result_from_row(session_factory: SessionFactory, row: Finding) -> AssessmentResult:
     db = session_factory()
     try:

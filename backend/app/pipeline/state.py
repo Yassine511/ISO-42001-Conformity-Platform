@@ -45,6 +45,7 @@ class AbstainReason(str, Enum):
     FUZZY_CITATION = "fuzzy_citation"            # near-match only: human review
     LOW_CONFIDENCE = "low_confidence"            # policy threshold, no retry
     LLM_ERROR = "llm_error"                      # all providers failed
+    RATE_LIMITED = "rate_limited"                # throttled (429) — infra, not evidence
 
 
 class AssessmentStatus(str, Enum):
@@ -128,6 +129,8 @@ class GovernanceState(TypedDict, total=False):
     raw_response: str | None           # last raw model output
     judge_attempts: int                # counts judge attempts, not provider calls
     llm_failed: bool                   # all providers failed on the last attempt
+    llm_failed_reason: str | None      # "rate_limited" | "llm_error" (from calls)
+    fuzzy_candidate: dict | None       # last fuzzy QuoteMatch, kept across retries
     verification_errors: list[str]     # repair feedback for the next judge attempt
     finding: dict | None               # terminal finding payload
     final_model: str | None
