@@ -19,6 +19,15 @@ from typing import Protocol
 
 import httpx
 
+# Corporate proxies intercept TLS with a root CA that lives in the OS store
+# but not in certifi's bundle; truststore makes Python use the OS store.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:  # optional — plain environments work without it
+    pass
+
 from app.config import settings
 
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
