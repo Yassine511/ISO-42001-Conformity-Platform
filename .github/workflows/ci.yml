@@ -8,9 +8,30 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # Postgres on host port 5433 (matches the dev compose + hardcoded test URLs)
+    # so the migration-chain tests and the live PostgresSaver test RUN instead of
+    # skipping — otherwise CI silently covers only the offline suite.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: int102
+          POSTGRES_PASSWORD: int102
+          POSTGRES_DB: int102
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U int102"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      INT102_LIVE_PG: "1"
+      LANGGRAPH_STRICT_MSGPACK: "true"
+      DATABASE_URL: postgresql+psycopg://int102:int102@localhost:5433/int102
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,10 +43,11 @@ jobs:
             backend/requirements-dev.txt
             backend/constraints.txt
       # Pinned constraints: CI resolves the same versions the suite was written
-      # against (no Docker, model, or LLM needed — SQLite + fake embedder).
+      # against (offline tests use SQLite + a fake embedder; the four live tests
+      # use the Postgres service above).
       - name: Install dependencies (pinned)
         run: pip install -r requirements-dev.txt -c constraints.txt
-      - name: Run tests
+      - name: Run tests (incl. live Postgres migration + checkpointer)
         run: python -m pytest -q
 
   frontend:

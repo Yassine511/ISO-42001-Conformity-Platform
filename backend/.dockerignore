@@ -1,0 +1,8 @@
+# Keep the venv, caches, tests and secrets out of the build context sent to the
+# Docker daemon (the image only COPYs app/, alembic, and the requirements files).
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+tests/

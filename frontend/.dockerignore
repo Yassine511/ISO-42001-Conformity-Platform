@@ -1,0 +1,6 @@
+# The image runs `npm ci` itself; never copy the host node_modules or a prior
+# build into the context (COPY . . would otherwise clobber the clean install).
+node_modules/
+dist/
+.env
+*.tsbuildinfo
