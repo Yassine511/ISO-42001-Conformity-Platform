@@ -27,7 +27,13 @@ from app.pipeline.nodes import (
     make_verify_node,
     route_after_verify,
 )
-from app.pipeline.state import AssessmentResult, AssessmentStatus, GovernanceState, QuoteMatch
+from app.pipeline.state import (
+    AssessmentNotRunningError,
+    AssessmentResult,
+    AssessmentStatus,
+    GovernanceState,
+    QuoteMatch,
+)
 from app.services.retrieval import load_kb
 
 
@@ -150,10 +156,14 @@ def finalize_assessment(
 ) -> None:
     """Caller states the outcome explicitly: an ABSTAINED finding is a
     completed pipeline execution — only unhandled operational failures are
-    FAILED."""
+    FAILED.
+
+    Locks the assessment row (FOR UPDATE): finalization and finding creation
+    (nodes._persist_finding takes the same lock) are mutually exclusive, so a
+    finding can never land in an assessment this call just finalized."""
     db = session_factory()
     try:
-        assessment = db.get(Assessment, assessment_id)
+        assessment = db.get(Assessment, assessment_id, with_for_update=True)
         if assessment is None:
             raise ValueError(f"assessment inconnu : {assessment_id}")
         assessment.status = status.value
@@ -303,7 +313,10 @@ def run_requirement(
     # assessment silently accepts an out-of-manifest finding and stays COMPLETED
     # (corrupt lifecycle), and an off-manifest requirement inflates coverage.
     if assessment_status != AssessmentStatus.RUNNING.value:
-        raise ValueError(
+        # Fast path only (non-authoritative): avoids a paid LLM call on an
+        # already-terminal assessment. The race-closing check is under the row
+        # lock in _persist_finding.
+        raise AssessmentNotRunningError(
             f"assessment non modifiable : statut {assessment_status} "
             f"(RUNNING requis pour produire un nouveau constat)."
         )

@@ -193,7 +193,10 @@ class Finding(Base):
     match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     abstain_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer)  # judge attempts, not provider calls
-    final_model: Mapped[str | None] = mapped_column(String(100), nullable=True)  # NULL on llm_error
+    # Text, not VARCHAR: derived from the provider-reported model name, which is
+    # provider-controlled — a >100-char value must never DataError the finding
+    # write. NULL on llm_error.
+    final_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     retrieved: Mapped[list] = mapped_column(JSON, default=list)
     # terminal per-node audit trail (retrieve->judge->verify events); NULL for
@@ -255,9 +258,11 @@ class LlmCall(Base):
     # (older prompt) with a fresh call after crash recovery
     prompt_version: Mapped[str] = mapped_column(String(20), default="")
     provider: Mapped[str] = mapped_column(String(20))
-    requested_model: Mapped[str] = mapped_column(String(100))
+    # Text, not VARCHAR: requested_model is config-controlled and reported_model
+    # is provider-controlled — neither may DataError the call/finding write.
+    requested_model: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20))
-    reported_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reported_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)

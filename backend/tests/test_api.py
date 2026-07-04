@@ -104,12 +104,13 @@ def test_document_has_checksum_and_parser_version(client):
     assert doc["parser_version"]
 
 
-def test_oversized_upload_rejected_by_content_length(client, monkeypatch):
-    """The Content-Length guard rejects an oversized upload with 413 before the
-    body is parsed/persisted (limit shrunk for the test)."""
+def test_oversized_upload_rejected(client, monkeypatch):
+    """An upload whose request size exceeds the request-level cap is rejected 413
+    (limits shrunk for the test)."""
     import app.api.documents as docs_mod
 
     monkeypatch.setattr(docs_mod, "MAX_FILE_SIZE", 50)
+    monkeypatch.setattr(docs_mod, "UPLOAD_REQUEST_MARGIN", 0)
     org_id = client.post("/api/organizations", json={"name": "Big SA"}).json()["id"]
     r = client.post(
         f"/api/organizations/{org_id}/documents",
@@ -117,6 +118,22 @@ def test_oversized_upload_rejected_by_content_length(client, monkeypatch):
     )
     assert r.status_code == 413
     assert client.get(f"/api/organizations/{org_id}/documents").json() == []
+
+
+def test_valid_upload_near_limit_not_rejected_for_overhead(client, monkeypatch):
+    """Regression (finding): the request-level guard must NOT reject a valid file
+    just because multipart framing pushes the whole request over the FILE limit.
+    Reproduces the reported 1000-byte cap / 850-byte file case — now accepted,
+    since the guard compares against the request-size limit (file + margin)."""
+    import app.api.documents as docs_mod
+
+    monkeypatch.setattr(docs_mod, "MAX_FILE_SIZE", 1000)  # margin (~1 MB) unchanged
+    org_id = client.post("/api/organizations", json={"name": "Near SA"}).json()["id"]
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("ok.txt", b"A" * 850, "text/plain")},
+    )
+    assert r.status_code == 201
 
 
 def test_cited_document_cannot_be_deleted(client):

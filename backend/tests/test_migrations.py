@@ -200,3 +200,48 @@ def test_downgrade_to_published_0005(scratch_db):
         assert reason == "llm_error"
     finally:
         con.close()
+
+
+def test_head_accepts_long_provider_model_names(scratch_db):
+    """0008: reported_model/requested_model/final_model are Text at head, so a
+    provider returning a >100-char model name no longer DataErrors the write
+    (which would leave the assessment RUNNING with no finding). Only reproducible
+    on Postgres — SQLite does not enforce VARCHAR length."""
+    _alembic(scratch_db, "upgrade", "head")
+    con = _connect(scratch_db)
+    try:
+        org_id, aid, attempt_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+            (org_id,),
+        )
+        con.execute(
+            "INSERT INTO assessments (id, organization_id, corpus_version, status, started_at) "
+            "VALUES (%s, %s, '1.0.0', 'RUNNING', now())",
+            (aid, org_id),
+        )
+        con.execute(
+            "INSERT INTO assessment_attempts (id, assessment_id, requirement_id, "
+            "attempt_number, prompt_version, parsed_ok, started_at) "
+            "VALUES (%s, %s, 'A.9.2', 1, 'v7', true, now())",
+            (attempt_id, aid),
+        )
+        long_name = "x" * 200
+        con.execute(
+            "INSERT INTO llm_calls (id, assessment_attempt_id, call_number, prompt_version, "
+            "provider, requested_model, status, reported_model, request_messages, "
+            "response_format, temperature, started_at) VALUES (%s, %s, 1, 'v7', 'groq', %s, "
+            "'SUCCESS', %s, '[]', '{}', 0.0, now())",
+            (str(uuid.uuid4()), attempt_id, long_name, long_name),
+        )
+        con.execute(
+            "INSERT INTO findings (id, assessment_id, requirement_id, status, attempts, "
+            "final_model, retrieved, created_at) VALUES (%s, %s, 'A.9.2', 'VERIFIED', 1, %s, "
+            "'[]', now())",
+            (str(uuid.uuid4()), aid, long_name),
+        )
+        con.commit()
+        (stored,) = con.execute("SELECT reported_model FROM llm_calls").fetchone()
+        assert stored == long_name  # full value stored, not truncated
+    finally:
+        con.close()

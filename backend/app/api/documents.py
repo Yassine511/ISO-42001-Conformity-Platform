@@ -21,7 +21,13 @@ from app.services.parsing import (
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB — exact FILE limit, enforced by _read_capped
+# The multipart envelope (boundary + part headers) makes the REQUEST larger than
+# the file, so a request-level guard compared against MAX_FILE_SIZE would reject
+# a valid ~20 MB file. Request-level caps (the Content-Length middleware and the
+# nginx client_max_body_size) allow this margin; _read_capped still enforces the
+# exact file size.
+UPLOAD_REQUEST_MARGIN = 1 * 1024 * 1024  # 1 MB (request limit = MAX_FILE_SIZE + this)
 _READ_CHUNK = 1024 * 1024  # 1 MB
 
 
@@ -116,15 +122,21 @@ def get_document_pages(document_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/documents/{document_id}", status_code=204)
 def delete_document(document_id: str, db: Session = Depends(get_db)):
-    doc = db.get(Document, document_id)
+    # Lock the document row (FOR UPDATE) so the citation check and the deletion
+    # are one atomic unit: concurrent deletes of the same document serialize, and
+    # the check cannot be invalidated by another delete between check and commit.
+    doc = db.get(Document, document_id, with_for_update=True)
     if not doc:
         raise HTTPException(404, "Document introuvable.")
     # Audit-trail guard: refuse to delete a document a finding cites as evidence
-    # (matched_chunk_id -> chunk -> this document). Cascading its pages/chunks
-    # would leave that finding's citation dangling. Findings snapshot the cited
-    # text in `retrieved`, but the live source that makes a citation clickable
-    # must not silently disappear. Checked before Qdrant so a cited document is
-    # never partially removed.
+    # (matched_chunk_id -> chunk -> this document). Citation CONTENT is already
+    # durable — findings snapshot the cited chunk's text/filename/page/offsets in
+    # `retrieved`, which is by design how provenance survives (no FK on
+    # matched_chunk_id: chunks are a rebuildable, re-indexable derived index, and
+    # a RESTRICT FK would block the re-index that deletes stale chunks). This
+    # guard additionally preserves the LIVE source so the citation stays
+    # clickable; M4 chat citations render from the same snapshot. Checked before
+    # Qdrant so a cited document is never partially removed.
     cited = db.scalar(
         select(Finding.id)
         .join(Chunk, Finding.matched_chunk_id == Chunk.id)

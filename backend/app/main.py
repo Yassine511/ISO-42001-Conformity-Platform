@@ -43,14 +43,22 @@ app = FastAPI(title="INT102 — Copilote de conformité ISO/IEC 42001", lifespan
 @app.middleware("http")
 async def reject_oversized_upload(request: Request, call_next):
     """Reject an oversized upload by its declared Content-Length BEFORE Starlette
-    parses (and buffers) the multipart body. A chunked request without the
-    header slips through here and is bounded instead by the capped read in the
-    documents handler."""
+    parses (and buffers) the multipart body.
+
+    The bound is the REQUEST-size limit (file limit + framing margin), not the
+    file limit: Content-Length covers the whole multipart envelope, so comparing
+    it against the 20 MB file limit would 413 a valid ~20 MB file. The exact file
+    size is still enforced by _read_capped in the handler. A chunked request with
+    no Content-Length slips past this cheap check — in production nginx's
+    client_max_body_size caps the request body as it streams; on the direct
+    backend path _read_capped still bounds our own memory use."""
     if request.method == "POST" and request.url.path.endswith("/documents"):
         declared = request.headers.get("content-length")
         if declared is not None:
             try:
-                oversized = int(declared) > documents.MAX_FILE_SIZE
+                oversized = int(declared) > (
+                    documents.MAX_FILE_SIZE + documents.UPLOAD_REQUEST_MARGIN
+                )
             except ValueError:
                 oversized = False
             if oversized:

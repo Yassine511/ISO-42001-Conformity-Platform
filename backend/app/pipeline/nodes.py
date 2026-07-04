@@ -18,12 +18,14 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AssessmentAttempt, Finding, LlmCall
+from app.models import Assessment, AssessmentAttempt, Finding, LlmCall
 from app.pipeline import llm as llm_service
 from app.pipeline.prompts import PROMPT_VERSION, build_judge_messages, build_repair_messages
 from app.pipeline.state import (
     MAX_JUDGE_ATTEMPTS,
     AbstainReason,
+    AssessmentNotRunningError,
+    AssessmentStatus,
     DraftFinding,
     FindingStatus,
     GovernanceState,
@@ -366,6 +368,20 @@ def _persist_finding(
     match = finding.get("match") or {}
     db = session_factory()
     try:
+        # Atomic lifecycle guard: lock the assessment row and re-check RUNNING in
+        # the SAME transaction as the finding upsert. finalize_assessment takes
+        # the same FOR UPDATE lock, so a finding can never be written into an
+        # assessment that was finalized COMPLETED/FAILED concurrently (the
+        # run_requirement status check alone is a TOCTOU — its transaction closed
+        # before the graph ran).
+        assessment = db.get(Assessment, state["assessment_id"], with_for_update=True)
+        if assessment is None:
+            raise ValueError(f"assessment inconnu : {state['assessment_id']}")
+        if assessment.status != AssessmentStatus.RUNNING.value:
+            raise AssessmentNotRunningError(
+                f"assessment finalisé ({assessment.status}) pendant l'exécution : "
+                f"constat non enregistré pour {state['requirement_id']}."
+            )
         row = db.scalars(
             select(Finding).where(
                 Finding.assessment_id == state["assessment_id"],

@@ -67,6 +67,14 @@ class AssessmentStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class AssessmentNotRunningError(ValueError):
+    """A new finding was attempted on a non-RUNNING assessment. Raised both by
+    the run_requirement fast-path check and, authoritatively, under the
+    assessment row lock in nodes._persist_finding — so a concurrent finalize
+    cannot slip a finding into a COMPLETED/FAILED assessment (TOCTOU). Subclasses
+    ValueError so existing callers that catch ValueError still handle it."""
+
+
 class DraftFinding(BaseModel):
     """The judge's grounding contract: 5 fields, strictly validated.
 

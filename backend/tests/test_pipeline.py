@@ -953,3 +953,41 @@ def test_429_then_hard_failure_is_llm_error_not_rate_limited(env):
     result = run_requirement(session_factory, assessment_id, REQUIREMENT)
     assert result.status == "ABSTAINED"
     assert result.abstain_reason == "llm_error"  # NOT rate_limited
+
+
+def test_persist_finding_refuses_terminal_assessment(env):
+    """Atomic lifecycle guard: even if a run reaches persistence, a finding is
+    NOT written into an assessment finalized concurrently (the TOCTOU the
+    run_requirement fast-path check alone cannot close). Simulates a finalize
+    landing between the status read and the finding write."""
+    from app.pipeline.nodes import _persist_finding
+    from app.pipeline.state import AssessmentNotRunningError
+
+    session_factory, org_id = env
+    aid = create_assessment(session_factory, org_id, requirement_ids=[REQUIREMENT])
+    finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED)
+
+    state = {
+        "assessment_id": aid,
+        "requirement_id": REQUIREMENT,
+        "retrieved": [],
+        "audit_log": [],
+        "final_model": None,
+        "final_provider": None,
+    }
+    finding = {
+        "status": "ABSTAINED",
+        "abstain_reason": "llm_error",
+        "attempts": 1,
+        "verdict": None,
+        "policy_quote": None,
+        "clause_ref": None,
+        "confidence": None,
+        "rationale": None,
+        "match": None,
+    }
+    with pytest.raises(AssessmentNotRunningError):
+        _persist_finding(session_factory, state, finding)
+    db = session_factory()
+    assert not db.scalars(select(Finding)).all()  # no finding leaked into COMPLETED
+    db.close()
