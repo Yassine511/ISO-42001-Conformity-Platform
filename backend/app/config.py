@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     groq_api_key: str = ""
 
+    # Judge node (M3). Fallback model configurable: swap in one setting if
+    # Groq retires it. temperature 0 for determinism (still not guaranteed).
+    judge_model: str = "mistral-large-latest"
+    judge_fallback_model: str = "llama-3.3-70b-versatile"
+    judge_temperature: float = 0.0
+
 
 settings = Settings()
 
