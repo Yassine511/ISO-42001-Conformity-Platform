@@ -127,7 +127,7 @@ ISO 42001 KB ──▶│ paraphrased atomic requirements (refs 4–10, A.2–A.
    │  ① Retrieve → ② Judge →  │  │  cited answer → verify │  │  corrective-action plan →   │
    │  ③ Verify → ④ Review     │  │  → render with refs    │  │  human approves per action →│
    │  (HITL) → ⑤ Score        │  │  or abstain            │  │  optional patch tool →      │
-   │                          │  │  ("no evidence")       │  │  reassess (effectiveness)   │
+   │                          │  │  ("no verif. citation")│  │  reassess (effectiveness)   │
    └──────────┬───────────────┘  └────────┬───────────────┘  └┬────────────────────────────┘
               │                           │                   │
    Conformity % · SoA · gaps ·   Verified answers · finding   Remediation cases · plans ·
@@ -232,7 +232,8 @@ citation can be produced — decline to invent.
    reference is among the KB requirements retrieved for the question. This is **citation-location verification**:
    it proves provenance, not semantic entailment — whether a located citation actually supports its claim is a
    human judgment (passive review: the reader assesses it through the rendered references), measured in M6.
-   Failed citations strip the whole claim that references them; an answer left without verified support is not shown.
+   Failed citations strip the whole claim that references them; an answer left with no location-verified citation is
+   not shown.
 4. **Render or abstain** — verified answers display as **labelled AI drafts** with **clickable references** that
    open the exact passage in context; the UI renders the source slice at the matched offsets (the ground truth),
    never the model-provided quote string, since matching is normalized-exact rather than character-for-character.
@@ -423,8 +424,9 @@ no longer a stretch idea.
 The trust layer is the heart of the project and is **shared by all three faces** of the system. It converts a
 probabilistic model into a system with deterministic guarantees:
 
-- **No claim without verified evidence** — neither a pipeline verdict, nor a chat answer, nor a remediation proposal
-  can assert something whose citation the deterministic checker cannot locate in the source text.
+- **No claim without a location-verified citation** — neither a pipeline verdict, nor a chat answer, nor a
+  remediation proposal can assert something whose citation the deterministic checker cannot locate in the source
+  text.
 - **Abstention over guessing** — ungrounded or low-confidence findings are routed to a human; questions for which no
   location-verifiable citation can be produced get an honest abstention instead of a fabrication; unverifiable
   remediation proposals persist as abstentions.
@@ -457,6 +459,17 @@ synthetic organization is authored by us, the ground truth is exact.
     the verification layer**. This single before/after number is the project's proof that the trust layer works.
 - The **human-override rate** (how often the auditor changes the AI's draft) is logged for free by node ④ and
   reported as an operational indicator.
+- **Chat evaluation (the passive-review counterpart).** Chat's deterministic layer proves citation LOCATION only,
+  so the promised quality measurement needs its own set and metrics, with location validity reported **separately**
+  from semantic support. Question set: derived from the dev gold split — answerable questions mapped from covered
+  requirements, unanswerable ones from the deliberately uncovered requirements (the test split stays reserved for
+  the report). Metrics:
+  - **citation-location validity** — fraction of returned citations the deterministic checker locates (≈100% by
+    construction; a regression signals a verifier bug), reported separately so it is never conflated with support;
+  - **claim–citation semantic support precision** — human-labelled: does the cited passage actually support the
+    claim it backs? This measures exactly what location verification cannot (the authentic-but-irrelevant case);
+  - **answer faithfulness/correctness** — human-labelled, against the authored corpus ground truth;
+  - **abstention precision and recall** — over the answerable/unanswerable question split.
 
 **Remediation evaluation (two tiers, deliberately non-circular).** The system must not be the sole judge of whether
 its own remediation worked:
@@ -570,7 +583,7 @@ register is derived from conformity findings); no Kubernetes deployment.
 | M3 | Pipeline core | Nodes ① Retrieve, ② Judge, ③ Verify with shared state + checkpointer; grounding contract with repair-retry-then-abstain path; fuzzy citation verifier unit-tested against real model outputs; provenance logging. **Exit criterion: a runnable end-to-end CLI demo** (one requirement → retrieve → judge → verify → abstain) — the system is demoable before any frontend exists |
 | M4 | ★ Chat copilot | Grounded Q&A endpoint: retrieve → cited draft → verify → answer or abstain; chat logging |
 | M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④ — formal confirmation applies to pipeline findings only); chat UI with clickable references opening the source slice at the matched offsets, answers labelled AI drafts (**passive review**: no chat-claim confirmation workflow; retrieval notes labelled as unverified model commentary) |
-| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes |
+| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes. Chat evaluation on a dev-split-derived question set: citation-location validity reported separately from human-labelled claim–citation semantic support precision + answer faithfulness; abstention precision/recall on answerable vs unanswerable questions |
 | M7a | ★ Remediation Planning Agent *(core)* | RemediationCase model (multi-finding, provenance-logged linking); mandatory triage (classification, scope, similar-gap search, human-approved rationale); schema-constrained corrective-action plans with typed actions; per-action human review; lifecycle vs effectiveness tracking; scoped reassessment as effectiveness evidence; prompt-injection hardening (see section 8) |
 | M7b | Document-editing tool *(core, after M7a)* | `Document`→`DocumentVersion` restructuring migration (all formats); anchored-patch flow for TXT/MD (server-owned context, raw-equality unique anchors, diff review, transactional approval gate); `RemediationArtifact` + `supersedes_version_id` re-upload flow for PDF/DOCX; `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED` activation protocol with current-version hydration filtering; remediation evaluation corpus + metrics |
 | M8 | Scoring & artifacts *(stretch tier)* | Node ⑤ scoring; dashboard (conformity + trust panel); gap & risk register (derived); deterministic severity feeding remediation action priority; risk-register-initiated remediation cases; then SoA table; PDF export; finding drill-down mode in chat |

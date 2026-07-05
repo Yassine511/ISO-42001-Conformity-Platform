@@ -91,6 +91,23 @@ def test_chat_happy_path_and_replay(client, org_id):
     assert msgs[0]["citations"] == body["citations"]
 
 
+def test_api_separates_model_quote_from_source_quote(client, org_id):
+    llm_service.set_provider(
+        FakeLLM(
+            [_draft(claims=[_org_claim()], citations=[_policy_citation(quote=QUOTE.upper())])]
+        )
+    )
+    body = client.post(
+        f"/api/organizations/{org_id}/chat/messages", json={"question": QUESTION}
+    ).json()
+    assert body["status"] == "ANSWERED"
+    [c] = body["answer_citations"]
+    assert c["match_method"] == "exact"
+    assert c["quote"] == QUOTE.upper()
+    assert c["source_quote"] == QUOTE
+    assert c["quote"] != c["source_quote"]
+
+
 def test_chat_abstention_payload(client, org_id):
     # scripted fabricated quote → all claims dropped → abstention with clause
     fake_quote = "Un registre des incidents est tenu à jour par le RSSI chaque trimestre."
@@ -160,7 +177,7 @@ def test_chat_404s_and_validation(client, org_id):
     assert r.status_code == 422
 
 
-def _seed_message(session_factory, org_id, *, claims, citations):
+def _seed_message(session_factory, org_id, *, claims, citations, retrieved_policy=None):
     """Insert a chat message row directly (bypassing the service), as the
     pre-ad46dbe code would have persisted it."""
     from app.models import ChatMessage, Conversation
@@ -179,7 +196,7 @@ def _seed_message(session_factory, org_id, *, claims, citations):
         claims=claims,
         citations=citations,
         stripped_citations=[],
-        retrieved_policy=[],
+        retrieved_policy=retrieved_policy or [],
         retrieved_kb=[],
         attempts=[{"attempt_number": 1, "parsed_ok": True, "validation_errors": []}],
         draft_attempts=1,
@@ -214,10 +231,18 @@ def test_replay_of_legacy_verified_key_rows(client, org_id):
         citations=[
             {"id": "c2", "type": "kb", "requirement_id": "A.9.2",
              "requirement_fr": "Exigence.", "domain": "A.9"},
-            {"id": "c1", "type": "policy", "quote": QUOTE, "chunk_id": "x",
+            # legacy shape: no source_quote key
+            {"id": "c1", "type": "policy", "quote": QUOTE.upper(), "chunk_id": "x",
              "document_id": "d", "filename": "f.txt", "page_number": 1,
              "match_start": 0, "match_end": 10, "match_method": "exact",
              "match_score": 100.0},
+        ],
+        retrieved_policy=[
+            {"result_id": "x", "source_type": "policy", "text": QUOTE,
+             "rrf_score": 0.03, "vector_rank": 1, "bm25_rank": 1,
+             "document_id": "d", "filename": "f.txt", "page_number": 1,
+             "char_start": 0, "char_end": len(QUOTE),
+             "requirement_id": None, "domain": None},
         ],
     )
     r = client.get(
@@ -229,6 +254,10 @@ def test_replay_of_legacy_verified_key_rows(client, org_id):
     assert "verified" not in msg["claims"][0]
     assert [c["id"] for c in msg["answer_citations"]] == ["c1", "c2"]  # reference order
     assert [c["id"] for c in msg["citations"]] == ["c2", "c1"]  # audit list untouched
+    # source_quote backfilled from the persisted retrieval snapshot
+    legacy_policy = msg["answer_citations"][0]
+    assert legacy_policy["quote"] == QUOTE.upper()
+    assert legacy_policy["source_quote"] == QUOTE[:10]  # raw slice at [0, 10)
 
 
 def test_chat_qdrant_down_is_503(client, org_id, monkeypatch):

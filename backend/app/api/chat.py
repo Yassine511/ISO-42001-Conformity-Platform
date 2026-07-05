@@ -38,6 +38,27 @@ def _normalize_claims(claims: list) -> list:
     return out
 
 
+def _backfill_source_quotes(citations: list, retrieved_policy: list) -> list:
+    """Legacy belt: rows persisted before source_quote existed. Derived
+    deterministically from the persisted retrieval snapshot (chunk text +
+    page-relative offsets), never re-fetched."""
+    out = []
+    for c in citations:
+        if c.get("type") == "policy" and "source_quote" not in c:
+            source = next(
+                (i for i in retrieved_policy if i["result_id"] == c.get("chunk_id")), {}
+            )
+            c = {
+                **c,
+                "source_quote": service._source_slice(
+                    source,
+                    {"match_start": c.get("match_start"), "match_end": c.get("match_end")},
+                ),
+            }
+        out.append(c)
+    return out
+
+
 def message_to_out(message: ChatMessage) -> ChatMessageOut:
     """Response shape from the persisted row only — GET replay is byte-stable.
 
@@ -56,9 +77,10 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
             "domain": top.get("domain"),
         }
     claims = _normalize_claims(message.claims)
+    citations = _backfill_source_quotes(message.citations, message.retrieved_policy)
     # answer citations in CLAIM-REFERENCE order (footnote order for M5),
     # not draft declaration order
-    by_id = {c["id"]: c for c in message.citations}
+    by_id = {c["id"]: c for c in citations}
     answer_citations = [
         by_id[cid] for cid in service.answer_citation_ids(claims) if cid in by_id
     ]
@@ -72,7 +94,7 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
         evidence_scope=message.evidence_scope,
         claims=claims,
         answer_citations=answer_citations,
-        citations=message.citations,
+        citations=citations,
         stripped_citations=message.stripped_citations,
         retrieval_notes=message.retrieval_notes,
         searched=message.retrieved_policy + message.retrieved_kb,

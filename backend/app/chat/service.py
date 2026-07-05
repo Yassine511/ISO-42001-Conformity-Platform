@@ -241,6 +241,19 @@ def verify_citations(
     return outcomes
 
 
+def _source_slice(source: dict, match: dict) -> str | None:
+    """Raw source characters at the matched span. Match offsets are
+    page-relative ([start, end), zero-based raw offsets into the page text);
+    the chunk's text is the authoritative page slice [char_start:char_end],
+    so the local slice is offset by char_start."""
+    text = source.get("text")
+    start, end = match.get("match_start"), match.get("match_end")
+    if text is None or start is None or end is None:
+        return None
+    base = source.get("char_start") or 0
+    return text[start - base : end - base]
+
+
 def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) -> dict:
     """Response/persistence shape for a VERIFIED citation. Snapshots location
     data so the citation stays renderable after document deletion."""
@@ -253,7 +266,13 @@ def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) ->
         return {
             "id": citation["id"],
             "type": "policy",
+            # model-provided string: matched normalized-exact, may differ from
+            # the raw source characters (case/accents/typography) — never
+            # render it as source text
             "quote": citation["policy_quote"],
+            # authoritative raw source slice at the matched offsets — this is
+            # what a UI renders as the citation text
+            "source_quote": _source_slice(source, match),
             "chunk_id": match.get("chunk_id"),
             "document_id": source.get("document_id"),
             "filename": source.get("filename"),

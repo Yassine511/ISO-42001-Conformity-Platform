@@ -95,14 +95,52 @@ class ChatCitationOut(BaseModel):
     id: str
     type: Literal["policy", "kb"]
     # policy
-    quote: str | None = None
+    quote: str | None = Field(
+        default=None,
+        description=(
+            "MODEL-PROVIDED quote string. It matched the source exactly AFTER "
+            "normalization (case folding, accents, whitespace, typography), so its raw "
+            "characters may differ from the source. Never render it as source text — "
+            "render source_quote."
+        ),
+    )
+    source_quote: str | None = Field(
+        default=None,
+        description=(
+            "AUTHORITATIVE raw source characters at the matched span, server-derived "
+            "from the persisted retrieval snapshot. This is the string a UI renders as "
+            "the citation text."
+        ),
+    )
     chunk_id: str | None = None
     document_id: str | None = None
     filename: str | None = None
-    page_number: int | None = None
-    match_start: int | None = None
-    match_end: int | None = None
-    match_method: str | None = None
+    page_number: int | None = Field(
+        default=None,
+        description="1-based page of the source document the offsets refer to.",
+    )
+    match_start: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based raw character offset into the page text (page_number), "
+            "inclusive start of the matched span."
+        ),
+    )
+    match_end: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based raw character offset into the page text, EXCLUSIVE end of the "
+            "matched span ([match_start, match_end))."
+        ),
+    )
+    match_method: str | None = Field(
+        default=None,
+        description=(
+            "Always 'exact' (after documented normalization) for verified chat "
+            "citations — fuzzy candidates are stripped and only appear in "
+            "stripped_citations provenance."
+        ),
+    )
     match_score: float | None = None
     # kb
     requirement_id: str | None = None

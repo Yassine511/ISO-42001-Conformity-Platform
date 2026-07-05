@@ -277,6 +277,21 @@ def test_scope_derives_from_cited_types_not_claim_kinds(env):
     assert service.KB_ONLY_CAVEAT not in m.answer
 
 
+def test_source_quote_is_raw_slice_even_when_model_quote_normalized(env):
+    # normalized-exact matching accepts a case-mangled model quote; the API
+    # must carry the authoritative raw slice separately (audit round 15 P1)
+    upper = QUOTE.upper()
+    _, _, m = _ask(
+        env, [_draft(claims=[_org_claim()], citations=[_policy_citation(quote=upper)])]
+    )
+    assert m.status == "ANSWERED"
+    [c] = m.citations
+    assert c["match_method"] == "exact" and c["match_score"] == 100.0
+    assert c["quote"] == upper  # model string, preserved as provenance
+    assert c["source_quote"] == QUOTE  # raw source characters at the offsets
+    assert c["quote"] != c["source_quote"]
+
+
 # ------------------------------------------------- claim-binding trust rules
 
 
