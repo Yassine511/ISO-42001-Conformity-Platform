@@ -198,6 +198,20 @@ def test_too_short_and_too_long_quotes_rejected():
     assert find_quote("a" * (MAX_QUOTE_LEN + 10), long_source) is None
 
 
+def test_raw_cap_quote_with_ellipsis_not_rejected_as_too_long():
+    """The 300-char cap is a RAW-quote contract (schema-enforced). "…"
+    normalizes to "..." (1 -> 3 chars), so a schema-valid quote can exceed
+    300 chars after normalization — it must still match, not be rejected
+    as "trop longue"."""
+    quote = ("Signalement des incidents… " * 11).strip()
+    assert len(quote) <= MAX_QUOTE_LEN  # schema accepts it
+    assert len(normalize(quote).text) > MAX_QUOTE_LEN  # normalization expands it
+    result = verify(_draft(quote), _retrieved(quote), "A.9.2")
+    assert not any("trop longue" in e for e in result.errors)
+    assert result.match is not None
+    assert result.match.method == "exact"
+
+
 def test_offset_mapping_with_whitespace_accents_and_ellipsis():
     source = "Préambule.   La   revue annuelle…  est obligatoire chaque année. Fin."
     quote = "La revue annuelle... est obligatoire chaque année."

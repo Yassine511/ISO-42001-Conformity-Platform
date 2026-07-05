@@ -52,7 +52,9 @@ from app.pipeline.state import DraftFinding, QuoteMatch, Verdict, VerificationRe
 
 PARTIAL_RATIO_MIN = 92.0
 MIN_QUOTE_LEN = 15   # normalized chars; shorter quotes match almost anything
-MAX_QUOTE_LEN = 300  # grounding contract cap (schema also enforces)
+MAX_QUOTE_LEN = 300  # grounding contract cap on RAW chars (schema enforces the
+                     # same bound; normalization can EXPAND text — "…" -> "..." —
+                     # so the cap must never be applied to normalized length)
 CONFIDENCE_MIN = 0.5
 
 # Typographic equivalences (French corpus uses smart quotes, guillemets,
@@ -189,6 +191,8 @@ def _expand_to_word_boundaries(text: str, start: int, end: int) -> tuple[int, in
 def find_quote(quote: str, chunk_text: str) -> tuple[int, int, str, float] | None:
     """Locate `quote` in `chunk_text`. Returns raw (start, end, method, score)
     offsets into chunk_text, or None if the quote cannot be verified."""
+    if len(quote) > MAX_QUOTE_LEN:
+        return None
     return _find_normalized(normalize(quote), chunk_text)
 
 
@@ -198,7 +202,7 @@ def _find_normalized(
     """find_quote with the quote already normalized — callers matching one
     quote against several chunks normalize it once, not once per chunk."""
     nc = normalize(chunk_text)
-    if not (MIN_QUOTE_LEN <= len(nq.text) <= MAX_QUOTE_LEN):
+    if len(nq.text) < MIN_QUOTE_LEN:
         return None
 
     # 1) exact after normalization — covers whitespace/case/accents/typography
@@ -296,9 +300,9 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
                 )
                 errors.append(msg)
                 repair_errors.append(msg)
-            elif nq_len > MAX_QUOTE_LEN:
+            elif len(quote) > MAX_QUOTE_LEN:
                 msg = (
-                    f"policy_quote trop longue ({nq_len} caractères) : "
+                    f"policy_quote trop longue ({len(quote)} caractères) : "
                     f"maximum {MAX_QUOTE_LEN} caractères."
                 )
                 errors.append(msg)

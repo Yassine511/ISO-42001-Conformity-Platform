@@ -796,6 +796,22 @@ def test_fuzzy_with_other_failure_is_verification_failed_but_keeps_candidate(env
     db.close()
 
 
+def test_fuzzy_then_total_llm_failure_preserves_candidate(env):
+    """Attempt 1's near-match offsets must survive a repair attempt whose
+    providers ALL fail — the llm_error abstention carries the candidate for
+    M5 review, same as the malformed-JSON case below."""
+    session_factory, assessment_id, fake, result = _run(
+        env, [_valid_draft(quote=FUZZY_QUOTE), None]
+    )
+    assert result.status == "ABSTAINED"
+    assert result.abstain_reason == "llm_error"
+    db = session_factory()
+    row = db.scalars(select(Finding)).one()
+    assert row.matched_chunk_id is not None
+    assert row.match_method == "fuzzy"
+    db.close()
+
+
 def test_fuzzy_then_malformed_preserves_first_candidate(env):
     session_factory, assessment_id, fake, result = _run(
         env, [_valid_draft(quote=FUZZY_QUOTE), "{pas du JSON"]

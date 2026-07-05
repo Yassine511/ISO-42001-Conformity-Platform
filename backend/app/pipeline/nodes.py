@@ -430,11 +430,15 @@ def make_verify_node(session_factory: SessionFactory):
         # exhausted 429s are RATE_LIMITED (throttling), not generic llm_error.
         if state.get("llm_failed"):
             reason = state.get("llm_failed_reason") or AbstainReason.LLM_ERROR.value
+            # A prior attempt's near-match must survive a repair attempt whose
+            # providers all failed — same preservation contract as _route_failure.
+            candidate = state.get("fuzzy_candidate")
             finding = _terminal_finding(
                 state,
                 status=FindingStatus.ABSTAINED.value,
                 abstain_reason=reason,
                 errors=["tous les fournisseurs LLM ont échoué"],
+                match=QuoteMatch(**candidate) if candidate else None,
             )
             _record_verifier_errors(session_factory, state, finding["errors"])
             event = _audit("verify", "abstained", reason=reason)
