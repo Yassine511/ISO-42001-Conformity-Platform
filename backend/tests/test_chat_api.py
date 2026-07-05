@@ -160,6 +160,77 @@ def test_chat_404s_and_validation(client, org_id):
     assert r.status_code == 422
 
 
+def _seed_message(session_factory, org_id, *, claims, citations):
+    """Insert a chat message row directly (bypassing the service), as the
+    pre-ad46dbe code would have persisted it."""
+    from app.models import ChatMessage, Conversation
+
+    db = session_factory()
+    conv = Conversation(organization_id=org_id, title="Legacy")
+    db.add(conv)
+    db.flush()
+    msg = ChatMessage(
+        conversation_id=conv.id,
+        question="Question héritée ?",
+        status="ANSWERED",
+        abstain_reason=None,
+        answer="Réponse héritée.",
+        evidence_scope="policy",
+        claims=claims,
+        citations=citations,
+        stripped_citations=[],
+        retrieved_policy=[],
+        retrieved_kb=[],
+        attempts=[{"attempt_number": 1, "parsed_ok": True, "validation_errors": []}],
+        draft_attempts=1,
+        prompt_version="1",
+        corpus_version="1.0.0",
+    )
+    db.add(msg)
+    db.commit()
+    conv_id = conv.id
+    db.close()
+    return conv_id
+
+
+def test_replay_of_legacy_verified_key_rows(client, org_id):
+    """Rows persisted before the citations_verified rename (audit round 13 P0)
+    must replay: the serializer normalizes the legacy `verified` key and
+    answer_citations is preserved — in claim-reference order (P2)."""
+    conv_id = _seed_message(
+        client.session_factory,
+        org_id,
+        claims=[
+            {
+                "text": "Affirmation héritée.",
+                "kind": "organization",
+                # references c1 then c2, while citations are DECLARED c2 first:
+                # the response must follow reference order (c1, c2)
+                "citation_ids": ["c1", "c2"],
+                "verified": True,  # legacy key
+                "failed_citation_ids": [],
+            }
+        ],
+        citations=[
+            {"id": "c2", "type": "kb", "requirement_id": "A.9.2",
+             "requirement_fr": "Exigence.", "domain": "A.9"},
+            {"id": "c1", "type": "policy", "quote": QUOTE, "chunk_id": "x",
+             "document_id": "d", "filename": "f.txt", "page_number": 1,
+             "match_start": 0, "match_end": 10, "match_method": "exact",
+             "match_score": 100.0},
+        ],
+    )
+    r = client.get(
+        f"/api/organizations/{org_id}/chat/conversations/{conv_id}/messages"
+    )
+    assert r.status_code == 200
+    [msg] = r.json()
+    assert msg["claims"][0]["citations_verified"] is True
+    assert "verified" not in msg["claims"][0]
+    assert [c["id"] for c in msg["answer_citations"]] == ["c1", "c2"]  # reference order
+    assert [c["id"] for c in msg["citations"]] == ["c2", "c1"]  # audit list untouched
+
+
 def test_chat_qdrant_down_is_503(client, org_id, monkeypatch):
     def boom(*args, **kwargs):
         raise ResponseHandlingException("connexion refusée")

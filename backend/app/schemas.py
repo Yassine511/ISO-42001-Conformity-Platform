@@ -73,9 +73,14 @@ class ChatClaimOut(BaseModel):
     text: str
     kind: Literal["organization", "standard"]
     citation_ids: list[str]
-    # citation-LOCATION verified (quote exists / clause was retrieved) — NOT a
-    # semantic-support judgment; claim quality is human-reviewed (M5), measured (M6)
-    citations_verified: bool
+    citations_verified: bool = Field(
+        description=(
+            "Citation-LOCATION verified: every referenced quote exists verbatim in a "
+            "retrieved passage and every clause was among the retrieved KB requirements. "
+            "NOT a semantic-support judgment — claim quality is human-reviewed (M5) and "
+            "measured (M6)."
+        )
+    )
     failed_citation_ids: list[str] = []
 
 
@@ -137,15 +142,29 @@ class ChatMessageOut(BaseModel):
     answer: str
     evidence_scope: Literal["policy", "kb_only", "mixed"] | None
     claims: list[ChatClaimOut]
-    # answer evidence: only the citations referenced by surviving claims —
-    # what a UI renders next to the answer
-    answer_citations: list[ChatCitationOut]
-    # audit provenance: EVERY location-verified citation, including those
-    # referenced only by dropped claims or by nothing — never render as evidence
-    citations: list[ChatCitationOut]
+    answer_citations: list[ChatCitationOut] = Field(
+        description=(
+            "ANSWER EVIDENCE: the location-verified citations referenced by surviving "
+            "claims, in claim-reference (footnote) order. This is what a UI renders "
+            "next to the answer."
+        )
+    )
+    citations: list[ChatCitationOut] = Field(
+        description=(
+            "AUDIT PROVENANCE: every location-verified citation, including those "
+            "referenced only by dropped claims or by nothing. Never render these as "
+            "evidence for the final answer — use answer_citations."
+        )
+    )
     stripped_citations: list[StrippedCitationOut]
-    # model-generated, UNVERIFIED commentary (coverage-checked only)
-    retrieval_notes: list[RetrievalNoteOut] | None
+    retrieval_notes: list[RetrievalNoteOut] | None = Field(
+        description=(
+            "MODEL-GENERATED, UNVERIFIED commentary on why each displayed passage does "
+            "not answer the question (no_evidence path). Deterministically checked for "
+            "COVERAGE only (one note per displayed passage) — the reasons themselves are "
+            "not verified and must be labelled as model commentary in any UI."
+        )
+    )
     searched: list[SearchResult]
     suggested_clause: SuggestedClauseOut | None
     final_model: str | None

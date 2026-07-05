@@ -263,6 +263,57 @@ def test_0009_creates_chat_tables(scratch_db):
         con.close()
 
 
+def test_0010_backfills_legacy_claim_key(scratch_db):
+    """0010: pre-ad46dbe claims carry `verified`; upgrading renames the key to
+    `citations_verified` so replay validation succeeds (audit round 13 P0)."""
+    import json
+
+    _alembic(scratch_db, "upgrade", "0009")
+    con = _connect(scratch_db)
+    org_id, conv_id, msg_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    con.execute(
+        "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+        (org_id,),
+    )
+    con.execute(
+        "INSERT INTO conversations (id, organization_id, title, created_at, updated_at) "
+        "VALUES (%s, %s, 'Q', now(), now())",
+        (conv_id, org_id),
+    )
+    legacy_claims = json.dumps(
+        [
+            {"text": "A.", "kind": "organization", "citation_ids": ["c1"],
+             "verified": True, "failed_citation_ids": []},
+            {"text": "B.", "kind": "standard", "citation_ids": ["c9"],
+             "verified": False, "failed_citation_ids": ["c9"]},
+        ]
+    )
+    con.execute(
+        "INSERT INTO chat_messages (id, conversation_id, question, status, answer, "
+        "evidence_scope, claims, citations, stripped_citations, retrieved_policy, "
+        "retrieved_kb, attempts, draft_attempts, prompt_version, corpus_version, "
+        "created_at) VALUES (%s, %s, 'Q ?', 'ANSWERED', 'R.', 'policy', %s, '[]', "
+        "'[]', '[]', '[]', '[]', 1, '1', '1.0.0', now())",
+        (msg_id, conv_id, legacy_claims),
+    )
+    con.commit()
+    con.close()
+
+    _alembic(scratch_db, "upgrade", "head")
+
+    con = _connect(scratch_db)
+    try:
+        (claims,) = con.execute(
+            "SELECT claims FROM chat_messages WHERE id = %s", (msg_id,)
+        ).fetchone()
+        if isinstance(claims, str):
+            claims = json.loads(claims)
+        assert [c["citations_verified"] for c in claims] == [True, False]
+        assert all("verified" not in c for c in claims)
+    finally:
+        con.close()
+
+
 def test_head_accepts_long_provider_model_names(scratch_db):
     """0008: reported_model/requested_model/final_model are Text at head, so a
     provider returning a >100-char model name no longer DataErrors the write

@@ -68,9 +68,12 @@ confidentiality concerns.
   (conformity dashboard, Statement of Applicability, gap & risk register, PDF report).
 - Provide a **grounded chat copilot**: the user asks questions about the documents or the findings and receives
   answers whose citations are machine-verified, with clickable references to the source passages.
-- Guarantee that **no verdict and no answer is asserted without machine-verified supporting evidence.**
-- **Abstain** rather than guess: uncertain findings are routed to human review; unanswerable questions get an honest
-  "no evidence found" instead of a fabrication.
+- Guarantee that **no verdict and no answer is asserted without machine-location-verified citations**: deterministic
+  code proves every cited quote exists verbatim at the cited place and every cited clause was actually retrieved.
+  Location verification is not semantic entailment — whether a citation *supports* the claim it backs is confirmed
+  by the human reviewer (M5) and measured (M6), never asserted by the machine.
+- **Abstain** rather than guess: uncertain findings are routed to human review; when no verifiable citation can be
+  produced, the copilot says so honestly instead of fabricating one.
 - Keep a **human in charge of every compliance decision**.
 - Maintain a **full provenance/audit trail** for every finding.
 - Support a **human-supervised corrective-action workflow** aligned with ISO harmonized-structure clause 10.2: a
@@ -211,8 +214,8 @@ obligations remains covered as ordinary findings.
 ## 7. ★ The chat copilot (the "copilot" made real)
 
 The chat is a first-class pillar, not a bolt-on. It is what makes the tool feel like a *copilot* rather than a batch
-job, and it is the trust layer made visible: the user watches the system cite, verify, and — when the evidence isn't
-there — decline to invent.
+job, and it is the trust layer made visible: the user watches the system cite, verify, and — when no verifiable
+citation can be produced — decline to invent.
 
 **Answer flow (every message):**
 
@@ -221,12 +224,15 @@ there — decline to invent.
 2. **Draft** — the LLM produces a schema-constrained answer: prose plus a list of citations
    (`policy_quote` + source document/chunk, and/or `clause_ref` + our paraphrased requirement text — never verbatim
    ISO text).
-3. **Verify** — the same deterministic checker used in pipeline node ③ confirms each policy quote exists
-   near-verbatim in its claimed source and each clause reference resolves to a knowledge-base entry. Failed
-   citations are stripped; an answer left without verified support is not shown.
+3. **Verify** — the same deterministic checker used in pipeline node ③ confirms each policy quote exists verbatim
+   (exact after normalization) in a retrieved passage and each clause reference is among the KB requirements
+   retrieved for the question. This is **citation-location verification**: it proves provenance, not semantic
+   entailment — whether a located citation actually supports its claim is a human judgment (M5), measured in M6.
+   Failed citations strip the whole claim that references them; an answer left without verified support is not shown.
 4. **Render or abstain** — verified answers display with **clickable references** that open the exact passage in
    context. If nothing survives verification, the copilot **abstains as a professional finding, never as a failure**.
-   In a compliance tool, absence of evidence *is* a finding — auditors call it exactly that.
+   In a compliance tool, the absence of a verifiable citation is itself a signal auditors care about — surfaced as a
+   candidate gap for human confirmation, never asserted as a proven gap.
 
 ### Abstention as a first-class answer (designed, not improvised)
 
@@ -234,13 +240,17 @@ The abstention response is specified up front, because its framing decides wheth
 moment or its most awkward one:
 
 - **Voice of an auditor, not an apologetic bot.** The copilot never says "I don't know" or "Sorry, I couldn't find
-  anything." The canonical form is: *"No documented evidence found. I searched the uploaded policies for coverage of
-  ⟨topic⟩ and found no passage that addresses it. Under ISO 42001 this is a potential gap against ⟨clause⟩."*
-- **It shows its work.** The abstention card lists what *was* searched — the top retrieved passages and why they
-  don't qualify (e.g. "mentions vendors, but not AI-specific due diligence") — proving the system looked before it
-  declined. An abstention with visible search effort reads as diligence; one without reads as failure.
+  anything." The canonical form is: *"No verifiable evidence found among the retrieved passages. For ⟨topic⟩, no
+  verifiable citation could be produced from the uploaded policies. Under ISO 42001, clause ⟨clause⟩ is to be
+  examined as a potential gap."* The wording states only what the code established: top-k retrieval cannot prove
+  corpus-wide absence, and a suggested clause is a lead for human confirmation, not a proven gap.
+- **It shows its work.** The abstention card lists what *was* searched — the top retrieved passages, each with the
+  model's short reason why it doesn't qualify (e.g. "mentions vendors, but not AI-specific due diligence"). These
+  per-passage reasons are **model-generated commentary**: the code deterministically checks they cover every
+  displayed passage, not that they are true — the UI labels them as unverified. An abstention with visible search
+  effort reads as diligence; one without reads as failure.
 - **It ends with an action, not a shrug:** one-click **"Add to gap register"** and **"Flag for human review"**
-  buttons turn the non-answer into workflow output.
+  buttons turn the non-answer into workflow output — a gap enters the register only after a human confirms it.
 - **Distinct visual identity:** abstentions render as an amber ⚪/🟡 "Potential gap" card — the same visual family
   as findings — never in error styling (no red, no warning icons, no failure language).
 

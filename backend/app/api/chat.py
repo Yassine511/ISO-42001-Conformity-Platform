@@ -23,6 +23,21 @@ router = APIRouter(prefix="/api", tags=["chat"])
 QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
 
 
+def _normalize_claims(claims: list) -> list:
+    """Legacy belt: rows persisted before revision 0010 carry `verified`
+    instead of `citations_verified`. The 0010 data migration backfills
+    Postgres; this normalization covers stores the migration never ran on."""
+    out = []
+    for claim in claims:
+        if "citations_verified" not in claim:
+            claim = {
+                **{k: v for k, v in claim.items() if k != "verified"},
+                "citations_verified": claim.get("verified", False),
+            }
+        out.append(claim)
+    return out
+
+
 def message_to_out(message: ChatMessage) -> ChatMessageOut:
     """Response shape from the persisted row only — GET replay is byte-stable.
 
@@ -40,7 +55,13 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
             "requirement_fr": top["text"],
             "domain": top.get("domain"),
         }
-    answer_ids = set(service.answer_citation_ids(message.claims))
+    claims = _normalize_claims(message.claims)
+    # answer citations in CLAIM-REFERENCE order (footnote order for M5),
+    # not draft declaration order
+    by_id = {c["id"]: c for c in message.citations}
+    answer_citations = [
+        by_id[cid] for cid in service.answer_citation_ids(claims) if cid in by_id
+    ]
     return ChatMessageOut(
         id=message.id,
         conversation_id=message.conversation_id,
@@ -49,8 +70,8 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
         abstain_reason=message.abstain_reason,
         answer=message.answer,
         evidence_scope=message.evidence_scope,
-        claims=message.claims,
-        answer_citations=[c for c in message.citations if c["id"] in answer_ids],
+        claims=claims,
+        answer_citations=answer_citations,
         citations=message.citations,
         stripped_citations=message.stripped_citations,
         retrieval_notes=message.retrieval_notes,
