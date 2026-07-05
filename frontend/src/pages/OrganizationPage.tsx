@@ -37,6 +37,9 @@ export default function OrganizationPage() {
     mutationFn: api.deleteDocument,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents", orgId] }),
   });
+  // The backend deliberately refuses some deletes (409: cited as evidence by a
+  // finding; 503: vector index down) — those refusals must be visible.
+  const removeError = remove.isError ? (remove.error as Error).message : null;
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
@@ -104,6 +107,8 @@ export default function OrganizationPage() {
           {msg}
         </p>
       ))}
+
+      {removeError && <p className="text-sm text-red-600">{removeError}</p>}
 
       <ul className="divide-y rounded-xl border border-slate-200 bg-white">
         {docs.data?.length === 0 && (
