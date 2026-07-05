@@ -11,8 +11,11 @@ roadmap). Currently through **M4** (M3: LangGraph pipeline `backend/app/pipeline
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`. M4: grounded
 chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
-verifies; the answer is assembled server-side from surviving claims, fuzzy quotes stripped with
-provenance), same verifier/retrieval/LLM layer, conversation logging in
+verifies: exact quote match + clause among the RETRIEVED KB requirements; the answer is assembled
+server-side from surviving claims, fuzzy quotes stripped with provenance). Chat verification is
+**citation-location verification**, never semantic entailment — an authentic-but-irrelevant quote
+passes; claims carry `citations_verified`, semantic support is M5 human review / M6 measurement.
+Same verifier/retrieval/LLM layer, conversation logging in
 `conversations/chat_messages/chat_llm_calls`, CLI demo `scripts/chat_demo.py`); next is **M5**
 (frontend core + HITL review workspace + chat UI). After M6, core continues
 with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →

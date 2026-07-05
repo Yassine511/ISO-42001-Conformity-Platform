@@ -73,7 +73,9 @@ class ChatClaimOut(BaseModel):
     text: str
     kind: Literal["organization", "standard"]
     citation_ids: list[str]
-    verified: bool
+    # citation-LOCATION verified (quote exists / clause was retrieved) — NOT a
+    # semantic-support judgment; claim quality is human-reviewed (M5), measured (M6)
+    citations_verified: bool
     failed_citation_ids: list[str] = []
 
 
@@ -135,8 +137,14 @@ class ChatMessageOut(BaseModel):
     answer: str
     evidence_scope: Literal["policy", "kb_only", "mixed"] | None
     claims: list[ChatClaimOut]
+    # answer evidence: only the citations referenced by surviving claims —
+    # what a UI renders next to the answer
+    answer_citations: list[ChatCitationOut]
+    # audit provenance: EVERY location-verified citation, including those
+    # referenced only by dropped claims or by nothing — never render as evidence
     citations: list[ChatCitationOut]
     stripped_citations: list[StrippedCitationOut]
+    # model-generated, UNVERIFIED commentary (coverage-checked only)
     retrieval_notes: list[RetrievalNoteOut] | None
     searched: list[SearchResult]
     suggested_clause: SuggestedClauseOut | None

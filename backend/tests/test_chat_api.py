@@ -72,6 +72,9 @@ def test_chat_happy_path_and_replay(client, org_id):
     assert body["evidence_scope"] == "policy"
     assert body["conversation_id"]
     assert body["citations"][0]["match_method"] == "exact"
+    # answer evidence == audit provenance here (single fully-verified claim)
+    assert body["answer_citations"] == body["citations"]
+    assert body["claims"][0]["citations_verified"] is True
     assert body["searched"]  # shows-its-work payload
     assert body["suggested_clause"] is None
 

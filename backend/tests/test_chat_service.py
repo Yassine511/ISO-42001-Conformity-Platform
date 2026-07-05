@@ -160,6 +160,18 @@ def _ask(env, scripts, question=QUESTION, org_id=None, conversation_id=None, **k
     return session_factory, fake, message
 
 
+def _retrieved_kb_ids(env, question=QUESTION, k_kb=4):
+    """KB clause ids the service will retrieve (deterministic) — a valid KB
+    citation must reference one of these."""
+    session_factory, org_id = env
+    db = session_factory()
+    try:
+        items = hybrid_search(db, org_id, question, k=k_kb, scope="kb")
+    finally:
+        db.close()
+    return [i.requirement_id for i in items]
+
+
 def _displayed_policy_ids(env, question=QUESTION, k_policy=8):
     """Retrieval is deterministic: precompute the result_ids the service will
     display, to script coverage-complete retrieval_notes."""
@@ -198,24 +210,43 @@ def test_verbatim_quote_answered_policy_scope(env):
 
 
 def test_kb_citation_hydrated_and_kb_only_caveat(env):
-    _, _, m = _ask(env, [_draft(claims=[_std_claim()], citations=[_kb_citation()])])
+    clause = _retrieved_kb_ids(env)[0]
+    _, _, m = _ask(
+        env, [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=clause)])]
+    )
     assert m.status == "ANSWERED"
     assert m.evidence_scope == "kb_only"
     [citation] = m.citations
     assert citation["type"] == "kb"
-    assert citation["requirement_id"] == KB_CLAUSE
+    assert citation["requirement_id"] == clause
     # display text hydrated from the KB, never from model output
     assert citation["requirement_fr"]
     assert service.KB_ONLY_CAVEAT in m.answer
 
 
+def test_kb_citation_must_be_retrieved(env):
+    # a clause that EXISTS in the standard but was never retrieved for this
+    # question is a hallucination, not evidence — stripped (audit round 12 §2)
+    retrieved = set(_retrieved_kb_ids(env))
+    unretrieved = next(c for c in ("4.1", "5.2", "A.2.2", KB_CLAUSE) if c not in retrieved)
+    _, _, m = _ask(
+        env,
+        [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=unretrieved)])],
+    )
+    assert m.status == "ABSTAINED"
+    assert m.abstain_reason == "verification_failed"
+    [stripped] = m.stripped_citations
+    assert "récupérées" in stripped["error"]
+
+
 def test_mixed_scopes_both_claims_no_caveat(env):
+    clause = _retrieved_kb_ids(env)[0]
     _, _, m = _ask(
         env,
         [
             _draft(
                 claims=[_org_claim(), _std_claim()],
-                citations=[_policy_citation(), _kb_citation()],
+                citations=[_policy_citation(), _kb_citation(clause=clause)],
             )
         ],
     )
@@ -223,6 +254,26 @@ def test_mixed_scopes_both_claims_no_caveat(env):
     assert m.evidence_scope == "mixed"
     assert "48 heures" in m.answer
     assert "processus de signalement" in m.answer
+    assert service.KB_ONLY_CAVEAT not in m.answer
+
+
+def test_scope_derives_from_cited_types_not_claim_kinds(env):
+    # a single STANDARD claim citing a verified policy quote AND a retrieved
+    # KB clause: scope must be mixed, and the kb_only caveat (which would
+    # falsely deny that a policy passage was cited) must not appear
+    # (audit round 12 §3)
+    clause = _retrieved_kb_ids(env)[0]
+    std = {
+        "text": "La norme exige un signalement, ce que la politique applique.",
+        "kind": "standard",
+        "citation_ids": ["c1", "c2"],
+    }
+    _, _, m = _ask(
+        env,
+        [_draft(claims=[std], citations=[_policy_citation(), _kb_citation(clause=clause)])],
+    )
+    assert m.status == "ANSWERED"
+    assert m.evidence_scope == "mixed"
     assert service.KB_ONLY_CAVEAT not in m.answer
 
 
@@ -266,8 +317,11 @@ def test_claim_binding_dropped_claim_text_absent(env):
     assert m.status == "ANSWERED"
     assert kept_text in m.answer
     assert dropped_text not in m.answer
-    dropped = [c for c in m.claims if not c["verified"]]
+    dropped = [c for c in m.claims if not c["citations_verified"]]
     assert dropped and dropped[0]["failed_citation_ids"] == ["c9"]
+    # answer/audit separation (audit round 12 §5): only citations referenced
+    # by surviving claims back the final answer
+    assert service.answer_citation_ids(m.claims) == ["c1"]
 
 
 def test_all_citations_must_verify_partial_support_dropped(env):
@@ -447,9 +501,10 @@ def test_persistence_and_conversation_reuse(env):
     db.close()
 
     # second message appended to the same conversation
+    clause = _retrieved_kb_ids(env)[0]
     _, _, m2 = _ask(
         env,
-        [_draft(claims=[_std_claim()], citations=[_kb_citation()])],
+        [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=clause)])],
         conversation_id=conv_id,
     )
     assert m2.conversation_id == conv_id

@@ -13,10 +13,19 @@ the read transaction (and its connection) BEFORE the ~60s provider call; a
 short write transaction at the end persists everything in one commit.
 
 Trust rules (adversarially reviewed):
+- SEMANTICS OF "VERIFIED", stated precisely: verification is CITATION-LOCATION
+  verification — the quote exists verbatim in a retrieved passage, the clause
+  id was actually retrieved for this question. It does NOT establish that the
+  citation semantically supports the claim text (an authentic but irrelevant
+  quote passes): semantic entailment is not deterministically checkable. Same
+  posture as M3's VERIFIED-never-means-verdict-correct — claim support quality
+  is reviewed by humans (M5) and measured (M6). The claims payload therefore
+  says `citations_verified`, never `verified`.
 - A claim survives verification only if EVERY citation it references verified
-  (exact match after normalization for policy quotes; KB membership for clause
-  refs). The user-visible answer is assembled server-side from surviving
-  claims — prose whose support failed is never shown.
+  (exact match after normalization for policy quotes; clause membership in the
+  KB requirements RETRIEVED for this question — a hallucinated-but-existing
+  clause id is stripped). The user-visible answer is assembled server-side
+  from surviving claims — prose whose support failed is never shown.
 - A fuzzy quote match is stripped like a failure (M3 invariant: VERIFIED =
   exact only) but its QuoteMatch provenance is persisted for human review.
 - Abstention text is a deterministic template, epistemically honest: top-k
@@ -63,6 +72,21 @@ INFRA_ABSTENTION = (
     "Vérification impossible : les fournisseurs LLM sont indisponibles. "
     "Aucune conclusion documentaire ne peut être tirée ; réessayez ultérieurement."
 )
+
+
+def answer_citation_ids(claims: list[dict]) -> list[str]:
+    """Ids of the citations that back the FINAL ANSWER: those referenced by
+    surviving claims, in first-reference order. Everything else in the
+    persisted `citations` list (unreferenced, or referenced only by dropped
+    claims) is audit provenance and must not be rendered as answer evidence."""
+    seen: list[str] = []
+    for claim in claims:
+        if not claim.get("citations_verified"):
+            continue
+        for cid in claim["citation_ids"]:
+            if cid not in seen:
+                seen.append(cid)
+    return seen
 
 
 class OrganizationNotFoundError(LookupError):
@@ -135,14 +159,18 @@ def _parse_chat_draft(
 
 
 def verify_citations(
-    draft: ChatDraft, retrieved_policy: list[dict], kb: dict
+    draft: ChatDraft, retrieved_policy: list[dict], retrieved_kb: list[dict], kb: dict
 ) -> dict[str, CitationOutcome]:
     """Deterministic per-citation verification, keyed by citation id.
 
     Policy quotes: EXACT match after normalization against the retrieved
-    policy extracts (fuzzy = stripped, provenance kept). KB refs: membership
-    in the loaded KB; display text is hydrated here, never taken from the model.
+    policy extracts (fuzzy = stripped, provenance kept). KB refs: the clause
+    must be among the requirements RETRIEVED for this question (mirrors the
+    quote rule — a clause id that exists in the standard but was never shown
+    to the model is a hallucination, not evidence); display text is then
+    hydrated from the authoritative KB, never taken from the model.
     """
+    retrieved_clause_ids = {i["requirement_id"] for i in retrieved_kb}
     outcomes: dict[str, CitationOutcome] = {}
     for citation in draft.citations:
         raw = citation.model_dump(mode="json")
@@ -186,14 +214,14 @@ def verify_citations(
                 )
         else:  # kb
             clause = (citation.clause_ref or "").strip()
-            entry = kb["by_id"].get(clause)
+            entry = kb["by_id"].get(clause) if clause in retrieved_clause_ids else None
             if entry is None:
                 outcomes[citation.id] = CitationOutcome(
                     citation=raw,
                     verified=False,
                     error=(
-                        f"clause_ref invalide : « {clause} » n'existe pas dans la "
-                        "base ISO/IEC 42001."
+                        f"clause_ref invalide : « {clause} » ne figure pas parmi les "
+                        "exigences ISO/IEC 42001 récupérées pour cette question."
                     ),
                 )
             else:
@@ -242,12 +270,15 @@ def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) ->
 
 
 def _abstention_text(question: str, retrieved_kb: list[dict]) -> str:
-    """Deterministic auditor-voice abstention. Epistemically honest: speaks
-    only about the retrieved passages, suggests a clause to EXAMINE."""
+    """Deterministic auditor-voice abstention. Epistemically honest: it states
+    only what the code actually established — no verifiable citation could be
+    produced from the retrieved passages (NOT that the passages demonstrate
+    nothing: that would be a semantic judgment the code cannot check) — and
+    suggests a clause to EXAMINE, not a proven gap."""
     text = (
-        "Aucune preuve vérifiable n'a été trouvée parmi les passages récupérés. "
-        f"J'ai recherché dans les politiques téléversées une couverture de "
-        f"« {question} » ; aucun des passages récupérés ne la démontre."
+        "Aucune preuve vérifiable n'a été trouvée parmi les passages récupérés : "
+        f"pour « {question} », aucune citation vérifiable n'a pu être établie à "
+        "partir des politiques téléversées."
     )
     if retrieved_kb:
         top = retrieved_kb[0]
@@ -362,7 +393,7 @@ def ask(
                 "abstention retenue, support ignoré."
             ]
     else:
-        outcomes = verify_citations(draft, retrieved_policy, kb)
+        outcomes = verify_citations(draft, retrieved_policy, retrieved_kb, kb)
         stripped_payload = [
             {"citation": o.citation, "error": o.error, "match": o.match}
             for o in outcomes.values()
@@ -378,7 +409,8 @@ def ask(
                 "text": claim.text,
                 "kind": claim.kind,
                 "citation_ids": claim.citation_ids,
-                "verified": not failed,
+                # citation-LOCATION verified, not semantic support (module doc)
+                "citations_verified": not failed,
                 "failed_citation_ids": failed,
             }
             claims_payload.append(entry)
@@ -390,10 +422,14 @@ def ask(
             answer = _abstention_text(question, retrieved_kb)
         else:
             status = STATUS_ANSWERED
-            kinds = {c["kind"] for c in surviving}
-            if kinds == {"standard"}:
+            # scope from the VERIFIED CITATIONS the surviving claims reference,
+            # not from claim kinds: a standard claim may also cite a verified
+            # policy quote, and the kb_only caveat must never be false
+            referenced = {cid for c in surviving for cid in c["citation_ids"]}
+            cited_types = {outcomes[cid].citation["type"] for cid in referenced}
+            if cited_types == {"kb"}:
                 evidence_scope = "kb_only"
-            elif kinds == {"organization"}:
+            elif cited_types == {"policy"}:
                 evidence_scope = "policy"
             else:
                 evidence_scope = "mixed"

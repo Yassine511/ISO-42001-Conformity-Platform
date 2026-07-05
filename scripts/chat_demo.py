@@ -79,6 +79,12 @@ def main() -> int:
     return 1 if infra_abstains else 0
 
 
+def service_answer_ids(claims):
+    from app.chat.service import answer_citation_ids
+
+    return answer_citation_ids(claims)
+
+
 def _print_message(m) -> None:
     print(f"=== {m.question} " + "=" * 30)
     print("-- extraits politiques récupérés :")
@@ -101,7 +107,8 @@ def _print_message(m) -> None:
     if m.status == "ANSWERED":
         print(f">>> ANSWERED (evidence_scope={m.evidence_scope})")
         print(f"    {m.answer}\n")
-        for c in m.citations:
+        answer_ids = set(service_answer_ids(m.claims))
+        for c in [c for c in m.citations if c["id"] in answer_ids]:
             if c["type"] == "policy":
                 print(
                     f'    [{c["id"]}] « {c["quote"]} »\n'

@@ -40,6 +40,7 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
             "requirement_fr": top["text"],
             "domain": top.get("domain"),
         }
+    answer_ids = set(service.answer_citation_ids(message.claims))
     return ChatMessageOut(
         id=message.id,
         conversation_id=message.conversation_id,
@@ -49,6 +50,7 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
         answer=message.answer,
         evidence_scope=message.evidence_scope,
         claims=message.claims,
+        answer_citations=[c for c in message.citations if c["id"] in answer_ids],
         citations=message.citations,
         stripped_citations=message.stripped_citations,
         retrieval_notes=message.retrieval_notes,
