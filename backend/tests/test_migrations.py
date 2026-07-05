@@ -202,6 +202,67 @@ def test_downgrade_to_published_0005(scratch_db):
         con.close()
 
 
+def test_0009_creates_chat_tables(scratch_db):
+    """0009: chat tables exist at head with the status-coherence CHECK enforced."""
+    _alembic(scratch_db, "upgrade", "head")
+    con = _connect(scratch_db)
+    try:
+        for table in ("conversations", "chat_messages", "chat_llm_calls"):
+            assert _columns(con, table), f"{table} missing"
+        org_id, conv_id = str(uuid.uuid4()), str(uuid.uuid4())
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+            (org_id,),
+        )
+        con.execute(
+            "INSERT INTO conversations (id, organization_id, title, created_at, updated_at) "
+            "VALUES (%s, %s, 'Question ?', now(), now())",
+            (conv_id, org_id),
+        )
+
+        def _insert_message(status, abstain_reason, evidence_scope):
+            con.execute(
+                "INSERT INTO chat_messages (id, conversation_id, question, status, "
+                "abstain_reason, answer, evidence_scope, claims, citations, "
+                "stripped_citations, retrieved_policy, retrieved_kb, attempts, "
+                "draft_attempts, prompt_version, corpus_version, created_at) "
+                "VALUES (%s, %s, 'Q ?', %s, %s, 'Réponse.', %s, '[]', '[]', '[]', "
+                "'[]', '[]', '[]', 1, '1', '1.0.0', now())",
+                (str(uuid.uuid4()), conv_id, status, abstain_reason, evidence_scope),
+            )
+
+        _insert_message("ANSWERED", None, "policy")
+        _insert_message("ABSTAINED", "model_abstained", None)
+        con.commit()
+
+        import psycopg
+
+        # ANSWERED without a scope violates the coherence CHECK …
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _insert_message("ANSWERED", None, None)
+        con.rollback()
+        # … as does ABSTAINED without a reason
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _insert_message("ABSTAINED", None, None)
+        con.rollback()
+
+        # chat_llm_calls accepts a row bound to the message
+        (msg_id,) = con.execute(
+            "SELECT id FROM chat_messages WHERE status = 'ANSWERED'"
+        ).fetchone()
+        con.execute(
+            "INSERT INTO chat_llm_calls (id, chat_message_id, call_number, "
+            "draft_attempt_number, prompt_version, provider, requested_model, status, "
+            "request_messages, response_format, temperature, started_at) "
+            "VALUES (%s, %s, 1, 1, '1', 'mistral', 'mistral-large-latest', 'SUCCESS', "
+            "'[]', '{}', 0.0, now())",
+            (str(uuid.uuid4()), msg_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 def test_head_accepts_long_provider_model_names(scratch_db):
     """0008: reported_model/requested_model/final_model are Text at head, so a
     provider returning a >100-char model name no longer DataErrors the write

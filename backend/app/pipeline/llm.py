@@ -30,6 +30,7 @@ except ImportError:  # optional — plain environments work without it
     pass
 
 from app.config import settings
+from app.pipeline.state import AbstainReason
 
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -77,7 +78,37 @@ class LLMOutcome:
 
 
 class LLMProvider(Protocol):
-    def complete_json(self, messages: list[dict], *, json_schema: dict | None = None) -> LLMOutcome: ...
+    def complete_json(
+        self,
+        messages: list[dict],
+        *,
+        json_schema: dict | None = None,
+        schema_name: str = "draft_finding",
+    ) -> LLMOutcome: ...
+
+
+def classify_failure(calls: list[LLMCall]) -> str:
+    """Deterministic failure cause from a call trail (all providers failed).
+
+    Exhausted 429s are throttling (infrastructure), not a generic provider
+    failure — M6 must separate them at the finding level. rate_limited requires
+    that throttling was the DECISIVE cause: a 429 somewhere in the trail
+    followed by an unrelated terminal failure (5xx/4xx, network, malformed 200)
+    is llm_error. Providers merely skipped for a missing key don't count as a
+    competing failure. Single authority for every consumer (pipeline, chat) —
+    see state.INFRASTRUCTURE_ABSTAIN_REASONS.
+    """
+    had_429 = any(c.http_status == 429 for c in calls)
+    other_failure = any(
+        c.status in (CALL_HTTP_ERROR, CALL_NETWORK_ERROR, CALL_BAD_RESPONSE)
+        and c.http_status != 429
+        for c in calls
+    )
+    return (
+        AbstainReason.RATE_LIMITED.value
+        if had_429 and not other_failure
+        else AbstainReason.LLM_ERROR.value
+    )
 
 
 def _now() -> str:
@@ -108,13 +139,13 @@ def _backoff_delay(resp: httpx.Response, backoff_round: int) -> float:
     return min(settings.judge_429_base_delay * (2 ** backoff_round), MAX_BACKOFF_SECONDS)
 
 
-def mistral_response_format(json_schema: dict | None) -> dict:
+def mistral_response_format(json_schema: dict | None, schema_name: str = "draft_finding") -> dict:
     """Mistral's json_schema envelope is part of the API contract."""
     if json_schema is None:
         return {"type": "json_object"}
     return {
         "type": "json_schema",
-        "json_schema": {"name": "draft_finding", "strict": True, "schema": json_schema},
+        "json_schema": {"name": schema_name, "strict": True, "schema": json_schema},
     }
 
 
@@ -126,7 +157,13 @@ def groq_response_format(json_schema: dict | None) -> dict:
 class HttpJsonLLM:
     """Mistral La Plateforme primary; Groq fallback on missing key/429/5xx/network."""
 
-    def complete_json(self, messages: list[dict], *, json_schema: dict | None = None) -> LLMOutcome:
+    def complete_json(
+        self,
+        messages: list[dict],
+        *,
+        json_schema: dict | None = None,
+        schema_name: str = "draft_finding",
+    ) -> LLMOutcome:
         calls: list[LLMCall] = []
         providers = [
             (
@@ -134,7 +171,7 @@ class HttpJsonLLM:
                 MISTRAL_URL,
                 settings.mistral_api_key,
                 settings.judge_model,
-                mistral_response_format(json_schema),
+                mistral_response_format(json_schema, schema_name),
             ),
             (
                 "groq",
@@ -238,5 +275,12 @@ def get_provider() -> LLMProvider:
     return _provider
 
 
-def complete_json(messages: list[dict], *, json_schema: dict | None = None) -> LLMOutcome:
-    return get_provider().complete_json(messages, json_schema=json_schema)
+def complete_json(
+    messages: list[dict],
+    *,
+    json_schema: dict | None = None,
+    schema_name: str = "draft_finding",
+) -> LLMOutcome:
+    return get_provider().complete_json(
+        messages, json_schema=json_schema, schema_name=schema_name
+    )

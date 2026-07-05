@@ -86,7 +86,7 @@ class FakeLLM:
     def call_count(self) -> int:
         return len(self.requests)
 
-    def complete_json(self, messages, *, json_schema=None):
+    def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
         self.requests.append(messages)
         content = self.scripts.pop(0)
         now = "2026-07-04T00:00:00+00:00"
@@ -469,7 +469,7 @@ def test_provider_with_blank_timestamps_does_not_crash(env):
     from app.pipeline.llm import LLMOutcome as _LO
 
     class BlankTsLLM:
-        def complete_json(self, messages, *, json_schema=None):
+        def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
             call = _LC(
                 provider="fake",
                 requested_model="fake-model",
@@ -687,7 +687,7 @@ def test_app_level_resume_continues_instead_of_rerunning(env, monkeypatch):
         def __init__(self):
             self.crashed = False
 
-        def complete_json(self, messages, *, json_schema=None):
+        def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
             if not self.crashed:
                 self.crashed = True
                 raise RuntimeError("crash before checkpoint")
@@ -715,7 +715,7 @@ def test_persistent_429_abstains_as_rate_limited(env):
     from app.pipeline.llm import LLMOutcome as _LO
 
     class ThrottledLLM:
-        def complete_json(self, messages, *, json_schema=None):
+        def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
             def call(status, http_status=None):
                 return _LC(
                     provider="mistral" if status == _HE else "groq",
@@ -945,7 +945,7 @@ def test_429_then_hard_failure_is_llm_error_not_rate_limited(env):
     from app.pipeline.llm import LLMOutcome as _LO
 
     class MixedFailureLLM:
-        def complete_json(self, messages, *, json_schema=None):
+        def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
             def call(provider, http_status):
                 return _LC(
                     provider=provider,

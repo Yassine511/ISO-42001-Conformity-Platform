@@ -60,6 +60,91 @@ class SearchResult(BaseModel):
     domain: str | None = None
 
 
+class ChatAsk(BaseModel):
+    question: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ]
+    conversation_id: str | None = None
+    k_policy: int = Field(default=8, ge=1, le=20)
+    k_kb: int = Field(default=4, ge=1, le=10)
+
+
+class ChatClaimOut(BaseModel):
+    text: str
+    kind: Literal["organization", "standard"]
+    citation_ids: list[str]
+    verified: bool
+    failed_citation_ids: list[str] = []
+
+
+class ChatCitationOut(BaseModel):
+    """Verified citation (tagged by type). Policy fields snapshot the source
+    location; KB fields carry the server-hydrated paraphrase."""
+
+    id: str
+    type: Literal["policy", "kb"]
+    # policy
+    quote: str | None = None
+    chunk_id: str | None = None
+    document_id: str | None = None
+    filename: str | None = None
+    page_number: int | None = None
+    match_start: int | None = None
+    match_end: int | None = None
+    match_method: str | None = None
+    match_score: float | None = None
+    # kb
+    requirement_id: str | None = None
+    requirement_fr: str | None = None
+    domain: str | None = None
+
+
+class StrippedCitationOut(BaseModel):
+    citation: dict
+    error: str | None
+    match: dict | None = None  # fuzzy candidate provenance, when any
+
+
+class RetrievalNoteOut(BaseModel):
+    result_id: str
+    reason: str
+
+
+class SuggestedClauseOut(BaseModel):
+    requirement_id: str
+    requirement_fr: str
+    domain: str | None = None
+
+
+class ConversationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    organization_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    conversation_id: str
+    question: str
+    status: Literal["ANSWERED", "ABSTAINED"]
+    abstain_reason: str | None
+    answer: str
+    evidence_scope: Literal["policy", "kb_only", "mixed"] | None
+    claims: list[ChatClaimOut]
+    citations: list[ChatCitationOut]
+    stripped_citations: list[StrippedCitationOut]
+    retrieval_notes: list[RetrievalNoteOut] | None
+    searched: list[SearchResult]
+    suggested_clause: SuggestedClauseOut | None
+    final_model: str | None
+    final_provider: str | None
+    created_at: datetime
+
+
 class IndexReport(BaseModel):
     documents: int
     chunks: int

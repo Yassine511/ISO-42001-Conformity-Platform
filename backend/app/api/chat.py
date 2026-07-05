@@ -1,0 +1,111 @@
+"""M4 chat endpoints: grounded Q&A + conversation replay.
+
+Total provider failure is HTTP 200 with an ABSTAINED message (infrastructure
+reason), NOT 503: the exchange must enter the audit log either way, and
+state.is_infrastructure_failure lets clients render it distinctly. 503 is
+reserved for backing-store failure before any answerable work happened.
+GET endpoints replay strictly from persisted rows.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.chat import service
+from app.db import get_db
+from app.models import ChatMessage, Conversation, Organization
+from app.pipeline.state import is_infrastructure_failure
+from app.schemas import ChatAsk, ChatMessageOut, ConversationOut
+
+router = APIRouter(prefix="/api", tags=["chat"])
+
+QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
+
+
+def message_to_out(message: ChatMessage) -> ChatMessageOut:
+    """Response shape from the persisted row only — GET replay is byte-stable.
+
+    searched/suggested_clause are derived from the persisted retrieval JSON
+    (deterministic), never re-retrieved or re-templated."""
+    suggested = None
+    if (
+        message.status == service.STATUS_ABSTAINED
+        and not is_infrastructure_failure(message.abstain_reason)
+        and message.retrieved_kb
+    ):
+        top = message.retrieved_kb[0]
+        suggested = {
+            "requirement_id": top["requirement_id"],
+            "requirement_fr": top["text"],
+            "domain": top.get("domain"),
+        }
+    return ChatMessageOut(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        question=message.question,
+        status=message.status,
+        abstain_reason=message.abstain_reason,
+        answer=message.answer,
+        evidence_scope=message.evidence_scope,
+        claims=message.claims,
+        citations=message.citations,
+        stripped_citations=message.stripped_citations,
+        retrieval_notes=message.retrieval_notes,
+        searched=message.retrieved_policy + message.retrieved_kb,
+        suggested_clause=suggested,
+        final_model=message.final_model,
+        final_provider=message.final_provider,
+        created_at=message.created_at,
+    )
+
+
+@router.post("/organizations/{org_id}/chat/messages", response_model=ChatMessageOut)
+def post_message(org_id: str, body: ChatAsk, db: Session = Depends(get_db)):
+    try:
+        message = service.ask(
+            db,
+            org_id,
+            body.question,
+            body.conversation_id,
+            k_policy=body.k_policy,
+            k_kb=body.k_kb,
+        )
+    except service.OrganizationNotFoundError:
+        raise HTTPException(404, "Organisation introuvable.")
+    except service.ConversationNotFoundError:
+        raise HTTPException(404, "Conversation introuvable.")
+    except QDRANT_ERRORS as exc:
+        raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
+    return message_to_out(message)
+
+
+@router.get(
+    "/organizations/{org_id}/chat/conversations", response_model=list[ConversationOut]
+)
+def list_conversations(org_id: str, db: Session = Depends(get_db)):
+    if not db.get(Organization, org_id):
+        raise HTTPException(404, "Organisation introuvable.")
+    return db.scalars(
+        select(Conversation)
+        .where(Conversation.organization_id == org_id)
+        .order_by(Conversation.updated_at.desc())
+    ).all()
+
+
+@router.get(
+    "/organizations/{org_id}/chat/conversations/{conversation_id}/messages",
+    response_model=list[ChatMessageOut],
+)
+def list_messages(org_id: str, conversation_id: str, db: Session = Depends(get_db)):
+    if not db.get(Organization, org_id):
+        raise HTTPException(404, "Organisation introuvable.")
+    conv = db.get(Conversation, conversation_id)
+    if conv is None or conv.organization_id != org_id:
+        raise HTTPException(404, "Conversation introuvable.")
+    messages = db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .order_by(ChatMessage.created_at)
+    ).all()
+    return [message_to_out(m) for m in messages]

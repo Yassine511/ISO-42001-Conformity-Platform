@@ -7,10 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
 abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§14 = milestone
-roadmap). Currently through **M3** (LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
+roadmap). Currently through **M4** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
-`assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`); next is
-**M4** (chat copilot reusing the same retrieval + citation verification). After M6, core continues
+`assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`. M4: grounded
+chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
+verifies; the answer is assembled server-side from surviving claims, fuzzy quotes stripped with
+provenance), same verifier/retrieval/LLM layer, conversation logging in
+`conversations/chat_messages/chat_llm_calls`, CLI demo `scripts/chat_demo.py`); next is **M5**
+(frontend core + HITL review workspace + chat UI). After M6, core continues
 with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →
 corrective-action plan → per-action human approval → anchored patch with raw-equality unique anchors;
 **original uploads are immutable** — agent output is always a separate artifact or an explicitly

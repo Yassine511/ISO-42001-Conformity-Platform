@@ -147,31 +147,13 @@ def make_judge_node(session_factory: SessionFactory):
             )
             llm_error = outcome.error
 
-        # Deterministic failure cause from the call trail: exhausted 429s are
-        # throttling (infrastructure), not a generic provider failure — M6
-        # must be able to separate them at the finding level. rate_limited
-        # requires that throttling was the DECISIVE cause: a 429 somewhere in
-        # the trail followed by an unrelated terminal failure (5xx/4xx, network,
-        # malformed 200) is llm_error, not throttling. Providers merely skipped
-        # for a missing key don't count as a competing failure.
+        # Deterministic failure cause from the call trail — single shared
+        # authority (llm.classify_failure) so pipeline and chat classify
+        # identically (state.py INFRASTRUCTURE_ABSTAIN_REASONS contract).
         failed_reason = None
         if content is None:
-            calls = outcome.calls if outcome is not None else []
-            had_429 = any(c.http_status == 429 for c in calls)
-            other_failure = any(
-                c.status
-                in (
-                    llm_service.CALL_HTTP_ERROR,
-                    llm_service.CALL_NETWORK_ERROR,
-                    llm_service.CALL_BAD_RESPONSE,
-                )
-                and c.http_status != 429
-                for c in calls
-            )
-            failed_reason = (
-                AbstainReason.RATE_LIMITED.value
-                if had_429 and not other_failure
-                else AbstainReason.LLM_ERROR.value
+            failed_reason = llm_service.classify_failure(
+                outcome.calls if outcome is not None else []
             )
 
         if content is None:
