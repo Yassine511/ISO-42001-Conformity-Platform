@@ -467,14 +467,16 @@ synthetic organization is authored by us, the ground truth is exact.
   is tuning-visible during M2–M5, so dev-derived questions (answerable from the 43 covered dev requirements,
   unanswerable from the 8 uncovered dev ones) are **development diagnostics only** and are always reported as such.
   The reportable **chat_eval holdout** is derived from the **test split** (11 covered + 3 uncovered requirements)
-  by a rule frozen here and executed only at M6 — never hand-authored from test content, so the test split stays
-  unconsulted during tuning: one French question per test requirement generated mechanically from the KB paraphrase
-  (template frozen with the eval script), answerability = the gold coverage label, expected requirement id and gold
-  evidence span taken from the gold file at run time. The grading rubric for semantic support and faithfulness is
-  frozen with the eval script BEFORE any holdout run; labelling is done by the author (solo project — stated
-  honestly), with independence obtained procedurally: answerability and expected spans are fixed by the pre-existing
-  gold labels, and support labels are assigned against the rubric with the system's verdict fields masked. Dev and
-  holdout results are always reported separately. Metrics:
+  by artifacts **already committed and frozen at M4** — not a rule to be written later: the deterministic generator
+  `scripts/chat_eval_generate.py` (exact French question template, output schema, answerability := gold verdict ≠
+  `missing`) and the grading rubric `corpus/gold/chat_eval_rubric.md` (claim–citation pair as the semantic-support
+  unit with SUPPORTS/PARTIAL/IRRELEVANT labels and frozen aggregation formulas; answer-level faithfulness; the gold
+  evidence span as a reference anchor, not the only acceptable support; the exact list of masked fields for chat;
+  conservative handling of ambiguous labels). The generator refuses the test split without an `--m6-holdout` flag,
+  so the holdout is generated only at M6; both files' sha256 are embedded in every generated set and reported with
+  the M6 results. Labelling is done by the author (solo project — stated honestly), independence obtained
+  procedurally per the rubric. With only 14 holdout questions (3 unanswerable), M6 reports raw counts with Wilson
+  95% intervals next to any percentage. Dev and holdout results are always reported separately. Metrics:
   - **citation-location validity** — fraction of returned citations the deterministic checker locates (≈100% by
     construction; a regression signals a verifier bug), reported separately so it is never conflated with support;
   - **claim–citation semantic support precision** — human-labelled: does the cited passage actually support the
@@ -594,7 +596,7 @@ register is derived from conformity findings); no Kubernetes deployment.
 | M3 | Pipeline core | Nodes ① Retrieve, ② Judge, ③ Verify with shared state + checkpointer; grounding contract with repair-retry-then-abstain path; fuzzy citation verifier unit-tested against real model outputs; provenance logging. **Exit criterion: a runnable end-to-end CLI demo** (one requirement → retrieve → judge → verify → abstain) — the system is demoable before any frontend exists |
 | M4 | ★ Chat copilot | Grounded Q&A endpoint: retrieve → cited draft → verify → answer or abstain; chat logging |
 | M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④ — formal confirmation applies to pipeline findings only); chat UI with clickable references opening the source slice at the matched offsets, answers labelled AI drafts (**passive review**: no chat-claim confirmation workflow; retrieval notes labelled as unverified model commentary) |
-| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes. Chat evaluation: dev-derived questions as development diagnostics; the reportable chat_eval holdout is mechanically derived from the test split at M6 under the rule + rubric frozen in §10 — citation-location validity reported separately from human-labelled claim–citation semantic support precision + answer faithfulness; abstention precision/recall on answerable vs unanswerable questions; dev and holdout reported separately |
+| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes. Chat evaluation: dev-derived questions as development diagnostics; the reportable chat_eval holdout is mechanically derived from the test split at M6 by the generator + rubric committed and frozen at M4 (`scripts/chat_eval_generate.py`, `corpus/gold/chat_eval_rubric.md`, sha256 reported) — citation-location validity reported separately from human-labelled claim–citation semantic support precision + answer faithfulness; abstention precision/recall on answerable vs unanswerable questions; dev and holdout reported separately |
 | M7a | ★ Remediation Planning Agent *(core)* | RemediationCase model (multi-finding, provenance-logged linking); mandatory triage (classification, scope, similar-gap search, human-approved rationale); schema-constrained corrective-action plans with typed actions; per-action human review; lifecycle vs effectiveness tracking; scoped reassessment as effectiveness evidence; prompt-injection hardening (see section 8) |
 | M7b | Document-editing tool *(core, after M7a)* | `Document`→`DocumentVersion` restructuring migration (all formats); anchored-patch flow for TXT/MD (server-owned context, raw-equality unique anchors, diff review, transactional approval gate); `RemediationArtifact` + `supersedes_version_id` re-upload flow for PDF/DOCX; `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED` activation protocol with current-version hydration filtering; remediation evaluation corpus + metrics |
 | M8 | Scoring & artifacts *(stretch tier)* | Node ⑤ scoring; dashboard (conformity + trust panel); gap & risk register (derived); deterministic severity feeding remediation action priority; risk-register-initiated remediation cases; then SoA table; PDF export; finding drill-down mode in chat |
