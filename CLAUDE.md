@@ -13,8 +13,11 @@ verify, fuzzy citation verifier, one bounded repair retry then abstention, per-a
 chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
 verifies: exact quote match + clause among the RETRIEVED KB requirements; the answer is assembled
 server-side from surviving claims, fuzzy quotes stripped with provenance). Chat verification is
-**citation-location verification**, never semantic entailment — an authentic-but-irrelevant quote
-passes; claims carry `citations_verified`, semantic support is M5 human review / M6 measurement.
+**citation-location verification** (exact after documented normalization), never semantic entailment —
+an authentic-but-irrelevant quote passes; claims carry `citations_verified`. Chat is **passive review**:
+answers are labelled AI drafts, the reader assesses support via rendered source slices at matched
+offsets (no formal chat-claim confirmation workflow); citation quality is measured in M6. Formal human
+confirmation applies to pipeline findings (M5 workspace).
 Same verifier/retrieval/LLM layer, conversation logging in
 `conversations/chat_messages/chat_llm_calls`, CLI demo `scripts/chat_demo.py`); next is **M5**
 (frontend core + HITL review workspace + chat UI). After M6, core continues

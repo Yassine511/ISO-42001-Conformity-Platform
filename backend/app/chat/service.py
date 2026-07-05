@@ -14,13 +14,17 @@ short write transaction at the end persists everything in one commit.
 
 Trust rules (adversarially reviewed):
 - SEMANTICS OF "VERIFIED", stated precisely: verification is CITATION-LOCATION
-  verification — the quote exists verbatim in a retrieved passage, the clause
+  verification — the quote exists exactly after documented normalization
+  (case, accents, whitespace, typography) in a retrieved passage, the clause
   id was actually retrieved for this question. It does NOT establish that the
   citation semantically supports the claim text (an authentic but irrelevant
   quote passes): semantic entailment is not deterministically checkable. Same
-  posture as M3's VERIFIED-never-means-verdict-correct — claim support quality
-  is reviewed by humans (M5) and measured (M6). The claims payload therefore
-  says `citations_verified`, never `verified`.
+  posture as M3's VERIFIED-never-means-verdict-correct. Chat answers are under
+  PASSIVE review: labelled AI drafts whose clickable references let the reader
+  assess support (no formal chat-claim confirmation workflow — formal human
+  confirmation exists for pipeline findings in the M5 workspace); citation
+  quality is measured in M6. The claims payload therefore says
+  `citations_verified`, never `verified`.
 - A claim survives verification only if EVERY citation it references verified
   (exact match after normalization for policy quotes; clause membership in the
   KB requirements RETRIEVED for this question — a hallucinated-but-existing

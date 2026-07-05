@@ -69,9 +69,12 @@ confidentiality concerns.
 - Provide a **grounded chat copilot**: the user asks questions about the documents or the findings and receives
   answers whose citations are machine-verified, with clickable references to the source passages.
 - Guarantee that **no verdict and no answer is asserted without machine-location-verified citations**: deterministic
-  code proves every cited quote exists verbatim at the cited place and every cited clause was actually retrieved.
-  Location verification is not semantic entailment — whether a citation *supports* the claim it backs is confirmed
-  by the human reviewer (M5) and measured (M6), never asserted by the machine.
+  code proves every cited quote exists exactly (after documented normalization: case, accents, whitespace,
+  typography) at the cited place and every cited clause was actually retrieved. Location verification is not
+  semantic entailment — whether a citation *supports* the claim it backs is never asserted by the machine. Pipeline
+  verdicts get **formal human confirmation** in the M5 review workspace; chat answers use **passive review**: they
+  are labelled AI drafts whose clickable references exist precisely so the reader can assess support, and citation
+  quality is measured in M6. There is no formal chat-claim confirmation workflow.
 - **Abstain** rather than guess: uncertain findings are routed to human review; when no verifiable citation can be
   produced, the copilot says so honestly instead of fabricating one.
 - Keep a **human in charge of every compliance decision**.
@@ -224,13 +227,16 @@ citation can be produced — decline to invent.
 2. **Draft** — the LLM produces a schema-constrained answer: prose plus a list of citations
    (`policy_quote` + source document/chunk, and/or `clause_ref` + our paraphrased requirement text — never verbatim
    ISO text).
-3. **Verify** — the same deterministic checker used in pipeline node ③ confirms each policy quote exists verbatim
-   (exact after normalization) in a retrieved passage and each clause reference is among the KB requirements
-   retrieved for the question. This is **citation-location verification**: it proves provenance, not semantic
-   entailment — whether a located citation actually supports its claim is a human judgment (M5), measured in M6.
+3. **Verify** — the same deterministic checker used in pipeline node ③ confirms each policy quote exists exactly
+   after documented normalization (case, accents, whitespace, typography) in a retrieved passage and each clause
+   reference is among the KB requirements retrieved for the question. This is **citation-location verification**:
+   it proves provenance, not semantic entailment — whether a located citation actually supports its claim is a
+   human judgment (passive review: the reader assesses it through the rendered references), measured in M6.
    Failed citations strip the whole claim that references them; an answer left without verified support is not shown.
-4. **Render or abstain** — verified answers display with **clickable references** that open the exact passage in
-   context. If nothing survives verification, the copilot **abstains as a professional finding, never as a failure**.
+4. **Render or abstain** — verified answers display as **labelled AI drafts** with **clickable references** that
+   open the exact passage in context; the UI renders the source slice at the matched offsets (the ground truth),
+   never the model-provided quote string, since matching is normalized-exact rather than character-for-character.
+   If nothing survives verification, the copilot **abstains as a professional finding, never as a failure**.
    In a compliance tool, the absence of a verifiable citation is itself a signal auditors care about — surfaced as a
    candidate gap for human confirmation, never asserted as a proven gap.
 
@@ -419,8 +425,9 @@ probabilistic model into a system with deterministic guarantees:
 
 - **No claim without verified evidence** — neither a pipeline verdict, nor a chat answer, nor a remediation proposal
   can assert something whose citation the deterministic checker cannot locate in the source text.
-- **Abstention over guessing** — ungrounded or low-confidence findings are routed to a human; unanswerable questions
-  get "no evidence found" instead of a fabrication; unverifiable remediation proposals persist as abstentions.
+- **Abstention over guessing** — ungrounded or low-confidence findings are routed to a human; questions for which no
+  location-verifiable citation can be produced get an honest abstention instead of a fabrication; unverifiable
+  remediation proposals persist as abstentions.
 - **Human owns every decision** — the AI is a *researcher* that drafts and cites; the human is the *judge*.
 - **Writes are gated twice** — a remediation plan or document patch must pass deterministic validation (schema,
   clause references, raw-equality anchor) *and* explicit per-action human approval. Verification proves location and
@@ -562,7 +569,7 @@ register is derived from conformity findings); no Kubernetes deployment.
 | M2 | RAG | Chunking, multilingual embeddings, Qdrant indexing, hybrid retrieval (French-analyzer BM25 + vector, RRF) |
 | M3 | Pipeline core | Nodes ① Retrieve, ② Judge, ③ Verify with shared state + checkpointer; grounding contract with repair-retry-then-abstain path; fuzzy citation verifier unit-tested against real model outputs; provenance logging. **Exit criterion: a runnable end-to-end CLI demo** (one requirement → retrieve → judge → verify → abstain) — the system is demoable before any frontend exists |
 | M4 | ★ Chat copilot | Grounded Q&A endpoint: retrieve → cited draft → verify → answer or abstain; chat logging |
-| M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④); chat UI with clickable references |
+| M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④ — formal confirmation applies to pipeline findings only); chat UI with clickable references opening the source slice at the matched offsets, answers labelled AI drafts (**passive review**: no chat-claim confirmation workflow; retrieval notes labelled as unverified model commentary) |
 | M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes |
 | M7a | ★ Remediation Planning Agent *(core)* | RemediationCase model (multi-finding, provenance-logged linking); mandatory triage (classification, scope, similar-gap search, human-approved rationale); schema-constrained corrective-action plans with typed actions; per-action human review; lifecycle vs effectiveness tracking; scoped reassessment as effectiveness evidence; prompt-injection hardening (see section 8) |
 | M7b | Document-editing tool *(core, after M7a)* | `Document`→`DocumentVersion` restructuring migration (all formats); anchored-patch flow for TXT/MD (server-owned context, raw-equality unique anchors, diff review, transactional approval gate); `RemediationArtifact` + `supersedes_version_id` re-upload flow for PDF/DOCX; `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED` activation protocol with current-version hydration filtering; remediation evaluation corpus + metrics |
@@ -596,8 +603,8 @@ register is derived from conformity findings); no Kubernetes deployment.
   never create a version; retrieval hydration rejects chunks not belonging to `current_version_id`; the
   one-ACTIVE-version-per-document constraint holds; an `INDEX_FAILED` version is recovered by re-drive.
 - **Adversarial tests:** a statement that superficially looks compliant but is not → no false "compliant"; an
-  irrelevant document → abstention, not fabrication; **a chat question with no supporting evidence in the corpus →
-  the copilot abstains instead of inventing a quote**; a remediation request with no plausible anchor → the agent
+  irrelevant document → abstention, not fabrication; **a chat question whose retrieved passages yield no
+  location-verifiable citation → the copilot abstains instead of inventing a quote**; a remediation request with no plausible anchor → the agent
   abstains rather than inventing one; a document containing injected instructions cannot steer triage, plan, or
   patch outside the schema contracts.
 - **System-level:** the gold-set evaluation (accuracy + hallucination before/after verification) is the reliability
@@ -624,8 +631,8 @@ register is derived from conformity findings); no Kubernetes deployment.
 ## 17. Demonstration script
 
 Upload the Lumen AI documents → **ask the copilot a question** ("do we manage third-party AI risk?") and get an
-answer with verified, clickable references → ask a question the corpus cannot support and watch the copilot produce
-a **"Potential gap"** card — showing what it searched, citing the relevant ISO clause, and offering to add the gap
+answer with verified, clickable references → ask a question for which no verifiable citation can be produced and
+watch the copilot produce a **"Potential gap"** card — showing what it searched, citing the relevant ISO clause, and offering to add the gap
 to the register — instead of inventing a quote → run the assessment with live per-node progress → the review workspace
 shows a grounded finding with highlighted evidence and an abstained item flagged for human judgment → the human
 confirms decisions → **open a remediation case on a confirmed gap**: approve its triage (classification + scope),

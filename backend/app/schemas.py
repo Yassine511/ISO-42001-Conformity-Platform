@@ -75,10 +75,14 @@ class ChatClaimOut(BaseModel):
     citation_ids: list[str]
     citations_verified: bool = Field(
         description=(
-            "Citation-LOCATION verified: every referenced quote exists verbatim in a "
-            "retrieved passage and every clause was among the retrieved KB requirements. "
-            "NOT a semantic-support judgment — claim quality is human-reviewed (M5) and "
-            "measured (M6)."
+            "Citation-LOCATION verified: every referenced quote exists exactly (after "
+            "documented normalization: case folding, accents, whitespace, typography) in "
+            "a retrieved passage, and every clause was among the retrieved KB "
+            "requirements. NOT a semantic-support judgment — answers are AI drafts under "
+            "passive review: the reader assesses support via the rendered references "
+            "(render the source slice at the matched offsets, not this quote string); "
+            "citation quality is measured in M6. No formal chat-claim confirmation "
+            "workflow exists."
         )
     )
     failed_citation_ids: list[str] = []

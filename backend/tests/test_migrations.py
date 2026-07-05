@@ -313,6 +313,20 @@ def test_0010_backfills_legacy_claim_key(scratch_db):
     finally:
         con.close()
 
+    # downgrade restores the legacy key (data symmetry, audit round 14 P2)
+    _alembic(scratch_db, "downgrade", "0009")
+    con = _connect(scratch_db)
+    try:
+        (claims,) = con.execute(
+            "SELECT claims FROM chat_messages WHERE id = %s", (msg_id,)
+        ).fetchone()
+        if isinstance(claims, str):
+            claims = json.loads(claims)
+        assert [c["verified"] for c in claims] == [True, False]
+        assert all("citations_verified" not in c for c in claims)
+    finally:
+        con.close()
+
 
 def test_head_accepts_long_provider_model_names(scratch_db):
     """0008: reported_model/requested_model/final_model are Text at head, so a
