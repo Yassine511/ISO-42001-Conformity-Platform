@@ -108,8 +108,18 @@ class ChatCitationOut(BaseModel):
         default=None,
         description=(
             "AUTHORITATIVE raw source characters at the matched span, server-derived "
-            "from the persisted retrieval snapshot. This is the string a UI renders as "
-            "the citation text."
+            "from the persisted retrieval snapshot after fail-closed validation "
+            "(offsets in bounds AND the slice normalizes to the verified quote). This "
+            "is the string a UI renders as the citation text. Null when validation "
+            "failed — see source_quote_error; never render quote in its place."
+        ),
+    )
+    source_quote_error: str | None = Field(
+        default=None,
+        description=(
+            "French provenance error when source_quote could not be derived safely "
+            "(missing/out-of-bounds offsets, or the slice does not normalize to the "
+            "verified quote). Null on success."
         ),
     )
     chunk_id: str | None = None

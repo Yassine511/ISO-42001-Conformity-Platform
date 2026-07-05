@@ -451,8 +451,10 @@ stretch enhancement.
 Most student AI projects claim reliability; this one **measures** it — at a deliberately contained scale. Because the
 synthetic organization is authored by us, the ground truth is exact.
 
-- **Gold dataset:** ~30–40 labelled items of the form `(policy excerpt, ISO requirement, ground-truth verdict,
-  ground-truth evidence span)`, derived from the synthetic organization's documents.
+- **Gold dataset:** 65 labelled items — one per KB requirement — of the form `(policy excerpt, ISO requirement,
+  ground-truth verdict, ground-truth evidence span)`, derived from the synthetic organization's documents.
+  Split 51 dev / 14 test (stratified by verdict); 11 requirements are deliberately uncovered corpus-wide
+  (8 dev, 3 test). The test split is reserved for the M6 report and never consulted during tuning.
 - **Two headline metrics:**
   - **Verdict accuracy** — does the system reach the right conclusion?
   - **Hallucination rate** — the fraction of outputs whose citations fail verification, measured **with and without
@@ -461,9 +463,18 @@ synthetic organization is authored by us, the ground truth is exact.
   reported as an operational indicator.
 - **Chat evaluation (the passive-review counterpart).** Chat's deterministic layer proves citation LOCATION only,
   so the promised quality measurement needs its own set and metrics, with location validity reported **separately**
-  from semantic support. Question set: derived from the dev gold split — answerable questions mapped from covered
-  requirements, unanswerable ones from the deliberately uncovered requirements (the test split stays reserved for
-  the report). Metrics:
+  from semantic support. **Split discipline (frozen now, before M5 creates further feedback loops):** the dev split
+  is tuning-visible during M2–M5, so dev-derived questions (answerable from the 43 covered dev requirements,
+  unanswerable from the 8 uncovered dev ones) are **development diagnostics only** and are always reported as such.
+  The reportable **chat_eval holdout** is derived from the **test split** (11 covered + 3 uncovered requirements)
+  by a rule frozen here and executed only at M6 — never hand-authored from test content, so the test split stays
+  unconsulted during tuning: one French question per test requirement generated mechanically from the KB paraphrase
+  (template frozen with the eval script), answerability = the gold coverage label, expected requirement id and gold
+  evidence span taken from the gold file at run time. The grading rubric for semantic support and faithfulness is
+  frozen with the eval script BEFORE any holdout run; labelling is done by the author (solo project — stated
+  honestly), with independence obtained procedurally: answerability and expected spans are fixed by the pre-existing
+  gold labels, and support labels are assigned against the rubric with the system's verdict fields masked. Dev and
+  holdout results are always reported separately. Metrics:
   - **citation-location validity** — fraction of returned citations the deterministic checker locates (≈100% by
     construction; a regression signals a verifier bug), reported separately so it is never conflated with support;
   - **claim–citation semantic support precision** — human-labelled: does the cited passage actually support the
@@ -583,7 +594,7 @@ register is derived from conformity findings); no Kubernetes deployment.
 | M3 | Pipeline core | Nodes ① Retrieve, ② Judge, ③ Verify with shared state + checkpointer; grounding contract with repair-retry-then-abstain path; fuzzy citation verifier unit-tested against real model outputs; provenance logging. **Exit criterion: a runnable end-to-end CLI demo** (one requirement → retrieve → judge → verify → abstain) — the system is demoable before any frontend exists |
 | M4 | ★ Chat copilot | Grounded Q&A endpoint: retrieve → cited draft → verify → answer or abstain; chat logging |
 | M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④ — formal confirmation applies to pipeline findings only); chat UI with clickable references opening the source slice at the matched offsets, answers labelled AI drafts (**passive review**: no chat-claim confirmation workflow; retrieval notes labelled as unverified model commentary) |
-| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes. Chat evaluation on a dev-split-derived question set: citation-location validity reported separately from human-labelled claim–citation semantic support precision + answer faithfulness; abstention precision/recall on answerable vs unanswerable questions |
+| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes. Chat evaluation: dev-derived questions as development diagnostics; the reportable chat_eval holdout is mechanically derived from the test split at M6 under the rule + rubric frozen in §10 — citation-location validity reported separately from human-labelled claim–citation semantic support precision + answer faithfulness; abstention precision/recall on answerable vs unanswerable questions; dev and holdout reported separately |
 | M7a | ★ Remediation Planning Agent *(core)* | RemediationCase model (multi-finding, provenance-logged linking); mandatory triage (classification, scope, similar-gap search, human-approved rationale); schema-constrained corrective-action plans with typed actions; per-action human review; lifecycle vs effectiveness tracking; scoped reassessment as effectiveness evidence; prompt-injection hardening (see section 8) |
 | M7b | Document-editing tool *(core, after M7a)* | `Document`→`DocumentVersion` restructuring migration (all formats); anchored-patch flow for TXT/MD (server-owned context, raw-equality unique anchors, diff review, transactional approval gate); `RemediationArtifact` + `supersedes_version_id` re-upload flow for PDF/DOCX; `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED` activation protocol with current-version hydration filtering; remediation evaluation corpus + metrics |
 | M8 | Scoring & artifacts *(stretch tier)* | Node ⑤ scoring; dashboard (conformity + trust panel); gap & risk register (derived); deterministic severity feeding remediation action priority; risk-register-initiated remediation cases; then SoA table; PDF export; finding drill-down mode in chat |

@@ -241,17 +241,37 @@ def verify_citations(
     return outcomes
 
 
-def _source_slice(source: dict, match: dict) -> str | None:
-    """Raw source characters at the matched span. Match offsets are
-    page-relative ([start, end), zero-based raw offsets into the page text);
-    the chunk's text is the authoritative page slice [char_start:char_end],
-    so the local slice is offset by char_start."""
+def _source_slice(
+    source: dict, match: dict, model_quote: str | None = None
+) -> tuple[str | None, str | None]:
+    """Raw source characters at the matched span, FAIL-CLOSED.
+
+    Match offsets are page-relative ([start, end), zero-based raw offsets into
+    the page text); the chunk's text is the authoritative page slice
+    [char_start:char_end], so the local slice is offset by char_start.
+
+    Returns (slice, None) only when the offsets are in-bounds AND the slice
+    normalizes to the same text as the verified model quote (when given) —
+    corrupted legacy provenance must yield (None, French error), never a
+    plausible-looking wrong slice presented as authoritative."""
     text = source.get("text")
     start, end = match.get("match_start"), match.get("match_end")
     if text is None or start is None or end is None:
-        return None
+        return None, "provenance incomplète : texte source ou offsets manquants."
     base = source.get("char_start") or 0
-    return text[start - base : end - base]
+    local_start, local_end = start - base, end - base
+    if not (0 <= local_start < local_end <= len(text)):
+        return None, (
+            f"offsets de citation invalides : [{start}:{end}) hors des bornes du "
+            f"segment source [{base}:{base + len(text)})."
+        )
+    sliced = text[local_start:local_end]
+    if model_quote is not None and normalize(sliced).text != normalize(model_quote).text:
+        return None, (
+            "incohérence de provenance : la tranche source aux offsets enregistrés "
+            "ne correspond pas à la citation vérifiée."
+        )
+    return sliced, None
 
 
 def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) -> dict:
@@ -263,6 +283,9 @@ def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) ->
         source = next(
             (i for i in retrieved_policy if i["result_id"] == match.get("chunk_id")), {}
         )
+        source_quote, source_quote_error = _source_slice(
+            source, match, citation["policy_quote"]
+        )
         return {
             "id": citation["id"],
             "type": "policy",
@@ -271,8 +294,10 @@ def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) ->
             # render it as source text
             "quote": citation["policy_quote"],
             # authoritative raw source slice at the matched offsets — this is
-            # what a UI renders as the citation text
-            "source_quote": _source_slice(source, match),
+            # what a UI renders as the citation text (None + error when the
+            # provenance fails validation: fail closed, never a wrong slice)
+            "source_quote": source_quote,
+            "source_quote_error": source_quote_error,
             "chunk_id": match.get("chunk_id"),
             "document_id": source.get("document_id"),
             "filename": source.get("filename"),

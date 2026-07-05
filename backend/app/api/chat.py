@@ -48,13 +48,12 @@ def _backfill_source_quotes(citations: list, retrieved_policy: list) -> list:
             source = next(
                 (i for i in retrieved_policy if i["result_id"] == c.get("chunk_id")), {}
             )
-            c = {
-                **c,
-                "source_quote": service._source_slice(
-                    source,
-                    {"match_start": c.get("match_start"), "match_end": c.get("match_end")},
-                ),
-            }
+            source_quote, error = service._source_slice(
+                source,
+                {"match_start": c.get("match_start"), "match_end": c.get("match_end")},
+                c.get("quote"),
+            )
+            c = {**c, "source_quote": source_quote, "source_quote_error": error}
         out.append(c)
     return out
 

@@ -292,6 +292,32 @@ def test_source_quote_is_raw_slice_even_when_model_quote_normalized(env):
     assert c["quote"] != c["source_quote"]
 
 
+def test_source_slice_fails_closed_on_bad_provenance():
+    """Corrupted/legacy offsets must yield (None, error), never a plausible
+    wrong slice presented as authoritative (audit round 16 P2)."""
+    src = {"text": "abcdefghij", "char_start": 100}
+    for match in (
+        {"match_start": 95, "match_end": 105},   # starts before the chunk
+        {"match_start": 105, "match_end": 120},  # runs past the chunk end
+        {"match_start": 108, "match_end": 103},  # reversed
+        {"match_start": None, "match_end": 105},  # incomplete provenance
+    ):
+        sliced, error = service._source_slice(src, match)
+        assert sliced is None and error is not None
+
+    # in-bounds but the slice does not normalize to the verified quote
+    sliced, error = service._source_slice(
+        src, {"match_start": 100, "match_end": 105}, "zzzzz"
+    )
+    assert sliced is None and "incohérence" in error
+
+    # valid provenance: raw slice returned, no error
+    sliced, error = service._source_slice(
+        src, {"match_start": 100, "match_end": 105}, "ABCDE"
+    )
+    assert sliced == "abcde" and error is None
+
+
 # ------------------------------------------------- claim-binding trust rules
 
 

@@ -231,10 +231,10 @@ def test_replay_of_legacy_verified_key_rows(client, org_id):
         citations=[
             {"id": "c2", "type": "kb", "requirement_id": "A.9.2",
              "requirement_fr": "Exigence.", "domain": "A.9"},
-            # legacy shape: no source_quote key
+            # legacy shape: no source_quote key; offsets span the full quote
             {"id": "c1", "type": "policy", "quote": QUOTE.upper(), "chunk_id": "x",
              "document_id": "d", "filename": "f.txt", "page_number": 1,
-             "match_start": 0, "match_end": 10, "match_method": "exact",
+             "match_start": 0, "match_end": len(QUOTE), "match_method": "exact",
              "match_score": 100.0},
         ],
         retrieved_policy=[
@@ -254,10 +254,45 @@ def test_replay_of_legacy_verified_key_rows(client, org_id):
     assert "verified" not in msg["claims"][0]
     assert [c["id"] for c in msg["answer_citations"]] == ["c1", "c2"]  # reference order
     assert [c["id"] for c in msg["citations"]] == ["c2", "c1"]  # audit list untouched
-    # source_quote backfilled from the persisted retrieval snapshot
+    # source_quote backfilled from the persisted retrieval snapshot, validated
+    # against the stored quote (normalized equality)
     legacy_policy = msg["answer_citations"][0]
     assert legacy_policy["quote"] == QUOTE.upper()
-    assert legacy_policy["source_quote"] == QUOTE[:10]  # raw slice at [0, 10)
+    assert legacy_policy["source_quote"] == QUOTE
+    assert legacy_policy["source_quote_error"] is None
+
+
+def test_replay_of_corrupted_legacy_offsets_fails_closed(client, org_id):
+    """Out-of-bounds legacy offsets must yield source_quote=null + a French
+    provenance error, never a truncated slice presented as authoritative."""
+    conv_id = _seed_message(
+        client.session_factory,
+        org_id,
+        claims=[
+            {"text": "A.", "kind": "organization", "citation_ids": ["c1"],
+             "verified": True, "failed_citation_ids": []}
+        ],
+        citations=[
+            {"id": "c1", "type": "policy", "quote": QUOTE, "chunk_id": "x",
+             "document_id": "d", "filename": "f.txt", "page_number": 1,
+             "match_start": 5, "match_end": len(QUOTE) + 999,  # past chunk end
+             "match_method": "exact", "match_score": 100.0},
+        ],
+        retrieved_policy=[
+            {"result_id": "x", "source_type": "policy", "text": QUOTE,
+             "rrf_score": 0.03, "vector_rank": 1, "bm25_rank": 1,
+             "document_id": "d", "filename": "f.txt", "page_number": 1,
+             "char_start": 0, "char_end": len(QUOTE),
+             "requirement_id": None, "domain": None},
+        ],
+    )
+    r = client.get(
+        f"/api/organizations/{org_id}/chat/conversations/{conv_id}/messages"
+    )
+    assert r.status_code == 200
+    [c] = r.json()[0]["answer_citations"]
+    assert c["source_quote"] is None
+    assert "offsets" in c["source_quote_error"]
 
 
 def test_chat_qdrant_down_is_503(client, org_id, monkeypatch):
