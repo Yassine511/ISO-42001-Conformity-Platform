@@ -10,21 +10,26 @@
 
 ## 1. Executive summary
 
-This project delivers an **AI copilot for ISO/IEC 42001 conformity assessment**. The system has two faces, sharing a
-single trust layer:
+This project delivers an **AI copilot for ISO/IEC 42001 conformity assessment**. The system has three faces, sharing
+a single trust layer:
 
 1. **A structured assessment pipeline** — given an organization's internal policy documents, it drafts compliance
    findings against the ISO 42001 (AI Management System) requirements, with a human confirming every verdict.
 2. **A conversational copilot** — the user *discusses* the documents and the findings with the system ("do we cover
    third-party AI risk?", "why is A.7 only partially compliant?") and receives answers **with verified references**
    to both the policy text and the ISO clause.
+3. **A remediation agent** — for a gap the human has confirmed, it drafts a proportionate **corrective-action case**
+   (triage, root-cause hypotheses, typed actions) aligned with ISO's own corrective-action clause (10.2), with
+   document editing available only as one optional, human-approved tool that **never modifies an original upload**.
+
+The copilot therefore has **two modes**: read-only chat, and the remediation agent.
 
 The core engineering contribution is not "calling a language model" — that is a matter of days and produces an
-unreliable tool. The contribution is the **trust layer** wrapped around the model, and it applies identically to both
-faces: every finding and every chat answer must be grounded in citations that a deterministic checker verifies
-against the source text; when the evidence is not there, the system **abstains** instead of guessing; a human
-confirms every compliance decision; every step is logged for a full audit trail; and the system's reliability is
-**measured** against a gold-standard dataset.
+unreliable tool. The contribution is the **trust layer** wrapped around the model, and it applies identically to all
+three faces: every finding, every chat answer, and every remediation proposal must be grounded in citations that a
+deterministic checker verifies against the source text; when the evidence is not there, the system **abstains**
+instead of guessing; a human confirms every compliance decision; every step is logged for a full audit trail; and
+the system's reliability is **measured** against a gold-standard dataset.
 
 A memorable property of the design: the system applies **ISO 42001's own principles to itself** — human oversight,
 transparency, logging, and evaluation — making it an AI tool governed the way the standard it assesses demands.
@@ -68,9 +73,17 @@ confidentiality concerns.
   "no evidence found" instead of a fabrication.
 - Keep a **human in charge of every compliance decision**.
 - Maintain a **full provenance/audit trail** for every finding.
+- Support a **human-supervised corrective-action workflow** aligned with ISO harmonized-structure clause 10.2: a
+  confirmed gap is triaged proportionately, planned with typed actions, and its remediation's effectiveness is
+  checked by reassessment — with **original uploaded documents immutable**; every agent output is a separate
+  proposed-solution artifact or version.
 - **Measure** the system's reliability on a gold dataset: verdict accuracy and hallucination rate, with and without
   the verification layer.
 - Present the system through a **clean, professional web interface**.
+
+Two boundary statements, made explicit: the system **does not perform certification and does not guarantee
+compliance** — it supports the human work those require; and **company isolation means organization-scoped
+persistence and retrieval**, not access authorization — the project intentionally has no identity/role layer.
 
 ---
 
@@ -87,7 +100,8 @@ Three extreme designs were considered and rejected:
 The chosen design is the **synthesis**: keep AI for what it is good at (reading documents, drafting findings, and
 answering questions with evidence), but constrain it with deterministic citation verification, abstention, human
 oversight, and measured evaluation. **AI proposes; deterministic code and a human decide.** The same principle
-governs both the assessment pipeline and the chat.
+governs all three faces — the assessment pipeline, the chat, and the remediation agent (where "propose" extends to
+corrective-action plans and document patches, and the deciding human gate becomes even stricter).
 
 ---
 
@@ -99,18 +113,21 @@ Policy docs ───▶│ parse → chunk → embed → Qdrant (+ BM25)       
 ISO 42001 KB ──▶│ paraphrased atomic requirements (refs 4–10, A.2–A.10)│──▶ PostgreSQL
                 │ hybrid retrieval (RRF) · citation verifier ·      │
                 │ provenance store                                  │
-                └────────────┬─────────────────────┬────────────────┘
-                             │                     │
-              ┌──────────────▼───────────┐  ┌──────▼──────────────────────┐
-              │  Assessment pipeline     │  │  ★ Chat copilot             │
-              │  (LangGraph)             │  │  question → retrieve →      │
-              │  ① Retrieve → ② Judge →  │  │  cited answer → verify →    │
-              │  ③ Verify → ④ Review     │  │  render with references     │
-              │  (HITL) → ⑤ Score        │  │  or abstain ("no evidence") │
-              └──────────────┬───────────┘  └──────┬──────────────────────┘
-                             │                     │
-              Conformity % · SoA · gaps ·    Verified answers · finding
-              risk register · PDF report     drill-down (uses provenance)
+                └──────┬──────────────────┬──────────────────┬──────┘
+                       │                  │                  │
+   ┌───────────────────▼──────┐  ┌────────▼───────────────┐  ┌▼────────────────────────────┐
+   │  Assessment pipeline     │  │  ★ Chat copilot        │  │  ★ Remediation agent        │
+   │  (LangGraph)             │  │  question → retrieve → │  │  confirmed gap → triage →   │
+   │  ① Retrieve → ② Judge →  │  │  cited answer → verify │  │  corrective-action plan →   │
+   │  ③ Verify → ④ Review     │  │  → render with refs    │  │  human approves per action →│
+   │  (HITL) → ⑤ Score        │  │  or abstain            │  │  optional patch tool →      │
+   │                          │  │  ("no evidence")       │  │  reassess (effectiveness)   │
+   └──────────┬───────────────┘  └────────┬───────────────┘  └┬────────────────────────────┘
+              │                           │                   │
+   Conformity % · SoA · gaps ·   Verified answers · finding   Remediation cases · plans ·
+   risk register · PDF report    drill-down (uses provenance) proposed-solution artifacts /
+                                                              document versions (originals
+                                                              immutable)
 ```
 
 **A note on the ISO 42001 knowledge base:** the text of ISO/IEC 42001 is copyrighted and cannot be reproduced in a
@@ -118,11 +135,13 @@ public repository or in the application. The knowledge base therefore contains *
 our own words**, each carrying only a clause *reference* (e.g. "A.7.2") back to the standard. The system never
 stores or emits verbatim ISO text; verbatim citation applies exclusively to the organization's own policy documents.
 
-The **retriever, the citation verifier, and the provenance store are written once** and consumed by both sides. The
-system has two clean layers:
+The **retriever, the citation verifier, and the provenance store are written once** and consumed by all three faces.
+The system has two clean layers:
 
-- **AI proposes** — retrieval and LLM drafting (pipeline nodes ①–②; the chat's answer generation).
-- **Deterministic code and human decide** — citation verification, abstention routing, human review, and scoring.
+- **AI proposes** — retrieval and LLM drafting (pipeline nodes ①–②; the chat's answer generation; the remediation
+  agent's triage, plans, and patch drafts).
+- **Deterministic code and human decide** — citation verification, abstention routing, human review, scoring, and
+  the remediation approval gates (schema validation, anchor verification, per-action human approval).
 
 This separation is the entire reliability story and is what makes the tool defensible to an auditor.
 
@@ -239,25 +258,176 @@ Chat exchanges are logged like everything else, so the audit trail covers conver
 
 ---
 
-## 8. The trust layer (reliability engineering)
+## 8. ★ The remediation agent (corrective action, human-supervised)
 
-The trust layer is the heart of the project and is **shared by both faces** of the system. It converts a
-probabilistic model into a system with deterministic guarantees:
+Finding a gap is half the job; an organization then has to *do something about it* — and ISO's harmonized structure
+(clause 10.2, nonconformity and corrective action) prescribes what: react proportionately, evaluate causes and
+consequences, check whether similar issues exist elsewhere, act, and **review the effectiveness** of the action. The
+remediation agent operationalizes exactly that workflow, under the same trust layer as the other two faces. It is a
+**Remediation *Planning* Agent**: its primary output is a corrective-action case, and document editing is only one
+optional tool inside it.
 
-- **No claim without verified evidence** — neither a pipeline verdict nor a chat answer can assert something whose
-  citation the deterministic checker cannot locate in the source text.
-- **Abstention over guessing** — ungrounded or low-confidence findings are routed to a human; unanswerable questions
-  get "no evidence found" instead of a fabrication.
-- **Human owns every decision** — the AI is a *researcher* that drafts and cites; the human is the *judge*.
-- **Full provenance / audit trail** — each finding records model version, retrieved chunks, cited quotes, confidence,
-  verification result, human decision, and timestamps — the literal opposite of a black box. Chat drill-down exposes
-  this trail conversationally.
+Two boundary statements up front: the system **supports** a human-supervised corrective-action workflow aligned with
+clause 10.2 — it does **not** perform certification and does not guarantee compliance. And **original uploaded
+documents are immutable in every path**: whatever the agent produces is a separate proposed-solution artifact or a
+new, explicitly approved document version — never a change to the company's file.
 
-(A prompt-injection scan of uploaded content at ingestion time is a stretch enhancement, out of core scope.)
+**The closed loop:**
+
+```
+Upload → Assess → Find gap → Human confirms → Triage (classify · scope · similar gaps · human approval)
+→ Agent drafts corrective-action plan → Human approves/edits per action → Actions executed
+  (optional proposed-solution patch tool for document actions) → Re-index → Scoped reassessment
+→ Human records effectiveness → Audit trail throughout
+```
+
+### The remediation case
+
+The entry point is a **human-confirmed finding** (CONFIRMED, node ④). One finding opens a `RemediationCase`, but a
+case may group **several** confirmed findings — a primary finding plus linkable related ones — because several gaps
+often share one systemic root cause, and linking prevents duplicate or contradictory plans. Every linked finding
+must be CONFIRMED and belong to the same organization; the related-finding search results and the human's
+link/reject decisions are recorded as provenance.
+
+### Step 1 — mandatory triage (proportionality)
+
+A confirmed gap is **not automatically a nonconformity**, and corrective action must be proportionate to the effects
+of what was found — not a reflexive company-wide re-audit. Before any plan is drafted, the agent proposes and a
+human approves:
+
+- **Classification:** `evidence_gap | observation | improvement_opportunity | nonconformity`;
+- **immediate correction** (if any) and consequences to deal with;
+- **similar-gap search** — retrieval across the corpus and the existing findings for comparable issues (the
+  harmonized structure explicitly requires considering whether similar nonconformities exist or could occur);
+- **remediation scope:** `local | related_requirements | organization_wide`, with a **scope rationale the human
+  approves or overrides**.
+
+### Step 2 — plan drafting (schema-constrained, verified, abstains on failure)
+
+The agent drafts a `RemediationPlan` through the same LLM service as the judge (Mistral, Groq fallback,
+temperature 0, JSON mode), deterministically checked:
+
+- gap restatement and **root-cause hypotheses** — explicitly labeled *hypotheses*; the human validates causality;
+- impacted requirements, each id validated against the knowledge base (an invented clause reference is rejected);
+- a list of **typed actions**: `document_amendment | new_document | process_change | training |
+  risk_treatment_update | other`, each carrying a rationale, a **human-assigned priority** (the deterministic
+  `gap × control weight` severity integrates in the scoring milestone), a suggested owner *role*, and a **verifiable
+  success criterion** ("reassessment of A.7.2 finds documented evidence of X");
+- every policy quote cited in a rationale is verified by the existing read-side citation verifier; on failure the
+  standard contract applies — one bounded repair retry, then the plan is **persisted as `ABSTAINED`** for human
+  review, never dropped: failed proposals are audit data.
+
+### Step 3 — human review, per action
+
+The human approves, **edits**, or rejects each action (edits are captured as data). What verification proves here is
+what it proves everywhere in this system: that citations and clause references are *real* — location and provenance.
+It does **not** prove the plan is semantically adequate or would make the organization compliant; that judgment
+belongs to the human, and afterwards to reassessment.
+
+### Step 4 — tracking and effectiveness (two separate concerns)
+
+Cases, plans, and actions are first-class database entities surfaced in the UI next to their findings, with two
+deliberately independent fields:
+
+- **Action lifecycle:** `PROPOSED | APPROVED | REJECTED | IN_PROGRESS | DONE | CANCELLED`;
+- **Effectiveness outcome:** `NOT_CHECKED | EFFECTIVE | PARTIALLY_EFFECTIVE | INEFFECTIVE` — completing an action
+  never implies it worked.
+
+The effectiveness check runs a **scoped reassessment over the human-approved scope** (which may include related
+requirements, not only the original one; it reuses the assessment's requirement-manifest mechanism). Reassessment is
+**evidence for the human's effectiveness verdict, not proof by itself**. Non-document actions (training, process
+changes…) are inherently human-executed: the agent plans, people act, reassessment informs.
+
+### The document-editing tool (optional, gated, format-aware)
+
+Available only for an **approved `document_amendment` action**. Documents get a real ownership hierarchy — logical
+`Document` → `DocumentVersion` → pages/chunks (a genuine restructuring migration: today checksum, parser version,
+and pages hang directly off the document row). `DocumentVersion` applies to every format; the format only decides
+**how a new version is born**:
+
+- **TXT/Markdown** — the agent may produce an approved new version through the patch flow below, downloadable as a
+  real file.
+- **PDF/DOCX** — the agent produces **only a proposed-solution artifact** (`RemediationArtifact`, a clearly labelled
+  `.md` draft attached to the action). The original document stays active. A human uploads the genuinely revised
+  PDF/DOCX themselves, and only that replacement upload creates the new version, through an explicit
+  `supersedes_version_id` flow. Revised parsed text is never presented as "a new PDF version".
+
+**The patch contract — the LLM never controls trusted identifiers.** The server builds a `RemediationContext`
+(`case_id`, `action_id`, `patch_proposal_id`, `document_version_id`, `base_checksum`, `requirement_ids` — plural,
+via an action↔requirement relation) derived from the approved action and the **human-confirmed target document**:
+the human confirms the target for *every* remediation; the agent recommends a default (the document behind the
+finding's matched chunk for partial/non-compliant findings; via retrieval for `missing` findings, whose quote and
+matched chunk are null). The LLM generates only the `PatchDraft`:
+`{anchor_quote (verbatim), anchor_page, operation (insert_after | replace), new_text_fr, rationale}`; LLM-supplied
+context values are rejected.
+
+**Anchor verification for writes is stricter than for reads: literal raw-text equality — no normalization, no fuzzy
+matching** (the model saw the extracted text and can copy it exactly; one retry is enough), through a new public
+primitive `find_all_exact_anchors(text, anchor_quote) -> list[Span]` that must return **exactly one** span. The
+server rejects: zero anchor matches, multiple matches (ambiguous), an inactive/superseded or checksum-changed base
+version, and duplicate application of an approved proposal. One bounded retry, then the proposal persists as
+`ABSTAINED`. Anchor verification proves **location and provenance** — not that the new text is good policy.
+
+**Approval and activation.** The UI shows a before/after diff with rationale and citations; the **final
+human-edited text** is what gets applied, inside a transactional gate: lock the active version row, revalidate
+`base_checksum`, create the new `DocumentVersion` exactly once (idempotency guard) in state `PENDING_INDEX`.
+Because PostgreSQL activation and Qdrant indexing cannot be one atomic transaction, versions follow an explicit
+protocol — `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED`, **one ACTIVE version per logical document
+(DB-enforced)**, with PostgreSQL `Document.current_version_id` authoritative. The old version stays ACTIVE and
+searchable while the pending one indexes; once the Qdrant points exist, one PostgreSQL transaction atomically
+switches `current_version_id` and marks the old version SUPERSEDED; an indexing failure yields `INDEX_FAILED` with
+a recovery re-drive. Retrieval hydration rejects chunks that do not belong to the current version (in addition to
+the existing organization check), so pending chunks can never surface prematurely and stale chunks can never consume
+retrieval slots. Superseded versions are **never deleted** — existing findings keep citing the exact text they were
+made against, preserving the provenance invariant.
+
+### Data model and logging
+
+`RemediationCase` (findings links, triage fields, human approvals, search provenance) · `RemediationPlan` ·
+`RemediationAction` (type, lifecycle, effectiveness, priority, owner role, success criterion) · action↔requirement
+relation · `RemediationArtifact` (requires an approved action) · `Document`/`DocumentVersion` (activation protocol
+above) · `PatchProposal` (context + draft + `VERIFIED | ABSTAINED` + verifier errors) · `PatchDecision`
+(approve/edit/reject, final applied text; references its pre-existing proposal) · `RemediationEvent` (append-only
+audit records). LLM calls are logged like the judge's — in separate `remediation_attempts` +
+`remediation_llm_calls` tables mirroring the existing pair, since today's `llm_calls` rows require an assessment
+attempt.
+
+### Security: untrusted documents, promoted to core
+
+Once uploaded text can influence plans and writes, **document contents are untrusted data, never agent
+instructions**: retrieved/quoted text is delimited as data in prompts, and the triage/plan/patch schema contracts
+plus per-action human review bound the blast radius — a hijacked model can still only emit a proposal that must pass
+deterministic validation and a human diff. Prompt-injection hardening is therefore core scope for this milestone,
+no longer a stretch idea.
 
 ---
 
-## 9. Evaluation (minimal but real proof)
+## 9. The trust layer (reliability engineering)
+
+The trust layer is the heart of the project and is **shared by all three faces** of the system. It converts a
+probabilistic model into a system with deterministic guarantees:
+
+- **No claim without verified evidence** — neither a pipeline verdict, nor a chat answer, nor a remediation proposal
+  can assert something whose citation the deterministic checker cannot locate in the source text.
+- **Abstention over guessing** — ungrounded or low-confidence findings are routed to a human; unanswerable questions
+  get "no evidence found" instead of a fabrication; unverifiable remediation proposals persist as abstentions.
+- **Human owns every decision** — the AI is a *researcher* that drafts and cites; the human is the *judge*.
+- **Writes are gated twice** — a remediation plan or document patch must pass deterministic validation (schema,
+  clause references, raw-equality anchor) *and* explicit per-action human approval. Verification proves location and
+  provenance, never semantic correctness. Original uploads are immutable; agent outputs are proposed-solution
+  artifacts or new, explicitly activated versions.
+- **Full provenance / audit trail** — each finding records model version, retrieved chunks, cited quotes, confidence,
+  verification result, human decision, and timestamps — the literal opposite of a black box. Chat drill-down exposes
+  this trail conversationally; remediation cases carry the same lineage through triage, plan, decisions, versions,
+  and reassessment.
+
+Because uploaded document text can influence remediation plans and writes, **document contents are treated as
+untrusted data, never as agent instructions** — prompt-injection hardening is core scope (section 8), no longer a
+stretch enhancement.
+
+---
+
+## 10. Evaluation (minimal but real proof)
 
 Most student AI projects claim reliability; this one **measures** it — at a deliberately contained scale. Because the
 synthetic organization is authored by us, the ground truth is exact.
@@ -271,16 +441,33 @@ synthetic organization is authored by us, the ground truth is exact.
 - The **human-override rate** (how often the auditor changes the AI's draft) is logged for free by node ④ and
   reported as an operational indicator.
 
+**Remediation evaluation (two tiers, deliberately non-circular).** The system must not be the sole judge of whether
+its own remediation worked:
+
+- **Operational indicators** (observability, not proof of quality): triage-agreement rate (human vs agent
+  classification/scope); plan/action acceptance and human-modification rates; citation-validity rate in plans;
+  rejected/`ABSTAINED` proposal rate; stale/ambiguous-anchor rejection rate; exact patch-application accuracy
+  (applied text == approved text); and the **ungated-write count, target zero** — scoped precisely as: no
+  agent-produced ACTIVE document version without an approved patch decision, and no remediation artifact without an
+  approved action ("ungated" rather than "unauthorized": there is no identity/role authorization layer).
+- **Remediation-quality evaluation** (independent ground): withheld remediation cases with predetermined affected
+  and unaffected requirements; a human-authored rubric for acceptable root-cause analysis and repairs, **written
+  before any agent output is generated**; review defined honestly — **external independent review where available
+  (internship supervisor); otherwise pre-registered blinded self-assessment, reported explicitly as a limitation**;
+  reassessment on a remediated corpus kept separate from the frozen baseline corpus; regression checks on the
+  predetermined unaffected requirements; and end-to-end traceability finding(s) → case → triage → plan → decisions →
+  (artifact/version) → reassessment → effectiveness verdict.
+
 Deeper evaluation — calibration analysis, ablation studies, failure taxonomy — is acknowledged as future work; the
 architecture (gold JSON + a Python evaluation script) is built so those can be added without redesign.
 
 ---
 
-## 10. Web interface
+## 11. Web interface
 
 The frontend is clean and professional, sized to what the story needs. The interface language is **French**. The
 first five pages below are core; the Dashboard, Statement of Applicability, and Report export pages belong to the
-stretch tier defined in section 13.
+stretch tier defined in section 14.
 
 **Technology:** React + Vite + TypeScript + Tailwind CSS + shadcn/ui + Recharts, with TanStack Query for data.
 Design language: color-coded verdicts (🟢 compliant / 🟡 partial / 🔴 non-compliant / ⚪ insufficient evidence),
@@ -295,6 +482,9 @@ confidence indicators, and in-context evidence highlighting.
 - **★ Review workspace** — the human-in-the-loop screen: a split view of the ISO requirement/clause against the
   retrieved policy evidence, with the AI's cited quotes highlighted in-context, and approve / edit / override
   actions. Abstained items are flagged as "needs your judgment."
+- **★ Remediation workspace** — corrective-action cases next to their findings: the triage card (classification,
+  scope, similar gaps) with approve/override; the plan with per-action approve / edit / reject; the before/after
+  diff view for document patches; action lifecycle and effectiveness status; artifact downloads (see section 8).
 - **Dashboard** — one page, two zones:
   - *Conformity* — overall conformity gauge, verdict-breakdown donut, **Annex A radar chart** (conformity % per
     domain A.2–A.10), top-gaps list.
@@ -307,7 +497,7 @@ confidence indicators, and in-context evidence highlighting.
 
 ---
 
-## 11. Synthetic organization and demo dataset
+## 12. Synthetic organization and demo dataset
 
 Since no client documents are available, we author **"Lumen AI"**, a fictional mid-size company deploying an internal
 AI assistant, with roughly six policy documents deliberately seeded with a mix of compliant, partial, non-compliant,
@@ -330,7 +520,7 @@ answer is an abstention.
 
 ---
 
-## 12. Technology stack
+## 13. Technology stack
 
 | Layer | Choice |
 |-------|--------|
@@ -353,7 +543,7 @@ register is derived from conformity findings); no Kubernetes deployment.
 
 ---
 
-## 13. Planning (indicative, ~7–8 weeks, solo)
+## 14. Planning (indicative, ~11–13 weeks, solo)
 
 | Milestone | Focus | Deliverable |
 |-----------|-------|-------------|
@@ -363,54 +553,76 @@ register is derived from conformity findings); no Kubernetes deployment.
 | M3 | Pipeline core | Nodes ① Retrieve, ② Judge, ③ Verify with shared state + checkpointer; grounding contract with repair-retry-then-abstain path; fuzzy citation verifier unit-tested against real model outputs; provenance logging. **Exit criterion: a runnable end-to-end CLI demo** (one requirement → retrieve → judge → verify → abstain) — the system is demoable before any frontend exists |
 | M4 | ★ Chat copilot | Grounded Q&A endpoint: retrieve → cited draft → verify → answer or abstain; chat logging |
 | M5 | Frontend core + HITL | Upload & run page with live progress; review workspace (node ④); chat UI with clickable references |
-| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured **before** stretch features |
-| M7 | Scoring & artifacts *(stretch tier)* | Node ⑤ scoring; dashboard (conformity + trust panel); gap & risk register (derived); then SoA table; PDF export; finding drill-down mode in chat |
-| M8 | Deliverables | README, architecture diagram, internship report, presentation + rehearsed demo |
+| M6 | Evaluation | Gold-set run: verdict accuracy + hallucination rate (with/without verifier) — the reliability headline is secured on the **frozen** corpus before any document changes |
+| M7a | ★ Remediation Planning Agent *(core)* | RemediationCase model (multi-finding, provenance-logged linking); mandatory triage (classification, scope, similar-gap search, human-approved rationale); schema-constrained corrective-action plans with typed actions; per-action human review; lifecycle vs effectiveness tracking; scoped reassessment as effectiveness evidence; prompt-injection hardening (see section 8) |
+| M7b | Document-editing tool *(core, after M7a)* | `Document`→`DocumentVersion` restructuring migration (all formats); anchored-patch flow for TXT/MD (server-owned context, raw-equality unique anchors, diff review, transactional approval gate); `RemediationArtifact` + `supersedes_version_id` re-upload flow for PDF/DOCX; `PENDING_INDEX | ACTIVE | SUPERSEDED | INDEX_FAILED` activation protocol with current-version hydration filtering; remediation evaluation corpus + metrics |
+| M8 | Scoring & artifacts *(stretch tier)* | Node ⑤ scoring; dashboard (conformity + trust panel); gap & risk register (derived); deterministic severity feeding remediation action priority; risk-register-initiated remediation cases; then SoA table; PDF export; finding drill-down mode in chat |
+| M9 | Deliverables | README, architecture diagram, internship report, presentation + rehearsed demo |
 
-**Cut line (decided up front, not under panic in week 7):**
+**Cut line (decided up front, not under panic in the final week):**
 
-- **Core — non-negotiable:** M1–M5 + M6 evaluation. A working trust layer with a measured reliability result and a
-  usable UI is a complete, defensible project even if nothing below ships.
+- **Core — non-negotiable:** M1–M5 + M6 evaluation + M7a/M7b remediation. A working trust layer with a measured
+  reliability result, a usable UI, and the corrective-action loop is the complete project even if nothing below
+  ships. (The remediation milestones are why the indicative duration grew from ~7–8 to ~11–13 weeks: migrations,
+  APIs, state machines, review UI, versioning, indexing recovery, and a remediation evaluation corpus are real
+  work, and nothing existing was cut to fund them.)
 - **Stretch — sacrificed first, in this order:** PDF export → Statement of Applicability page → finding drill-down
   chat mode → dashboard polish. Scoring and the gap & risk register sit at the top of the stretch tier (highest
   value, cut last).
 
 ---
 
-## 14. Verification and testing
+## 15. Verification and testing
 
 - **Unit tests:** the citation verifier (a planted fake quote is rejected; a real quote passes; a quote differing
   only by whitespace/casing/accents/smart-quotes passes; a paraphrase beyond the edit-distance threshold is
   rejected); the repair-retry path (malformed JSON → one retry → `ABSTAINED`); scoring invariants; Pydantic
   validation on every model output; node ③ routing (a forced failure yields `ABSTAINED`).
+- **Remediation unit tests:** a plan citing a KB-invalid clause reference is rejected; a malformed plan → one retry
+  → persisted `ABSTAINED`; `find_all_exact_anchors` — a fabricated anchor is rejected, a verbatim anchor passes, a
+  near-verbatim anchor differing only at normalization level is rejected (writes demand raw equality), an anchor
+  occurring twice is rejected; a stale `base_checksum` is rejected; duplicate application of an approved proposal is
+  rejected; LLM-supplied context identifiers are rejected; a PDF/DOCX action yields a `RemediationArtifact` and can
+  never create a version; retrieval hydration rejects chunks not belonging to `current_version_id`; the
+  one-ACTIVE-version-per-document constraint holds; an `INDEX_FAILED` version is recovered by re-drive.
 - **Adversarial tests:** a statement that superficially looks compliant but is not → no false "compliant"; an
   irrelevant document → abstention, not fabrication; **a chat question with no supporting evidence in the corpus →
-  the copilot abstains instead of inventing a quote.**
+  the copilot abstains instead of inventing a quote**; a remediation request with no plausible anchor → the agent
+  abstains rather than inventing one; a document containing injected instructions cannot steer triage, plan, or
+  patch outside the schema contracts.
 - **System-level:** the gold-set evaluation (accuracy + hallucination before/after verification) is the reliability
   proof.
 
 ---
 
-## 15. Deliverables
+## 16. Deliverables
 
 1. GitHub repository — LangGraph backend + chat copilot + React frontend + trust layer + evaluation script + Docker
    Compose + documentation.
-2. A working human-in-the-loop compliance copilot (assessment pipeline + grounded chat) on the Lumen AI dataset.
+2. A working human-in-the-loop compliance copilot (assessment pipeline + grounded chat + remediation agent) on the
+   Lumen AI dataset.
 3. A **reliability result** — verdict accuracy and the hallucination rate before/after verification.
-4. ISO artifacts — Statement of Applicability, gap & risk register, PDF report.
-5. The internship technical report (rapport de stage).
-6. A presentation with a rehearsed live demonstration.
+4. A **corrective-action loop with measured outcomes** — remediation cases from confirmed gaps to
+   effectiveness-checked actions, with the two-tier remediation metrics (operational indicators + independent
+   quality review).
+5. ISO artifacts — Statement of Applicability, gap & risk register, PDF report.
+6. The internship technical report (rapport de stage).
+7. A presentation with a rehearsed live demonstration.
 
 ---
 
-## 16. Demonstration script
+## 17. Demonstration script
 
 Upload the Lumen AI documents → **ask the copilot a question** ("do we manage third-party AI risk?") and get an
 answer with verified, clickable references → ask a question the corpus cannot support and watch the copilot produce
 a **"Potential gap"** card — showing what it searched, citing the relevant ISO clause, and offering to add the gap
 to the register — instead of inventing a quote → run the assessment with live per-node progress → the review workspace
 shows a grounded finding with highlighted evidence and an abstained item flagged for human judgment → the human
-confirms decisions → the dashboard fills in, its trust panel showing the **hallucination rate collapsing** once
+confirms decisions → **open a remediation case on a confirmed gap**: approve its triage (classification + scope),
+review the corrective-action plan, approve a document action, watch the patch tool propose an anchored change to a
+Markdown policy and review the before/after diff → approve it; the new version activates after re-indexing and the
+**scoped reassessment shows whether the finding changed** — the human records the effectiveness verdict → the
+dashboard fills in, its trust panel showing the **hallucination rate collapsing** once
 verification is on → the gap & risk register shows each gap translated into a **severity-rated AI risk** →
 **drill into a finding via chat** ("why is A.7 partial?") and see its full lineage explained
 conversationally → export the Statement of Applicability and the PDF report. The system is the opposite of a black
@@ -418,7 +630,7 @@ box, and the user talked to it the whole way.
 
 ---
 
-## 17. Open items (to confirm at kickoff)
+## 18. Open items (to confirm at kickoff)
 
 - Live-progress transport: Server-Sent Events (nicer) vs polling (simpler).
 - Final name for the synthetic organization (placeholder: "Lumen AI").

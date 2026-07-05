@@ -6,11 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
-abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§13 = milestone
+abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§14 = milestone
 roadmap). Currently through **M3** (LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`); next is
-**M4** (chat copilot reusing the same retrieval + citation verification). M3 semantics: `VERIFIED`
+**M4** (chat copilot reusing the same retrieval + citation verification). After M6, core continues
+with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →
+corrective-action plan → per-action human approval → anchored patch with raw-equality unique anchors;
+**original uploads are immutable** — agent output is always a separate artifact or an explicitly
+activated `DocumentVersion`); the former M7/M8 stretch milestones are now **M8/M9** — old milestone
+numbers in commit history predate this renumbering. M3 semantics: `VERIFIED`
 means **citation/schema-verified via an EXACT match after normalization** (quote exists in source,
 clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
 repair retry then `ABSTAINED(fuzzy_citation)` for human review; verdict accuracy is measured in M6,
@@ -49,7 +54,7 @@ cd frontend && npm run build      # tsc + vite production build
 
 ## Commit convention
 
-`<Mx> <area>: <imperative summary>` — milestone tag (`M1a`…`M8`, omit for cross-cutting), area is
+`<Mx> <area>: <imperative summary>` — milestone tag (`M1a`…`M9`, omit for cross-cutting), area is
 `backend|frontend|infra|corpus|eval|docs`. See README for examples.
 
 ## Architecture: the invariants that matter

@@ -63,8 +63,9 @@ Commits follow a clear, descriptive format tied to the project milestones:
 ```
 
 - **`Mx`** — the milestone the work belongs to (`M1a` foundation, `M1b` corpus, `M2` RAG, `M3` pipeline,
-  `M4` chat, `M5` frontend/HITL, `M6` evaluation, `M7` artifacts, `M8` deliverables). Omitted for
-  cross-cutting fixes.
+  `M4` chat, `M5` frontend/HITL, `M6` evaluation, `M7a` remediation planning agent, `M7b` document-editing
+  tool, `M8` artifacts, `M9` deliverables). Omitted for cross-cutting fixes. (Commits older than the
+  M7a/M7b introduction use the pre-renumbering `M7`/`M8` meanings.)
 - **`area`** — `backend`, `frontend`, `infra`, `corpus`, `eval`, or `docs`.
 - Summary in the imperative mood ("add citation verifier", not "added"), ≤ 72 characters.
 
@@ -97,7 +98,10 @@ rationale queries (floor 0.60).
 ## Milestones
 
 M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
-(judge/verify/abstain, this state) → M4 chat copilot → M5 frontend HITL → M6 evaluation → M7 scoring & artifacts → M8 deliverables.
+(judge/verify/abstain, this state) → M4 chat copilot → M5 frontend HITL → M6 evaluation →
+M7a remediation planning agent (triage → corrective-action plan → per-action human approval) →
+M7b document-editing tool (anchored patches, versioning; originals immutable) →
+M8 scoring & artifacts → M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
 
 ## Pipeline (M3)
 
