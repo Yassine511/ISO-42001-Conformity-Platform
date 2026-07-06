@@ -123,10 +123,10 @@ ISO 42001 KB ──▶│ paraphrased atomic requirements (refs 4–10, A.2–A.
                        │                  │                  │
    ┌───────────────────▼──────┐  ┌────────▼───────────────┐  ┌▼────────────────────────────┐
    │  Assessment pipeline     │  │  ★ Chat copilot        │  │  ★ Remediation agent        │
-   │  (LangGraph)             │  │  question → retrieve → │  │  confirmed gap → triage →   │
-   │  ① Retrieve → ② Judge →  │  │  cited answer → verify │  │  corrective-action plan →   │
-   │  ③ Verify → ④ Review     │  │  → render with refs    │  │  human approves per action →│
-   │  (HITL) → ⑤ Score        │  │  or abstain            │  │  optional patch tool →      │
+   │  ①②③ LangGraph:          │  │  question → retrieve → │  │  confirmed gap → triage →   │
+   │  Retrieve→Judge→Verify   │  │  cited answer → verify │  │  corrective-action plan →   │
+   │  then app-level stages:  │  │  → render with refs    │  │  human approves per action →│
+   │  ④ Review (HITL)→⑤ Score │  │  or abstain            │  │  optional patch tool →      │
    │                          │  │  ("no verif. citation")│  │  reassess (effectiveness)   │
    └──────────┬───────────────┘  └────────┬───────────────┘  └┬────────────────────────────┘
               │                           │                   │
@@ -155,22 +155,25 @@ This separation is the entire reliability story and is what makes the tool defen
 
 ## 6. The assessment pipeline (LangGraph)
 
-The pipeline is orchestrated with **LangGraph**. A shared typed state (`GovernanceState`) carries
-`requirements`, `retrieved`, `drafts`, `findings` (each tagged `VERIFIED | ABSTAINED | CONFIRMED`), `scores`, and an
-`audit_log`. A **checkpointer** persists state, which makes the human-in-the-loop step resumable and lets the UI
-stream per-node progress.
+Nodes ①–③ are orchestrated with **LangGraph**. A shared typed state (`GovernanceState`) carries the
+requirement, `retrieved` evidence, the `draft`, the resulting finding (tagged `VERIFIED | ABSTAINED`) and an
+`audit_log`. Stages ④ (human review) and ⑤ (scoring) are **application-level stages over the persisted
+findings**, not graph nodes: findings are terminal rows in PostgreSQL, the review workspace confirms them
+(`review_status = CONFIRMED`), and the UI follows progress by polling the assessment (findings persist
+row-by-row). An optional **checkpointer** remains a CLI resume aid for a mid-requirement crash.
 
 | # | Node | Input → Output | What it does | Trust mechanism |
 |---|------|----------------|--------------|-----------------|
 | ① | **Retrieve** | requirements → evidence candidates | Hybrid retrieval (BM25 + vector, merged with Reciprocal Rank Fusion) pulls the most relevant policy spans for each ISO requirement | Evidence is scoped and provenance-tagged |
 | ② | **Judge** | requirement + evidence → draft finding | LLM-as-judge drafts a schema-constrained finding: `verdict, policy_quote, clause_ref, confidence, rationale` | **Grounding contract** — the model must cite an exact policy quote and a valid clause reference |
 | ③ | **Verify** | draft → tagged finding | Deterministic checks: the cited `policy_quote` must exist near-verbatim in its source chunk, the `clause_ref` must be a valid knowledge-base identifier, the schema must be valid, and confidence must clear a threshold → tag `VERIFIED`, otherwise `ABSTAINED` | **Citation verification + abstention** — hallucinations are rejected by code, not trusted |
-| ④ | **Review** *(human-in-the-loop interrupt)* | tagged findings → confirmed findings | The graph pauses; an auditor approves, edits, or overrides each finding in the UI; overrides are captured as data; the graph resumes | **Human oversight** — a person owns every decision |
-| ⑤ | **Score & Assemble** | confirmed findings → artifacts | Deterministic computation of conformity % per clause/domain, gaps, the **derived AI risk register**, Statement of Applicability, and report | No AI in scoring → reproducible numbers |
+| ④ | **Review** *(human-in-the-loop — application stage)* | tagged findings → confirmed findings | The review workspace presents each persisted finding; an auditor approves, edits, or overrides it; every decision is recorded as immutable data alongside the untouched AI draft | **Human oversight** — a person owns every decision |
+| ⑤ | **Score & Assemble** *(application stage)* | confirmed findings → artifacts | Deterministic computation over confirmed findings of conformity % per clause/domain, gaps, the **derived AI risk register**, Statement of Applicability, and report | No AI in scoring → reproducible numbers |
 
-**Why LangGraph is the right tool (not decoration):** it provides typed shared state across steps, a genuine
-**human-in-the-loop interrupt** at node ④ with checkpoint/resume, and native per-node streaming for the live progress
-interface — exactly the features this workflow needs.
+**Why LangGraph (scoped honestly):** it provides typed shared state and per-node streaming for nodes ①–③,
+plus optional checkpoint/resume for a crashed run. Human review is deliberately **not** a graph interrupt:
+findings are terminal once verified, so the review workspace operates on persisted rows — simpler, restart-safe,
+and equally auditable.
 
 ### Designed-for-failure output contract (nodes ② + ③)
 
@@ -567,7 +570,7 @@ answer is an abstention.
 
 | Layer | Choice |
 |-------|--------|
-| Orchestration | LangGraph (Postgres checkpointer, human-in-the-loop interrupt at node ④) |
+| Orchestration | LangGraph (nodes ①–③; optional Postgres checkpointer as a CLI resume aid — human review is an application-level stage, not a graph interrupt) |
 | Backend | FastAPI + Python |
 | LLM | **Mistral La Plateforme** (`mistral-large-latest`; `mistral-small-latest` for cheap calls) — native JSON mode, first-class French, French vendor. Fallback: Groq `llama-3.3-70b-versatile`. Batch runs are throttled to respect rate limits |
 | Retrieval | sentence-transformers **`intfloat/multilingual-e5-small`** (FR/EN bilingual; alt: `paraphrase-multilingual-MiniLM-L12-v2`) + Qdrant + BM25 with a **French analyzer** (French stopwords + Snowball stemming), merged via RRF |
@@ -675,5 +678,5 @@ box, and the user talked to it the whole way.
 
 ## 18. Open items (to confirm at kickoff)
 
-- Live-progress transport: Server-Sent Events (nicer) vs polling (simpler).
+- ~~Live-progress transport: Server-Sent Events (nicer) vs polling (simpler).~~ **Decided (M5): polling** — findings persist row-by-row, so a 2 s poll of the assessment is authoritative; an in-memory registry decorates the response with the current node, best-effort only.
 - Final name for the synthetic organization (placeholder: "Lumen AI").
