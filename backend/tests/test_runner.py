@@ -308,3 +308,76 @@ def test_persisted_findings_are_write_once(env):  # noqa: F811
     assert row.verdict == first.verdict
     assert row.rationale == first.rationale
     assert row.attempts == first.attempts
+
+
+def test_terminal_metadata_is_immutable(env):  # noqa: F811
+    """A finalized row's metadata is canonical: a late cancel flag is cleared
+    by the winning finalization, and a late runner crash cannot stamp its
+    error onto a terminal assessment."""
+    from app.pipeline.graph import note_assessment_error
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+
+    # cancel requested during the last requirement, but finalization wins the
+    # race window after the re-check: honoured -> FAILED cancelled, flag reset
+    run = runner.run_assessment(session_factory, aid)
+    assert run.status == "COMPLETED"
+    row = _row(session_factory, aid)
+    assert row.cancel_requested is False
+
+    # late crash after finalization: error must not be written
+    note_assessment_error(session_factory, aid, "late runner crash")
+    row = _row(session_factory, aid)
+    assert row.status == "COMPLETED" and row.error is None
+
+
+def test_finalize_clears_pending_cancel_flag(env):  # noqa: F811
+    """The flag is a REQUEST, meaningless once terminal: even when a cancel
+    lands in the window between the runner's re-check and its finalize commit,
+    the terminal row never persists cancel_requested=true."""
+    from app.pipeline.graph import finalize_assessment
+
+    session_factory, org_id = env
+    _use(FakeLLM([]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    db = session_factory()
+    db.get(Assessment, aid).cancel_requested = True
+    db.commit()
+    db.close()
+    assert finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED) is True
+    row = _row(session_factory, aid)
+    assert row.status == "COMPLETED" and row.cancel_requested is False
+
+
+def test_losing_duplicate_execution_returns_canonical_payload(env):  # noqa: F811
+    """First-writer-wins must also canonicalize the LOSING execution's
+    payload: callbacks/CLI/evaluators consuming the returned finding can never
+    disagree with PostgreSQL."""
+    from app.pipeline.nodes import _persist_finding
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    first = run_requirement(session_factory, aid, "A.9.2")
+    assert first.status == "VERIFIED"
+
+    state = {"assessment_id": aid, "requirement_id": "A.9.2", "retrieved": []}
+    losing = {
+        "status": "ABSTAINED",
+        "verdict": "missing",
+        "rationale": "duplicate execution",
+        "abstain_reason": "verification_failed",
+        "attempts": 2,
+        "match": None,
+    }
+    _persist_finding(session_factory, state, losing)
+    # the dict was rewritten in place to the stored row's content
+    assert losing["finding_id"] == first.finding_id
+    assert losing["status"] == "VERIFIED"
+    assert losing["verdict"] == first.verdict
+    assert losing["rationale"] == first.rationale
+    assert losing["attempts"] == first.attempts
+    assert losing["match"] is not None
+    assert losing["match"]["method"] == "exact"

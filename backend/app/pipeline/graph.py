@@ -298,6 +298,11 @@ def finalize_assessment(
         assessment.status = status.value
         assessment.error = error
         assessment.finished_at = _now()
+        # cancel_requested is a REQUEST flag, meaningless once terminal (a
+        # honoured cancellation is recorded in error/status): clearing it here
+        # keeps terminal metadata canonical even when an abandon set the flag
+        # concurrently with this finalization.
+        assessment.cancel_requested = False
         db.commit()
         return True
     finally:
@@ -338,11 +343,16 @@ def note_assessment_error(
     session_factory: SessionFactory, assessment_id: str, error: str
 ) -> None:
     """Record an error WITHOUT changing status: the assessment stays RUNNING
-    and therefore resumable — FAILED is reserved for runs abandoned for good."""
+    and therefore resumable — FAILED is reserved for runs abandoned for good.
+
+    Only a RUNNING row is written (row lock, same discipline as
+    finalize_assessment): a late runner crash must never stamp its error onto
+    an assessment that was finalized concurrently — terminal metadata is
+    immutable."""
     db = session_factory()
     try:
-        assessment = db.get(Assessment, assessment_id)
-        if assessment is not None:
+        assessment = db.get(Assessment, assessment_id, with_for_update=True)
+        if assessment is not None and assessment.status == AssessmentStatus.RUNNING.value:
             assessment.error = error
             db.commit()
     finally:

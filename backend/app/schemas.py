@@ -381,9 +381,13 @@ class AttemptDetailOut(BaseModel):
 class FindingDetailOut(FindingSummaryOut):
     """Full review payload: untouched AI draft + provenance + human decision.
 
-    source_quote is the AUTHORITATIVE display text (raw source slice at the
-    persisted offsets, fail-closed) — the UI renders it, never the model's
-    policy_quote, which appears only as audit provenance."""
+    source_quote is the display text (raw source slice at the persisted
+    offsets, fail-closed) — the UI renders it, never the model's policy_quote,
+    which appears only as audit provenance. Its authority depends on
+    source_quote_kind: "verified" (exact match, cross-checked against the
+    verified quote — authoritative citation text) vs "candidate" (fuzzy
+    near-match location kept for human review — bounded but NOT a verified
+    citation, and labelled as such)."""
 
     assessment_id: str
     policy_quote: str | None

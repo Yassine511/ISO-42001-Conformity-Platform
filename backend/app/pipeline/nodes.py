@@ -376,9 +376,35 @@ def _persist_finding(
             # (checkpoint re-run after a crash-after-persist, or two workers
             # resuming the same RUNNING assessment — the _THREADS registry is
             # process-local) must never rewrite the persisted AI draft a human
-            # may already be reviewing.
+            # may already be reviewing. The LOSING execution's payload is
+            # canonicalized to the stored row in place, so every downstream
+            # consumer (AssessmentResult, CLI output, callbacks) reports what
+            # PostgreSQL holds — never a conflicting verdict.
+            canonical = {
+                "finding_id": row.id,
+                "status": row.status,
+                "verdict": row.verdict,
+                "policy_quote": row.policy_quote,
+                "clause_ref": row.clause_ref,
+                "confidence": row.confidence,
+                "rationale": row.rationale,
+                "abstain_reason": row.abstain_reason,
+                "attempts": row.attempts,
+                "match": (
+                    {
+                        "chunk_id": row.matched_chunk_id,
+                        "match_start": row.match_start,
+                        "match_end": row.match_end,
+                        "method": row.match_method,
+                        "score": row.match_score,
+                    }
+                    if row.matched_chunk_id is not None
+                    else None
+                ),
+            }
             db.rollback()
-            finding["finding_id"] = row.id
+            finding.clear()
+            finding.update(canonical)
             return row.id
         row = Finding(
             assessment_id=state["assessment_id"],

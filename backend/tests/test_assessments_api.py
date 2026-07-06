@@ -243,7 +243,9 @@ def test_abandon_orphan_finalizes_failed(client):
     body = r.json()
     assert body["status"] == "FAILED"
     assert body["error"] == "Abandonnée par l'utilisateur."
-    assert body["cancel_requested"] is True
+    # terminal metadata is canonical: the request flag is cleared on
+    # finalization — the cancellation is recorded in error/status
+    assert body["cancel_requested"] is False
     # a terminal assessment cannot be abandoned again
     r = client.post(f"/api/organizations/{org_id}/assessments/{aid}/abandon")
     assert r.status_code == 409

@@ -228,8 +228,14 @@ def abandon_assessment(
     restart, --reload) is finalized immediately so it never blocks the
     organization forever."""
     _get_org(db, org_id)
-    assessment = _get_assessment(db, org_id, assessment_id)
+    _get_assessment(db, org_id, assessment_id)
+    # Check-and-set under the row lock (finalize_assessment takes the same
+    # lock): the RUNNING check and the flag write are atomic, so the flag can
+    # never land on a row a concurrent runner just finalized — terminal
+    # metadata stays immutable.
+    assessment = db.get(Assessment, assessment_id, with_for_update=True)
     if assessment.status != AssessmentStatus.RUNNING.value:
+        db.rollback()
         raise HTTPException(
             409, f"Abandon impossible : statut {assessment.status} (RUNNING requis)."
         )
