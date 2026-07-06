@@ -27,9 +27,17 @@ export default function OrganizationPage() {
   const { orgId } = useParams<{ orgId: string }>();
   return (
     <div className="space-y-10">
-      <Link to="/" className="text-sm text-indigo-600 hover:underline">
-        ← Organisations
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link to="/" className="text-sm text-indigo-600 hover:underline">
+          ← Organisations
+        </Link>
+        <Link
+          to={`/organizations/${orgId}/chat`}
+          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+        >
+          💬 Copilote
+        </Link>
+      </div>
       <DocumentsSection orgId={orgId!} />
       <AssessmentsSection orgId={orgId!} />
     </div>

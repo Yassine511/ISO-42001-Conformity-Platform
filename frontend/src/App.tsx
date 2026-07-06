@@ -2,6 +2,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import OrganizationPage from "./pages/OrganizationPage";
 import ReviewWorkspacePage from "./pages/ReviewWorkspacePage";
+import ChatPage from "./pages/ChatPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
             path="/organizations/:orgId/assessments/:assessmentId"
             element={<ReviewWorkspacePage />}
           />
+          <Route path="/organizations/:orgId/chat/:conversationId?" element={<ChatPage />} />
         </Routes>
       </main>
     </div>
