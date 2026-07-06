@@ -87,6 +87,7 @@ export function makeFindingDetail(over: Partial<FindingDetail> = {}): FindingDet
     corpus_mismatch: false,
     source_quote: SOURCE_QUOTE,
     source_quote_error: null,
+    source_quote_kind: "verified",
     retrieved: [
       {
         result_id: "chunk-1",

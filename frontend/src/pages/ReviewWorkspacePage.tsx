@@ -59,8 +59,10 @@ export default function ReviewWorkspacePage() {
       }),
     [findings, filter],
   );
+  // resolve the selection against the FILTERED list: a finding excluded by
+  // the active filter must never stay displayed in the detail panel
   const selected =
-    (selectedId && findings.find((f) => f.id === selectedId)) || filtered[0] || null;
+    (selectedId && filtered.find((f) => f.id === selectedId)) || filtered[0] || null;
 
   if (detail.isError) {
     return <p className="text-sm text-red-600">{(detail.error as Error).message}</p>;
@@ -321,10 +323,19 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
       </h2>
 
       {matched && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+        <div
+          className={`rounded-lg border p-4 ${
+            f.source_quote_kind === "candidate"
+              ? "border-amber-200 bg-amber-50/50"
+              : "border-emerald-200 bg-emerald-50/50"
+          }`}
+        >
           <p className="text-xs font-medium text-slate-500">
             {matched.filename}
-            {matched.page_number ? `, p.${matched.page_number}` : ""} — passage cité
+            {matched.page_number ? `, p.${matched.page_number}` : ""} —{" "}
+            {f.source_quote_kind === "candidate"
+              ? "passage candidat (correspondance approximative)"
+              : "passage cité"}
           </p>
           <p className="mt-2 text-sm leading-relaxed text-slate-800">
             <HighlightedText
@@ -333,9 +344,15 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
               end={f.source_quote_error ? null : localEnd}
             />
           </p>
-          {f.source_quote && !f.source_quote_error && (
+          {f.source_quote && f.source_quote_kind === "verified" && (
             <p className="mt-2 text-xs text-slate-500">
               Extrait source (autoritatif) : « {f.source_quote} »
+            </p>
+          )}
+          {f.source_quote && f.source_quote_kind === "candidate" && (
+            <p className="mt-2 text-xs font-medium text-amber-700">
+              Localisation approximative retenue pour votre revue — ce n'est pas une citation
+              vérifiée.
             </p>
           )}
           {f.source_quote_error && (

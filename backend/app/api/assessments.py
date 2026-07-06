@@ -279,9 +279,15 @@ def _finding_detail(db: Session, finding: Finding) -> dict:
         else:
             corpus_mismatch = True
 
-    # Authoritative evidence text: raw source slice at the persisted offsets,
-    # fail-closed, cross-checked against the verified model quote.
+    # Evidence text at the persisted offsets, fail-closed. Two kinds:
+    # - "verified" (exact match): cross-checked against the verified model
+    #   quote — this is the authoritative citation display text;
+    # - "candidate" (fuzzy near-match kept for priority human review): a
+    #   bounded source LOCATION, deliberately NOT cross-checked (a near-match
+    #   never normalizes to the model quote, and the quote may be absent after
+    #   a failed repair) and never presented as a verified citation.
     source_quote = source_quote_error = None
+    source_quote_kind = None
     if finding.matched_chunk_id is not None:
         source = next(
             (
@@ -292,9 +298,12 @@ def _finding_detail(db: Session, finding: Finding) -> dict:
             {},
         )
         match = {"match_start": finding.match_start, "match_end": finding.match_end}
+        exact = finding.match_method == "exact"
         source_quote, source_quote_error = source_slice(
-            source, match, finding.policy_quote
+            source, match, finding.policy_quote if exact else None
         )
+        if source_quote is not None:
+            source_quote_kind = "verified" if exact else "candidate"
 
     attempts = db.scalars(
         select(AssessmentAttempt)
@@ -355,6 +364,7 @@ def _finding_detail(db: Session, finding: Finding) -> dict:
         "corpus_mismatch": corpus_mismatch,
         "source_quote": source_quote,
         "source_quote_error": source_quote_error,
+        "source_quote_kind": source_quote_kind,
         "attempt_history": attempt_history,
         "reviews": finding.reviews,
     }

@@ -277,3 +277,36 @@ def test_rereview_appends_history_and_resets_stale_fields(client, reviewed_env):
     db = client.session_factory()
     assert len(db.scalars(select(FindingReview)).all()) == 2
     db.close()
+
+
+def test_fuzzy_candidate_is_served_as_candidate_never_authoritative(client, reviewed_env):
+    """A fuzzy near-match kept for human review is a bounded LOCATION, not a
+    verified citation: it must be typed 'candidate' — including when the final
+    policy_quote is absent (failed repair), where the model-quote cross-check
+    cannot run."""
+    org_id, aid, by_req = reviewed_env
+    db = client.session_factory()
+    row = db.get(Finding, by_req["A.9.2"])
+    exact_detail = client.get(_finding_url(org_id, aid, by_req["A.9.2"])).json()
+    assert exact_detail["source_quote_kind"] == "verified"  # baseline: exact match
+
+    # simulate the fuzzy-candidate-with-no-quote persistence shape
+    row.match_method = "fuzzy"
+    row.match_score = 87.0
+    row.policy_quote = None
+    db.commit()
+    db.close()
+
+    body = client.get(_finding_url(org_id, aid, by_req["A.9.2"])).json()
+    assert body["source_quote_kind"] == "candidate"
+    assert body["source_quote"] == QUOTE  # bounded slice still shown for review
+    assert body["source_quote_error"] is None
+
+    # fuzzy WITH a (paraphrased) quote: same candidate typing, no cross-check
+    db = client.session_factory()
+    db.get(Finding, by_req["A.9.2"]).policy_quote = "paraphrase du modèle"
+    db.commit()
+    db.close()
+    body = client.get(_finding_url(org_id, aid, by_req["A.9.2"])).json()
+    assert body["source_quote_kind"] == "candidate"
+    assert body["source_quote"] == QUOTE

@@ -160,14 +160,23 @@ def run_assessment(
             error=error,
         )
 
+    def _finalize(status: AssessmentStatus, error: str | None) -> AssessmentRunResult:
+        # terminal states are immutable: if a concurrent finalization won the
+        # race, report the row's actual outcome instead of ours
+        if finalize_assessment(session_factory, assessment_id, status, error=error):
+            return _result(status.value, error)
+        db = session_factory()
+        try:
+            row = db.get(Assessment, assessment_id)
+            return _result(row.status, row.error)
+        finally:
+            db.close()
+
     graph = compiled_graph or build_graph(session_factory, checkpointer=checkpointer)
 
     for requirement_id in [rid for rid in manifest if rid not in done_ids]:
         if _cancel_requested(session_factory, assessment_id):
-            finalize_assessment(
-                session_factory, assessment_id, AssessmentStatus.FAILED, error=CANCELLED_ERROR
-            )
-            return _result(AssessmentStatus.FAILED.value, CANCELLED_ERROR)
+            return _finalize(AssessmentStatus.FAILED, CANCELLED_ERROR)
         notify(requirement_id, "retrieve")
         try:
             result = run_requirement(
@@ -181,10 +190,7 @@ def run_assessment(
         except CorpusVersionMismatchError as exc:
             # permanent: no resume can succeed — leaving the assessment RUNNING
             # would trap it in an unresumable loop
-            finalize_assessment(
-                session_factory, assessment_id, AssessmentStatus.FAILED, error=str(exc)
-            )
-            return _result(AssessmentStatus.FAILED.value, str(exc))
+            return _finalize(AssessmentStatus.FAILED, str(exc))
         except AssessmentNotRunningError:
             # finalized concurrently (e.g. abandoned from another process):
             # stop gracefully, report the row's actual state
@@ -231,16 +237,12 @@ def run_assessment(
     # Cancellation re-check immediately before finalization: a cancel that
     # landed during the last requirement must win over COMPLETED.
     if _cancel_requested(session_factory, assessment_id):
-        finalize_assessment(
-            session_factory, assessment_id, AssessmentStatus.FAILED, error=CANCELLED_ERROR
-        )
-        return _result(AssessmentStatus.FAILED.value, CANCELLED_ERROR)
+        return _finalize(AssessmentStatus.FAILED, CANCELLED_ERROR)
 
     # Full coverage: the COMPLETED/FAILED quality decision is owned by
     # resolve_run_status, not this runner.
     status = resolve_run_status(total, infra_abstains)
-    finalize_assessment(session_factory, assessment_id, status, error=error_note)
-    return _result(status.value, error_note)
+    return _finalize(status, error_note)
 
 
 def launch(session_factory: SessionFactory, assessment_id: str) -> bool:

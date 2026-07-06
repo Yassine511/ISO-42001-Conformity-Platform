@@ -403,6 +403,10 @@ class FindingDetailOut(FindingSummaryOut):
     corpus_mismatch: bool = False
     source_quote: str | None = None
     source_quote_error: str | None = None
+    # "verified" = exact match cross-checked against the verified quote
+    # (authoritative citation text); "candidate" = fuzzy near-match location
+    # kept for human review — bounded but NOT a verified citation.
+    source_quote_kind: Literal["verified", "candidate"] | None = None
     retrieved: list
     audit_log: list | None
     attempt_history: list[AttemptDetailOut]

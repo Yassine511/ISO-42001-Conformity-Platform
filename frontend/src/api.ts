@@ -150,6 +150,9 @@ export interface FindingDetail extends FindingSummary {
   // render THIS, never policy_quote, as evidence
   source_quote: string | null;
   source_quote_error: string | null;
+  // "verified": exact, cross-checked citation text; "candidate": fuzzy
+  // near-match location for human review — never present as verified
+  source_quote_kind: "verified" | "candidate" | null;
   retrieved: RetrievedItem[];
   audit_log: { node: string; event: string; at?: string }[] | null;
   attempt_history: AttemptDetail[];

@@ -255,3 +255,56 @@ def test_launch_refuses_double_start(env, monkeypatch):  # noqa: F811
     finally:
         release.set()
         runner._THREADS.get("aid-1", threading.current_thread()).join(timeout=5)
+
+
+def test_finalize_terminal_states_are_immutable(env):  # noqa: F811
+    """A caller whose RUNNING check raced a concurrent finalization (abandon
+    endpoint vs runner finishing) must not rewrite the outcome."""
+    from app.pipeline.graph import finalize_assessment
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    run = runner.run_assessment(session_factory, aid)
+    assert run.status == "COMPLETED"
+    # late cancellation loses: no write, False returned, row untouched
+    assert (
+        finalize_assessment(
+            session_factory, aid, AssessmentStatus.FAILED, error="Abandonnée par l'utilisateur."
+        )
+        is False
+    )
+    row = _row(session_factory, aid)
+    assert row.status == "COMPLETED" and row.error is None
+
+
+def test_persisted_findings_are_write_once(env):  # noqa: F811
+    """First writer wins at the persistence boundary: a duplicate execution
+    (checkpoint re-run, or two workers resuming the same assessment) must
+    never rewrite the AI draft a human may already be reviewing."""
+    from app.pipeline.nodes import _persist_finding
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    first = run_requirement(session_factory, aid, "A.9.2")
+    assert first.status == "VERIFIED"
+
+    state = {"assessment_id": aid, "requirement_id": "A.9.2", "retrieved": []}
+    conflicting = {
+        "status": "ABSTAINED",
+        "verdict": "missing",
+        "rationale": "duplicate execution",
+        "abstain_reason": "verification_failed",
+        "attempts": 2,
+        "match": None,
+    }
+    returned_id = _persist_finding(session_factory, state, conflicting)
+    assert returned_id == first.finding_id  # same row, no duplicate
+    db = session_factory()
+    row = db.get(Finding, first.finding_id)
+    db.close()
+    assert row.status == "VERIFIED"  # untouched
+    assert row.verdict == first.verdict
+    assert row.rationale == first.rationale
+    assert row.attempts == first.attempts

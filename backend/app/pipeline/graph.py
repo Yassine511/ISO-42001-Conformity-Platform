@@ -274,23 +274,32 @@ def finalize_assessment(
     assessment_id: str,
     status: AssessmentStatus,
     error: str | None = None,
-) -> None:
+) -> bool:
     """Caller states the outcome explicitly: an ABSTAINED finding is a
     completed pipeline execution — only unhandled operational failures are
     FAILED.
 
     Locks the assessment row (FOR UPDATE): finalization and finding creation
     (nodes._persist_finding takes the same lock) are mutually exclusive, so a
-    finding can never land in an assessment this call just finalized."""
+    finding can never land in an assessment this call just finalized.
+
+    Terminal states are immutable: only a RUNNING row can transition. Returns
+    False (no write) when the row is already COMPLETED/FAILED — a caller whose
+    RUNNING check raced a concurrent finalization (e.g. the abandon endpoint
+    vs the runner finishing) must never rewrite the outcome."""
     db = session_factory()
     try:
         assessment = db.get(Assessment, assessment_id, with_for_update=True)
         if assessment is None:
             raise ValueError(f"assessment inconnu : {assessment_id}")
+        if assessment.status != AssessmentStatus.RUNNING.value:
+            db.rollback()
+            return False
         assessment.status = status.value
         assessment.error = error
         assessment.finished_at = _now()
         db.commit()
+        return True
     finally:
         db.close()
 

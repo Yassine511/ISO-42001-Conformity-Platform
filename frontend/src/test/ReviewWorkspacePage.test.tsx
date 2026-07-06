@@ -68,6 +68,7 @@ describe("evidence display", () => {
       makeFindingDetail({
         source_quote: null,
         source_quote_error: "offsets de citation invalides : [10:9999) hors des bornes.",
+        source_quote_kind: null,
       }),
     );
     renderPage();
@@ -75,6 +76,29 @@ describe("evidence display", () => {
     expect(screen.queryByText(/Extrait source \(autoritatif\)/)).toBeNull();
     // no highlight when provenance is corrupt
     expect(document.querySelector("mark")).toBeNull();
+  });
+
+  it("labels a fuzzy near-match as a candidate, never as authoritative", async () => {
+    mocked.getFinding.mockResolvedValue(
+      makeFindingDetail({
+        status: "ABSTAINED",
+        abstain_reason: "fuzzy_citation",
+        match_method: "fuzzy",
+        match_score: 87,
+        policy_quote: null,
+        source_quote_kind: "candidate",
+      }),
+    );
+    renderPage();
+    expect(
+      await screen.findByText(/passage candidat \(correspondance approximative\)/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/ce n'est pas une citation\s+vérifiée/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Extrait source \(autoritatif\)/)).toBeNull();
+    // the bounded location is still highlighted for the reviewer
+    expect(document.querySelector("mark")).not.toBeNull();
   });
 });
 
@@ -169,6 +193,33 @@ describe("confirmed state and history", () => {
     // history lists both decisions with unverified attribution
     expect(screen.getByText(/Historique des décisions \(2\)/)).toBeInTheDocument();
     expect(screen.getByText(/par Yassine \(non vérifié\)/)).toBeInTheDocument();
+  });
+});
+
+describe("filter and selection coherence", () => {
+  it("never displays a finding excluded by the active filter", async () => {
+    // fid-1 is VERIFIED/PENDING, fid-2 is ABSTAINED/PENDING
+    mocked.getFinding.mockImplementation((_o: string, _a: string, fid: string) =>
+      Promise.resolve(
+        fid === "fid-2"
+          ? makeFindingDetail({
+              id: "fid-2",
+              requirement_id: "A.4.5",
+              status: "ABSTAINED",
+              verdict: null,
+              abstain_reason: "model_abstained",
+            })
+          : makeFindingDetail(),
+      ),
+    );
+    renderPage();
+    // select the abstained finding
+    await userEvent.click(await screen.findByRole("button", { name: /A\.4\.5/ }));
+    expect(await screen.findByText(/Brouillon IA — abstention/)).toBeInTheDocument();
+    // activate a filter that excludes it: the panel must switch, not linger
+    await userEvent.click(screen.getByRole("button", { name: "Confirmés" }));
+    expect(screen.queryByText(/Brouillon IA — abstention/)).toBeNull();
+    expect(screen.getByText("Aucun constat pour ce filtre.")).toBeInTheDocument();
   });
 });
 

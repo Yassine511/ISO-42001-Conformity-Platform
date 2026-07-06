@@ -370,15 +370,24 @@ def _persist_finding(
                 Finding.requirement_id == state["requirement_id"],
             )
         ).first()
-        if row is None:
-            row = Finding(
-                assessment_id=state["assessment_id"],
-                requirement_id=state["requirement_id"],
-                status=finding["status"],
-                attempts=finding["attempts"],
-                retrieved=state.get("retrieved") or [],
-            )
-            db.add(row)
+        if row is not None:
+            # FIRST WRITER WINS: findings are terminal and write-once at this
+            # boundary, not just at the review endpoint. A duplicate execution
+            # (checkpoint re-run after a crash-after-persist, or two workers
+            # resuming the same RUNNING assessment — the _THREADS registry is
+            # process-local) must never rewrite the persisted AI draft a human
+            # may already be reviewing.
+            db.rollback()
+            finding["finding_id"] = row.id
+            return row.id
+        row = Finding(
+            assessment_id=state["assessment_id"],
+            requirement_id=state["requirement_id"],
+            status=finding["status"],
+            attempts=finding["attempts"],
+            retrieved=state.get("retrieved") or [],
+        )
+        db.add(row)
         row.status = finding["status"]
         row.verdict = finding.get("verdict")
         row.policy_quote = finding.get("policy_quote")
