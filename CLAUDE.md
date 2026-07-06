@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
 abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§14 = milestone
-roadmap). Currently through **M4** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
+roadmap). Currently through **M5** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`. M4: grounded
 chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
@@ -19,8 +19,26 @@ answers are labelled AI drafts, the reader assesses support via rendered source 
 offsets (no formal chat-claim confirmation workflow); citation quality is measured in M6. Formal human
 confirmation applies to pipeline findings (M5 workspace).
 Same verifier/retrieval/LLM layer, conversation logging in
-`conversations/chat_messages/chat_llm_calls`, CLI demo `scripts/chat_demo.py`); next is **M5**
-(frontend core + HITL review workspace + chat UI). After M6, core continues
+`conversations/chat_messages/chat_llm_calls`, CLI demo `scripts/chat_demo.py`.
+M5: frontend core + HITL. Assessment run API (`backend/app/api/assessments.py` + shared runner
+`backend/app/pipeline/runner.py` — the CLI delegates to it): the persisted Assessment row is the
+**run contract** (frozen requirement manifest + `retrieval_k` + `document_manifest`), creation is
+atomic index-then-create under the org row lock (`services/run_guard.py`; corpus mutations 409
+while RUNNING), a partial unique index enforces one RUNNING per org, cancellation is cooperative
+(`cancel_requested`), live progress is **polled** (resolves spec §18 — no SSE). Human review is an
+**application-level stage over persisted findings**, never a LangGraph interrupt: AI finding
+columns are write-once; the decision lives in `review_*` projection columns + the immutable
+`finding_reviews` table (approve/edit VERIFIED-only, override is the only action for ABSTAINED,
+re-review appends history). UIs render **server-derived source slices** (`services/provenance.py`,
+fail-closed) — never model quotes; wording «citation localisée, pertinence à confirmer». Chat
+serves `answer_segments`/`answer_caveat` so footnotes never require splitting `answer` client-side.
+**M6 holdout protection is structural**: runs draw only from the frozen 51-id dev manifest
+(`backend/app/pipeline/dev_split.py`, cross-checked against gold in tests); `create_assessment`
+rejects test-split ids unless `allow_holdout=True` (M6-script-only, unreachable over HTTP).
+Frontend pages: upload & run (per-node live progress), review workspace (split view + offset
+highlighting), chat (footnote citations, amber «Écart potentiel» abstention cards; infrastructure
+abstentions always neutral). Frontend tests: Vitest + Testing Library (`npm run test`).
+Next is **M6** (evaluation). After M6, core continues
 with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →
 corrective-action plan → per-action human approval → anchored patch with raw-equality unique anchors;
 **original uploads are immutable** — agent output is always a separate artifact or an explicitly
@@ -56,6 +74,7 @@ cd backend && .venv/Scripts/uvicorn app.main:app --reload
 
 # frontend
 cd frontend && npm run dev        # dev server, proxies /api
+cd frontend && npm run test       # Vitest + Testing Library behaviour tests
 cd frontend && npm run build      # tsc + vite production build
 
 # new DB migration (Alembic; migrations run automatically at backend startup)

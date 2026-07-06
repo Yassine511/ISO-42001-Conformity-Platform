@@ -98,10 +98,33 @@ rationale queries (floor 0.60).
 ## Milestones
 
 M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
-(judge/verify/abstain, this state) → M4 chat copilot → M5 frontend HITL → M6 evaluation →
+(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL (this state) → M6 evaluation →
 M7a remediation planning agent (triage → corrective-action plan → per-action human approval) →
 M7b document-editing tool (anchored patches, versioning; originals immutable) →
 M8 scoring & artifacts → M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
+
+## Frontend + HITL (M5)
+
+Three French UI pages on `http://localhost:5173` (`docker compose up --build -d`):
+
+- **Documents & évaluations** — upload, index, launch an assessment (frozen 51-requirement dev
+  manifest; the M6 test split is structurally unrunnable over HTTP), live per-node progress by
+  polling, resume/abandon (cooperative cancellation). Creation freezes the run contract
+  (requirement manifest, `retrieval_k`, document manifest) atomically with indexing under an
+  org lock — one RUNNING assessment per organization, DB-enforced.
+- **Espace de revue** — the formal human confirmation stage: split view requirement ↔ evidence
+  with the cited span highlighted at its persisted offsets; the displayed quote is always the
+  server-derived source slice (fail-closed), never the model string. Actions: approuver /
+  modifier / remplacer (only option for abstentions). The AI draft is write-once — decisions
+  live in `review_*` projections plus the immutable `finding_reviews` history (re-review allowed).
+- **Copilote** — chat answers rendered from `answer_segments` with clickable `[n]` footnotes
+  opening the source passage in context; unanswerable questions become amber « Écart potentiel »
+  cards (suggested clause + unverified per-passage model notes); provider outages render as
+  neutral service notices.
+
+The containerized backend reads API keys from the repo-root `.env` (`MISTRAL_API_KEY=…`,
+compose `env_file`); `backend/.env` serves host-side CLI runs. Frontend behaviour tests:
+`cd frontend && npm run test`.
 
 ## Pipeline (M3)
 
