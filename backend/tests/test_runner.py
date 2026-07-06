@@ -381,3 +381,68 @@ def test_losing_duplicate_execution_returns_canonical_payload(env):  # noqa: F81
     assert losing["attempts"] == first.attempts
     assert losing["match"] is not None
     assert losing["match"]["method"] == "exact"
+    assert losing["canonical_from_row"] is True
+
+
+def test_losing_result_is_rebuilt_from_row_not_worker_state(env):  # noqa: F811
+    """The whole AssessmentResult of a losing execution comes from the row:
+    a flagged (canonical_from_row) finding must NOT read model/provider,
+    retrieved or provenance from the loser's own graph state — otherwise M6
+    attributes the winner's verdict to the loser's provider."""
+    from app.pipeline.graph import _result_from_final
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    winner = run_requirement(session_factory, aid, "A.9.2")
+    db = session_factory()
+    row = db.get(Finding, winner.finding_id)
+    row_model, row_provider = row.final_model, row.final_provider
+    row_retrieved_ids = [r["result_id"] for r in (row.retrieved or [])]
+    db.close()
+
+    # a loser's final_state: the finding dict was canonicalized + flagged by
+    # _persist_finding, but the state still carries the loser's own model,
+    # provider and evidence
+    losing_state = {
+        "finding": {
+            "finding_id": winner.finding_id,
+            "status": "VERIFIED",
+            "verdict": "compliant",
+            "canonical_from_row": True,
+        },
+        "final_model": "loser-model",
+        "final_provider": "loser-provider",
+        "retrieved": [{"result_id": "loser-evidence"}],
+        "attempt_history": [{"attempt": 99}],
+        "audit_log": [{"node": "loser"}],
+    }
+    result = _result_from_final(session_factory, losing_state, aid, "A.9.2")
+
+    assert result.final_model == row_model
+    assert result.final_provider == row_provider
+    assert result.final_model != "loser-model"
+    assert [r["result_id"] for r in result.retrieved] == row_retrieved_ids
+    assert all(r["result_id"] != "loser-evidence" for r in result.retrieved)
+
+
+def test_winner_result_still_comes_from_its_own_state(env):  # noqa: F811
+    """The happy path is untouched: a winning execution (no canonical flag)
+    still builds its result from graph state, preserving the richer per-call
+    attempt_history the CLI prints."""
+    from app.pipeline.graph import _result_from_final
+
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2"])
+    winning_state = {
+        "finding": {"finding_id": "x", "status": "VERIFIED", "verdict": "compliant"},
+        "final_model": "winner-model",
+        "final_provider": "winner-provider",
+        "retrieved": [{"result_id": "e1"}],
+        "attempt_history": [{"attempt": 1, "calls": []}],
+        "audit_log": [],
+    }
+    result = _result_from_final(session_factory, winning_state, aid, "A.9.2")
+    assert result.final_model == "winner-model"
+    assert result.final_provider == "winner-provider"

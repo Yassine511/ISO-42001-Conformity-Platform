@@ -377,9 +377,11 @@ def _persist_finding(
             # resuming the same RUNNING assessment — the _THREADS registry is
             # process-local) must never rewrite the persisted AI draft a human
             # may already be reviewing. The LOSING execution's payload is
-            # canonicalized to the stored row in place, so every downstream
-            # consumer (AssessmentResult, CLI output, callbacks) reports what
-            # PostgreSQL holds — never a conflicting verdict.
+            # canonicalized to the stored row in place and flagged, so
+            # run_requirement rebuilds its whole AssessmentResult from the row
+            # (model/provider attribution, retrieved evidence and provenance
+            # included) — never a mix of the winner's verdict and the loser's
+            # own model/evidence.
             canonical = {
                 "finding_id": row.id,
                 "status": row.status,
@@ -401,6 +403,10 @@ def _persist_finding(
                     if row.matched_chunk_id is not None
                     else None
                 ),
+                # signal to run_requirement: this execution lost the race, so
+                # the authoritative result must be read from the row, not from
+                # this worker's graph state.
+                "canonical_from_row": True,
             }
             db.rollback()
             finding.clear()

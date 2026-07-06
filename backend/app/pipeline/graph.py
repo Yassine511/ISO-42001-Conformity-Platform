@@ -496,7 +496,9 @@ def run_requirement(
         snapshot = graph.get_state(config)
         if snapshot is not None and snapshot.next:
             final_state = graph.invoke(None, config)
-            return _result_from_state(final_state, assessment_id, requirement_id)
+            return _result_from_final(
+                session_factory, final_state, assessment_id, requirement_id
+            )
 
     initial: GovernanceState = {
         "assessment_id": assessment_id,
@@ -528,6 +530,28 @@ def run_requirement(
                         pass
             else:
                 final_state = payload
+    return _result_from_final(session_factory, final_state, assessment_id, requirement_id)
+
+
+def _result_from_final(
+    session_factory: SessionFactory,
+    final_state: dict,
+    assessment_id: str,
+    requirement_id: str,
+) -> AssessmentResult:
+    """Build the AssessmentResult after a graph run. A duplicate execution that
+    LOST the write race (see nodes._persist_finding) must report the persisted
+    row in full — model/provider attribution and evidence included — so the
+    winner's canonical verdict is never attributed to the loser's provider."""
+    finding = final_state.get("finding") or {}
+    if finding.get("canonical_from_row"):
+        db = session_factory()
+        try:
+            row = db.get(Finding, finding["finding_id"])
+        finally:
+            db.close()
+        if row is not None:
+            return _result_from_row(session_factory, row)
     return _result_from_state(final_state, assessment_id, requirement_id)
 
 
