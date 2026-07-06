@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import OrganizationPage from "./pages/OrganizationPage";
+import ReviewWorkspacePage from "./pages/ReviewWorkspacePage";
 
 export default function App() {
   return (
@@ -19,6 +20,10 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/organizations/:orgId" element={<OrganizationPage />} />
+          <Route
+            path="/organizations/:orgId/assessments/:assessmentId"
+            element={<ReviewWorkspacePage />}
+          />
         </Routes>
       </main>
     </div>

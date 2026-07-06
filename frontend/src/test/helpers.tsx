@@ -65,16 +65,19 @@ export function makeFindingSummary(over: Partial<FindingSummary> = {}): FindingS
   };
 }
 
+const SOURCE_QUOTE = "Les collaborateurs doivent signaler tout incident sous 48 heures.";
+const CHUNK_TEXT = `Préambule. ${SOURCE_QUOTE} Suite.`;
+
 export function makeFindingDetail(over: Partial<FindingDetail> = {}): FindingDetail {
   return {
     ...makeFindingSummary(),
     assessment_id: "aid-1",
-    policy_quote: "Les collaborateurs doivent signaler tout incident sous 48 heures.",
+    policy_quote: SOURCE_QUOTE,
     clause_ref: "A.9.2",
     rationale: "La politique couvre l'exigence.",
     matched_chunk_id: "chunk-1",
-    match_start: 10,
-    match_end: 45,
+    match_start: CHUNK_TEXT.indexOf(SOURCE_QUOTE),
+    match_end: CHUNK_TEXT.indexOf(SOURCE_QUOTE) + SOURCE_QUOTE.length,
     match_method: "exact",
     match_score: 100,
     attempts: 1,
@@ -82,13 +85,13 @@ export function makeFindingDetail(over: Partial<FindingDetail> = {}): FindingDet
     final_provider: "fake",
     requirement_fr: "L'organisation doit définir un processus de signalement des incidents IA.",
     corpus_mismatch: false,
-    source_quote: "Les collaborateurs doivent signaler tout incident sous 48 heures.",
+    source_quote: SOURCE_QUOTE,
     source_quote_error: null,
     retrieved: [
       {
         result_id: "chunk-1",
         source_type: "policy",
-        text: "Préambule. Les collaborateurs doivent signaler tout incident sous 48 heures. Suite.",
+        text: CHUNK_TEXT,
         rrf_score: 0.03,
         vector_rank: 1,
         bm25_rank: 1,
@@ -96,7 +99,7 @@ export function makeFindingDetail(over: Partial<FindingDetail> = {}): FindingDet
         filename: "politique_ia.txt",
         page_number: 1,
         char_start: 0,
-        char_end: 84,
+        char_end: CHUNK_TEXT.length,
         requirement_id: null,
         domain: null,
       },
