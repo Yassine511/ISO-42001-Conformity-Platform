@@ -36,7 +36,9 @@ class Verdict(str, Enum):
 class FindingStatus(str, Enum):
     VERIFIED = "VERIFIED"    # citation/schema-verified (see module docstring)
     ABSTAINED = "ABSTAINED"
-    # M5 adds CONFIRMED (human review)
+    # Human confirmation is NOT a third status: the AI status is immutable;
+    # the M5 review decision lives in Finding.review_status (CONFIRMED) and
+    # the finding_reviews history table.
 
 
 class AbstainReason(str, Enum):
@@ -147,6 +149,7 @@ class GovernanceState(TypedDict, total=False):
     organization_id: str
     requirement_id: str
     requirement_text: str
+    requirement_domain: str | None  # snapshotted onto the finding (M5 review)
     corpus_version: str
     retrieval_k: int
     # node outputs

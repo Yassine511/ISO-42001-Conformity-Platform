@@ -391,6 +391,10 @@ def _persist_finding(
         row.match_method = match.get("method")
         row.match_score = match.get("score")
         row.abstain_reason = finding.get("abstain_reason")
+        # Requirement snapshot: historical review must never depend on the
+        # live KB (a KB upgrade would silently change what "was assessed").
+        row.requirement_fr = state.get("requirement_text")
+        row.domain = state.get("requirement_domain")
         row.attempts = finding["attempts"]
         row.final_model = state.get("final_model")
         row.final_provider = state.get("final_provider")

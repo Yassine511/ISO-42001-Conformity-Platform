@@ -484,6 +484,7 @@ def run_requirement(
         "organization_id": org_id,
         "requirement_id": requirement_id,
         "requirement_text": entry["requirement_fr"],
+        "requirement_domain": entry.get("domain"),
         "corpus_version": kb["corpus_version"],
         "retrieval_k": k,
         "judge_attempts": 0,

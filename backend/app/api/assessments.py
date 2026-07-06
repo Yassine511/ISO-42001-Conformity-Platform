@@ -17,8 +17,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app.db import SessionLocal, get_db
-from app.models import Assessment, Finding, Organization
+from app.models import Assessment, AssessmentAttempt, Finding, FindingReview, Organization
 from app.pipeline import runner
 from app.pipeline.dev_split import DEV_REQUIREMENT_IDS
 from app.pipeline.graph import (
@@ -33,8 +35,13 @@ from app.schemas import (
     AssessmentListItemOut,
     AssessmentOut,
     AssessmentProgressOut,
+    AttemptDetailOut,
+    FindingDetailOut,
     KbRequirementOut,
+    LlmCallSummaryOut,
+    ReviewDecision,
 )
+from app.services.provenance import source_slice
 from app.services.retrieval import load_kb
 
 router = APIRouter(prefix="/api", tags=["assessments"])
@@ -97,6 +104,16 @@ def _status_counts(db: Session, assessment_ids: list[str]) -> dict:
     ).all()
     for assessment_id, status, n in rows:
         counts.setdefault(assessment_id, {})[status] = n
+    reviewed = db.execute(
+        select(Finding.assessment_id, func.count())
+        .where(
+            Finding.assessment_id.in_(assessment_ids),
+            Finding.review_status == "CONFIRMED",
+        )
+        .group_by(Finding.assessment_id)
+    ).all()
+    for assessment_id, n in reviewed:
+        counts.setdefault(assessment_id, {})["reviewed"] = n
     return counts
 
 
@@ -228,6 +245,208 @@ def abandon_assessment(
     db.expire_all()
     assessment = db.get(Assessment, assessment_id)
     return _list_item(assessment, _status_counts(db, [assessment_id]))
+
+
+# ------------------------------------------------------------ HITL review
+
+
+def _get_finding(db: Session, org_id: str, assessment_id: str, finding_id: str) -> Finding:
+    """404 unless the finding -> assessment -> organization chain matches the
+    URL exactly (org scoping is structural, never trusted from the id)."""
+    finding = db.get(Finding, finding_id)
+    if (
+        finding is None
+        or finding.assessment_id != assessment_id
+        or finding.assessment.organization_id != org_id
+    ):
+        raise HTTPException(404, "Constat introuvable pour cette évaluation.")
+    return finding
+
+
+def _finding_detail(db: Session, finding: Finding) -> dict:
+    # Requirement snapshot with documented legacy fallback: NULL snapshot rows
+    # (pre-0012) may use the live KB only when the corpus_version still
+    # matches — text from another corpus version must never be presented as
+    # what was assessed.
+    requirement_fr, domain = finding.requirement_fr, finding.domain
+    corpus_mismatch = False
+    if requirement_fr is None:
+        kb = load_kb()
+        entry = kb["by_id"].get(finding.requirement_id)
+        if entry is not None and kb["corpus_version"] == finding.assessment.corpus_version:
+            requirement_fr = entry["requirement_fr"]
+            domain = domain or entry.get("domain")
+        else:
+            corpus_mismatch = True
+
+    # Authoritative evidence text: raw source slice at the persisted offsets,
+    # fail-closed, cross-checked against the verified model quote.
+    source_quote = source_quote_error = None
+    if finding.matched_chunk_id is not None:
+        source = next(
+            (
+                item
+                for item in (finding.retrieved or [])
+                if item.get("result_id") == finding.matched_chunk_id
+            ),
+            {},
+        )
+        match = {"match_start": finding.match_start, "match_end": finding.match_end}
+        source_quote, source_quote_error = source_slice(
+            source, match, finding.policy_quote
+        )
+
+    attempts = db.scalars(
+        select(AssessmentAttempt)
+        .where(
+            AssessmentAttempt.assessment_id == finding.assessment_id,
+            AssessmentAttempt.requirement_id == finding.requirement_id,
+        )
+        .order_by(AssessmentAttempt.attempt_number)
+    ).all()
+    attempt_history = [
+        AttemptDetailOut(
+            attempt_number=a.attempt_number,
+            prompt_version=a.prompt_version,
+            parsed_ok=a.parsed_ok,
+            verifier_errors=a.verifier_errors,
+            llm_calls=[LlmCallSummaryOut.model_validate(c) for c in a.llm_calls],
+        )
+        for a in attempts
+    ]
+
+    base = {
+        attr: getattr(finding, attr)
+        for attr in (
+            "id",
+            "assessment_id",
+            "requirement_id",
+            "status",
+            "verdict",
+            "abstain_reason",
+            "confidence",
+            "policy_quote",
+            "clause_ref",
+            "rationale",
+            "matched_chunk_id",
+            "match_start",
+            "match_end",
+            "match_method",
+            "match_score",
+            "attempts",
+            "final_model",
+            "final_provider",
+            "retrieved",
+            "audit_log",
+            "review_status",
+            "review_action",
+            "human_verdict",
+            "human_rationale",
+            "review_note",
+            "reviewed_at",
+            "review_count",
+            "created_at",
+        )
+    }
+    return {
+        **base,
+        "requirement_fr": requirement_fr,
+        "domain": domain,
+        "corpus_mismatch": corpus_mismatch,
+        "source_quote": source_quote,
+        "source_quote_error": source_quote_error,
+        "attempt_history": attempt_history,
+        "reviews": finding.reviews,
+    }
+
+
+@router.get(
+    "/organizations/{org_id}/assessments/{assessment_id}/findings/{finding_id}",
+    response_model=FindingDetailOut,
+)
+def get_finding(
+    org_id: str, assessment_id: str, finding_id: str, db: Session = Depends(get_db)
+):
+    _get_org(db, org_id)
+    finding = _get_finding(db, org_id, assessment_id, finding_id)
+    return _finding_detail(db, finding)
+
+
+@router.post(
+    "/organizations/{org_id}/assessments/{assessment_id}/findings/{finding_id}/review",
+    response_model=FindingDetailOut,
+)
+def review_finding(
+    org_id: str,
+    assessment_id: str,
+    finding_id: str,
+    body: ReviewDecision,
+    db: Session = Depends(get_db),
+):
+    """Record the human decision. Writes ONLY review columns + an immutable
+    FindingReview row — the AI draft is never modified. Re-review is allowed
+    (single auditor correcting themself); the projection is fully rewritten
+    (stale optional fields reset) and history keeps every decision."""
+    _get_org(db, org_id)
+    _get_finding(db, org_id, assessment_id, finding_id)
+    # Row lock: concurrent re-reviews serialize so sequence numbers and the
+    # projection cannot interleave (no-op on SQLite unit tests).
+    finding = db.get(Finding, finding_id, with_for_update=True)
+
+    if body.action in ("approve", "edit") and finding.status != "VERIFIED":
+        raise HTTPException(
+            422,
+            "Un constat en abstention nécessite votre verdict : utilisez "
+            "« remplacer » (override).",
+        )
+    if body.action == "approve":
+        human_verdict = finding.verdict
+        human_rationale = body.human_rationale  # optional commentary
+    elif body.action == "edit":
+        if not body.human_rationale:
+            raise HTTPException(
+                422, "L'action « modifier » exige votre justification (human_rationale)."
+            )
+        human_verdict = finding.verdict  # edit keeps the AI verdict
+        human_rationale = body.human_rationale
+    else:  # override
+        if not body.human_verdict or not body.human_rationale:
+            raise HTTPException(
+                422,
+                "L'action « remplacer » exige un verdict (human_verdict) et une "
+                "justification (human_rationale).",
+            )
+        human_verdict = body.human_verdict
+        human_rationale = body.human_rationale
+    if human_verdict is None:  # approve on a (VERIFIED) finding without verdict
+        raise HTTPException(
+            422, "Ce constat n'a pas de verdict IA : utilisez « remplacer » (override)."
+        )
+
+    sequence = finding.review_count + 1
+    db.add(
+        FindingReview(
+            finding_id=finding.id,
+            sequence=sequence,
+            action=body.action,
+            human_verdict=human_verdict,
+            human_rationale=human_rationale,
+            review_note=body.review_note,
+            reviewer_label=body.reviewer_label,
+        )
+    )
+    # Full projection rewrite: stale optional fields from a previous decision
+    # never leak into the new one.
+    finding.review_status = "CONFIRMED"
+    finding.review_action = body.action
+    finding.human_verdict = human_verdict
+    finding.human_rationale = human_rationale
+    finding.review_note = body.review_note
+    finding.reviewed_at = datetime.now(timezone.utc)
+    finding.review_count = sequence
+    db.commit()
+    db.refresh(finding)
+    return _finding_detail(db, finding)
 
 
 @router.get("/kb/requirements", response_model=list[KbRequirementOut])

@@ -59,6 +59,7 @@ from app.chat.prompts import (
     build_chat_repair_messages,
 )
 from app.chat.schema import ChatDraft
+from app.services.provenance import source_slice
 from app.services.retrieval import hybrid_search, load_kb
 
 MAX_DRAFT_ATTEMPTS = 2  # initial attempt + one repair retry (parse failures only)
@@ -241,37 +242,10 @@ def verify_citations(
     return outcomes
 
 
-def _source_slice(
-    source: dict, match: dict, model_quote: str | None = None
-) -> tuple[str | None, str | None]:
-    """Raw source characters at the matched span, FAIL-CLOSED.
-
-    Match offsets are page-relative ([start, end), zero-based raw offsets into
-    the page text); the chunk's text is the authoritative page slice
-    [char_start:char_end], so the local slice is offset by char_start.
-
-    Returns (slice, None) only when the offsets are in-bounds AND the slice
-    normalizes to the same text as the verified model quote (when given) —
-    corrupted legacy provenance must yield (None, French error), never a
-    plausible-looking wrong slice presented as authoritative."""
-    text = source.get("text")
-    start, end = match.get("match_start"), match.get("match_end")
-    if text is None or start is None or end is None:
-        return None, "provenance incomplète : texte source ou offsets manquants."
-    base = source.get("char_start") or 0
-    local_start, local_end = start - base, end - base
-    if not (0 <= local_start < local_end <= len(text)):
-        return None, (
-            f"offsets de citation invalides : [{start}:{end}) hors des bornes du "
-            f"segment source [{base}:{base + len(text)})."
-        )
-    sliced = text[local_start:local_end]
-    if model_quote is not None and normalize(sliced).text != normalize(model_quote).text:
-        return None, (
-            "incohérence de provenance : la tranche source aux offsets enregistrés "
-            "ne correspond pas à la citation vérifiée."
-        )
-    return sliced, None
+# Shared with M5 finding review — the derivation rules must be identical, so
+# the implementation lives in services/provenance.py; this alias keeps the
+# historical name for in-module and API/test callers.
+_source_slice = source_slice
 
 
 def _citation_payload(outcome: CitationOutcome, retrieved_policy: list[dict]) -> dict:

@@ -293,6 +293,10 @@ class FindingSummaryOut(BaseModel):
     verdict: str | None
     abstain_reason: str | None
     confidence: float | None
+    domain: str | None
+    review_status: str
+    review_action: str | None
+    human_verdict: str | None
     created_at: datetime
 
 
@@ -304,3 +308,84 @@ class KbRequirementOut(BaseModel):
     id: str
     domain: str | None = None
     requirement_fr: str
+
+
+# ------------------------------------------------------------ M5 HITL review
+
+
+class FindingReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence: int
+    action: Literal["approve", "edit", "override"]
+    human_verdict: str
+    human_rationale: str | None
+    review_note: str | None
+    # free-text, EXPLICITLY UNVERIFIED (no identity layer by design)
+    reviewer_label: str | None
+    created_at: datetime
+
+
+class ReviewDecision(BaseModel):
+    action: Literal["approve", "edit", "override"]
+    human_verdict: Literal["compliant", "partial", "non_compliant", "missing"] | None = None
+    human_rationale: str | None = None
+    review_note: str | None = None
+    reviewer_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class LlmCallSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    call_number: int
+    provider: str
+    requested_model: str
+    reported_model: str | None
+    status: str
+    http_status: int | None
+    error: str | None
+
+
+class AttemptDetailOut(BaseModel):
+    attempt_number: int
+    prompt_version: str
+    parsed_ok: bool
+    verifier_errors: list | None
+    llm_calls: list[LlmCallSummaryOut]
+
+
+class FindingDetailOut(FindingSummaryOut):
+    """Full review payload: untouched AI draft + provenance + human decision.
+
+    source_quote is the AUTHORITATIVE display text (raw source slice at the
+    persisted offsets, fail-closed) — the UI renders it, never the model's
+    policy_quote, which appears only as audit provenance."""
+
+    assessment_id: str
+    policy_quote: str | None
+    clause_ref: str | None
+    rationale: str | None
+    matched_chunk_id: str | None
+    match_start: int | None
+    match_end: int | None
+    match_method: str | None
+    match_score: float | None
+    attempts: int
+    final_model: str | None
+    final_provider: str | None
+    # requirement snapshot; corpus_mismatch=True marks a legacy row whose
+    # snapshot is NULL and whose corpus_version no longer matches the live KB
+    requirement_fr: str | None
+    corpus_mismatch: bool = False
+    source_quote: str | None = None
+    source_quote_error: str | None = None
+    retrieved: list
+    audit_log: list | None
+    attempt_history: list[AttemptDetailOut]
+    human_rationale: str | None
+    review_note: str | None
+    reviewed_at: datetime | None
+    review_count: int
+    reviews: list[FindingReviewOut]

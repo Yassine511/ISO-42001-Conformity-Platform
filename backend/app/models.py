@@ -172,13 +172,41 @@ class Assessment(Base):
 class Finding(Base):
     """Terminal, citation/schema-verified (or abstained) outcome for one
     requirement. VERIFIED asserts the citation exists and the schema/clause
-    are valid — NOT that the verdict is correct (M6 measures that; M5 human
-    review produces CONFIRMED)."""
+    are valid — NOT that the verdict is correct (M6 measures that; human
+    review produces review_status=CONFIRMED).
+
+    Write-once invariant (the trust layer's audit story): every AI-produced
+    column (status, verdict, rationale, policy_quote, match_*, retrieved,
+    audit_log, ...) is written only by the pipeline and never modified
+    afterwards. The human decision lives exclusively in the review_* columns
+    (current-state projection) and the immutable finding_reviews history —
+    a CONFIRMED finding always shows the untouched AI draft next to the
+    human decision. The effective verdict of a CONFIRMED finding is
+    human_verdict (approve snapshots the AI verdict into it)."""
 
     __tablename__ = "findings"
     __table_args__ = (
         UniqueConstraint("assessment_id", "requirement_id", name="uq_findings_assessment_req"),
         CheckConstraint("status IN ('VERIFIED', 'ABSTAINED')", name="ck_findings_status"),
+        CheckConstraint(
+            "review_status IN ('PENDING', 'CONFIRMED')", name="ck_findings_review_status"
+        ),
+        CheckConstraint(
+            "review_action IS NULL OR review_action IN ('approve', 'edit', 'override')",
+            name="ck_findings_review_action",
+        ),
+        CheckConstraint(
+            "human_verdict IS NULL OR human_verdict IN "
+            "('compliant', 'partial', 'non_compliant', 'missing')",
+            name="ck_findings_human_verdict",
+        ),
+        CheckConstraint(
+            "(review_status = 'PENDING' AND review_action IS NULL "
+            "AND human_verdict IS NULL AND reviewed_at IS NULL) "
+            "OR (review_status = 'CONFIRMED' AND review_action IS NOT NULL "
+            "AND human_verdict IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="ck_findings_review_coherence",
+        ),
         CheckConstraint(
             "verdict IS NULL OR verdict IN ('compliant', 'partial', 'non_compliant', 'missing')",
             name="ck_findings_verdict",
@@ -218,6 +246,24 @@ class Finding(Base):
     match_method: Mapped[str | None] = mapped_column(String(10), nullable=True)
     match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     abstain_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Requirement snapshot at assessment time (M5 review must not depend on
+    # the live KB); NULL for findings persisted before revision 0012 — the
+    # detail endpoint then falls back to the live KB only when corpus_version
+    # still matches, flagging corpus_mismatch otherwise.
+    requirement_fr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Human review projection (CURRENT decision; full history in
+    # finding_reviews). Written only by the review endpoint, never the
+    # pipeline; AI columns above are never written by review.
+    review_status: Mapped[str] = mapped_column(
+        String(20), default="PENDING", server_default=text("'PENDING'")
+    )
+    review_action: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    human_verdict: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    human_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     attempts: Mapped[int] = mapped_column(Integer)  # judge attempts, not provider calls
     # Text, not VARCHAR: derived from the provider-reported model name, which is
     # provider-controlled — a >100-char value must never DataError the finding
@@ -231,6 +277,42 @@ class Finding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     assessment: Mapped[Assessment] = relationship(back_populates="findings")
+    reviews: Mapped[list["FindingReview"]] = relationship(
+        back_populates="finding", cascade="all, delete-orphan", order_by="FindingReview.sequence"
+    )
+
+
+class FindingReview(Base):
+    """One human review decision — immutable, append-only (rows are never
+    updated or deleted; a re-review appends the next sequence). reviewer_label
+    is a free-text, EXPLICITLY UNVERIFIED attribution: the project has no
+    identity layer by design."""
+
+    __tablename__ = "finding_reviews"
+    __table_args__ = (
+        UniqueConstraint("finding_id", "sequence", name="uq_finding_reviews_sequence"),
+        CheckConstraint(
+            "action IN ('approve', 'edit', 'override')", name="ck_finding_reviews_action"
+        ),
+        CheckConstraint(
+            "human_verdict IN ('compliant', 'partial', 'non_compliant', 'missing')",
+            name="ck_finding_reviews_verdict",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)  # 1-based
+    action: Mapped[str] = mapped_column(String(20))
+    human_verdict: Mapped[str] = mapped_column(String(20))
+    human_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    finding: Mapped[Finding] = relationship(back_populates="reviews")
 
 
 class AssessmentAttempt(Base):
