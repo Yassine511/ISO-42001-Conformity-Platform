@@ -560,3 +560,65 @@ def test_persistence_and_conversation_reuse(env):
 def test_unknown_conversation_rejected(env):
     with pytest.raises(service.ConversationNotFoundError):
         _ask(env, [], conversation_id="nope")
+
+
+# --------------------------------------------------- M5 answer segments
+
+
+def test_answer_segments_reconstruct_answer_exactly(env):
+    """The segments + caveat contract: a client rendering answer_segments
+    (with footnotes) then answer_caveat reproduces the persisted answer
+    byte-for-byte, dropped claims excluded."""
+    from app.api.chat import message_to_out
+
+    dropped = {
+        "text": "Affirmation sans preuve réelle.",
+        "kind": "organization",
+        "citation_ids": ["c9"],
+    }
+    fabricated = {
+        "id": "c9",
+        "type": "policy",
+        "policy_quote": "Cette citation est fabriquée de toutes pièces par le modèle.",
+        "clause_ref": None,
+    }
+    _, _, m = _ask(
+        env,
+        [
+            _draft(
+                claims=[_org_claim(), dropped],
+                citations=[_policy_citation(), fabricated],
+            )
+        ],
+    )
+    assert m.status == "ANSWERED"
+    out = message_to_out(m)
+    assert [s.citation_ids for s in out.answer_segments] == [["c1"]]
+    assert all("sans preuve" not in s.text for s in out.answer_segments)
+    assert out.answer_caveat is None
+    assert "\n\n".join(s.text for s in out.answer_segments) == m.answer
+
+
+def test_answer_segments_with_kb_only_caveat(env):
+    from app.api.chat import message_to_out
+
+    clause = _retrieved_kb_ids(env)[0]
+    _, _, m = _ask(
+        env, [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=clause)])]
+    )
+    assert m.evidence_scope == "kb_only"
+    out = message_to_out(m)
+    assert out.answer_caveat == service.KB_ONLY_CAVEAT
+    reconstructed = "\n\n".join(s.text for s in out.answer_segments)
+    reconstructed += "\n\n" + out.answer_caveat
+    assert reconstructed == m.answer
+
+
+def test_answer_segments_empty_on_abstention(env):
+    from app.api.chat import message_to_out
+
+    ids = _displayed_policy_ids(env)
+    _, _, m = _ask(env, [_draft(no_evidence=True, retrieval_notes=_notes(ids))])
+    assert m.status == "ABSTAINED"
+    out = message_to_out(m)
+    assert out.answer_segments == [] and out.answer_caveat is None

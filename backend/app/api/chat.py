@@ -77,6 +77,20 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
         }
     claims = _normalize_claims(message.claims)
     citations = _backfill_source_quotes(message.citations, message.retrieved_policy)
+    # Answer segmentation (M5 footnote rendering): the persisted `answer` is
+    # the surviving claims joined with blank lines, plus the KB-only caveat —
+    # a client cannot split that string safely, so the segments and the caveat
+    # are served explicitly, derived from persisted data only.
+    answer_segments = []
+    answer_caveat = None
+    if message.status == service.STATUS_ANSWERED:
+        answer_segments = [
+            {"text": c["text"], "citation_ids": c.get("citation_ids", [])}
+            for c in claims
+            if c.get("citations_verified")
+        ]
+        if message.evidence_scope == "kb_only":
+            answer_caveat = service.KB_ONLY_CAVEAT
     # answer citations in CLAIM-REFERENCE order (footnote order for M5),
     # not draft declaration order
     by_id = {c["id"]: c for c in citations}
@@ -92,6 +106,8 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
         answer=message.answer,
         evidence_scope=message.evidence_scope,
         claims=claims,
+        answer_segments=answer_segments,
+        answer_caveat=answer_caveat,
         answer_citations=answer_citations,
         citations=citations,
         stripped_citations=message.stripped_citations,

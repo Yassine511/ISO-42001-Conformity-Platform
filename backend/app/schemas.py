@@ -185,6 +185,14 @@ class ConversationOut(BaseModel):
     updated_at: datetime
 
 
+class ChatAnswerSegmentOut(BaseModel):
+    """One surviving claim as it appears in the assembled answer, with the
+    citation ids that back it (footnote anchors)."""
+
+    text: str
+    citation_ids: list[str]
+
+
 class ChatMessageOut(BaseModel):
     id: str
     conversation_id: str
@@ -206,6 +214,20 @@ class ChatMessageOut(BaseModel):
             "AUDIT PROVENANCE: every location-verified citation, including those "
             "referenced only by dropped claims or by nothing. Never render these as "
             "evidence for the final answer — use answer_citations."
+        )
+    )
+    answer_segments: list["ChatAnswerSegmentOut"] = Field(
+        description=(
+            "The persisted answer, segmented by surviving claim so a UI can "
+            "attach inline footnotes safely (the flat `answer` string also "
+            "contains the KB-only caveat and cannot be split reliably "
+            "client-side). Empty for ABSTAINED messages."
+        )
+    )
+    answer_caveat: str | None = Field(
+        description=(
+            "The KB-only caveat appended to `answer` when evidence_scope is "
+            "'kb_only' — rendered as a distinct caveat line, not claim prose."
         )
     )
     stripped_citations: list[StrippedCitationOut]
