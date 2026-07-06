@@ -68,6 +68,29 @@ def kb_result_id(corpus_version: str, requirement_id: str) -> str:
 
 def index_organization(db: Session, org_id: str) -> dict:
     """Reconcile Qdrant + PG chunks with the parsed pages of an organization."""
+    report, stale_point_ids = sync_index(db, org_id)
+    db.commit()
+    drop_stale_points(stale_point_ids)
+    return report
+
+
+def drop_stale_points(stale_point_ids: list) -> None:
+    """Post-commit cleanup of stale Qdrant points. A failure here is
+    reconciliation debt, not a correctness problem: orphan vectors can never
+    surface (search hydrates from PG/KB and discards unknown ids) and the next
+    /index reconciles them away."""
+    qdrant.delete_points_by_ids(stale_point_ids)
+
+
+def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
+    """Reconciliation WITHOUT committing: embed + upsert Qdrant (wait=True) and
+    synchronize the PG chunk rows in the caller's open transaction; returns
+    (report, stale_point_ids) for the caller to pass to drop_stale_points()
+    AFTER its commit. This lets assessment creation freeze its document
+    manifest and the index result in one atomic transaction (a commit inside
+    this function would release the org row lock mid-sequence). If the caller's
+    commit fails, the upserted Qdrant points are harmless orphans (hydration
+    rejects ids unknown to PG)."""
     qdrant.ensure_collection()
     docs = db.scalars(
         select(Document).where(
@@ -127,15 +150,14 @@ def index_organization(db: Session, org_id: str) -> dict:
         ]
         qdrant.upsert_points(points)
 
-    # 2) commit authoritative rows
+    # 2) stage authoritative rows in the caller's transaction (no commit here)
     for stale_id in previous_ids - desired_ids:
         db.delete(db.get(Chunk, stale_id))
     for row, _ in desired:
         if row.id not in previous_ids:
             db.add(row)
-    db.commit()
 
-    # 3) drop stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
+    # 3) compute stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
     # for deletion: deleting "42" does not delete point 42). Stale =
     #   - result_id missing or not desired, or
     #   - a NON-CANONICAL point claiming a desired result_id (its actual id
@@ -152,9 +174,8 @@ def index_organization(db: Session, org_id: str) -> dict:
         for cid in previous_ids - desired_ids
         if qdrant.point_id(cid) not in seen_keys
     ]
-    qdrant.delete_points_by_ids(stale_point_ids)
 
-    return {
+    report = {
         "documents": len(docs),
         "chunks": len(desired),
         "added": len(desired_ids - previous_ids),
@@ -165,6 +186,7 @@ def index_organization(db: Session, org_id: str) -> dict:
             d.filename for d in docs if d.parser_version != PARSER_VERSION
         ),
     }
+    return report, stale_point_ids
 
 
 def _scroll_points(conditions: list) -> dict:

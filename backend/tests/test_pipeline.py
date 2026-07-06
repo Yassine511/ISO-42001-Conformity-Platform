@@ -498,6 +498,8 @@ def test_resume_manifest_is_authoritative(env):
     assert resume_manifest(session_factory, aid, ["A.9.2", "A.4.5"]) == ["A.9.2", "A.4.5"]
     with pytest.raises(ValueError, match="manifeste"):
         resume_manifest(session_factory, aid, ["A.4.5"])  # partial resume forbidden
+    # one RUNNING per org is now DB-enforced: finalize before creating another
+    finalize_assessment(session_factory, aid, AssessmentStatus.FAILED, error="test")
     legacy = create_assessment(session_factory, org_id, requirement_ids=None)
     with pytest.raises(ValueError, match="sans manifeste"):
         resume_manifest(session_factory, legacy, None)

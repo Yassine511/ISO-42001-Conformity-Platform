@@ -19,7 +19,8 @@ from langgraph.graph import END, StateGraph
 from sqlalchemy import select
 
 from app.config import settings
-from app.models import Assessment, AssessmentAttempt, Finding
+from app.models import Assessment, AssessmentAttempt, Document, DocumentStatus, Finding, Organization
+from app.pipeline.dev_split import DEV_REQUIREMENT_IDS, is_dev_requirement
 from app.pipeline.nodes import (
     SessionFactory,
     make_judge_node,
@@ -34,7 +35,15 @@ from app.pipeline.state import (
     GovernanceState,
     QuoteMatch,
 )
-from app.services.retrieval import load_kb
+from app.services.chunking import CHUNKER_VERSION
+from app.services.retrieval import drop_stale_points, load_kb, sync_index
+
+
+class AssessmentAlreadyRunningError(ValueError):
+    """An assessment is already RUNNING for this organization. Raised by the
+    pre-check under the org row lock; the DB partial unique index
+    (uq_assessments_one_running) is the concurrency backstop — callers map its
+    IntegrityError to the same condition."""
 
 
 class CorpusVersionMismatchError(ValueError):
@@ -84,30 +93,142 @@ def create_assessment(
     session_factory: SessionFactory,
     org_id: str,
     requirement_ids: list[str] | None = None,
+    *,
+    k: int = 6,
+    allow_holdout: bool = False,
 ) -> str:
-    """requirement_ids is the run MANIFEST: what this assessment is meant to
-    cover. Resume paths validate against it (see resume_manifest)."""
+    """Create a RUNNING assessment with its frozen run contract.
+
+    requirement_ids is the run MANIFEST: what this assessment is meant to
+    cover. Resume paths validate against it (see resume_manifest). Creation is
+    ATOMIC with indexing: the org row is locked, the org's documents are
+    reconciled into the index (sync_index, no commit), and the assessment row
+    with its frozen document_manifest and retrieval_k is committed in the same
+    transaction — so the manifest records exactly what the run retrieves from.
+
+    M6 holdout protection: ids outside the frozen dev split are rejected
+    unless allow_holdout=True (reserved for the M6 evaluation script; no HTTP
+    route exposes it).
+    """
     kb = load_kb()
-    # Validate the manifest at creation: an unknown id would otherwise leave
-    # the assessment RUNNING forever (run_requirement raises "exigence inconnue"
-    # for it every resume, and coverage is never reached).
+    if not 1 <= k <= 20:
+        raise ValueError(f"profondeur de récupération invalide : k={k} (borne 1-20).")
     if requirement_ids is not None:
+        if not requirement_ids:
+            raise ValueError("manifeste vide : précisez au moins une exigence.")
+        # a duplicated id would inflate the manifest total and make full
+        # coverage unreachable — reject rather than silently dedup
+        duplicates = sorted({rid for rid in requirement_ids if requirement_ids.count(rid) > 1})
+        if duplicates:
+            raise ValueError(
+                "exigence(s) en double dans le manifeste : " + ", ".join(duplicates)
+            )
+        # Validate the manifest at creation: an unknown id would otherwise leave
+        # the assessment RUNNING forever (run_requirement raises "exigence
+        # inconnue" for it every resume, and coverage is never reached).
         unknown = [rid for rid in requirement_ids if rid not in kb["by_id"]]
         if unknown:
             raise ValueError(
                 "exigence(s) inconnue(s) dans la base ISO 42001 : " + ", ".join(unknown)
             )
+        if not allow_holdout:
+            held_out = [rid for rid in requirement_ids if not is_dev_requirement(rid)]
+            if held_out:
+                raise ValueError(
+                    "exigence(s) réservée(s) au jeu de test M6 (gelé jusqu'à "
+                    "l'évaluation) : " + ", ".join(held_out)
+                )
     db = session_factory()
     try:
+        # Org row lock: serializes creation against document upload/delete,
+        # /index and concurrent creation (see services/run_guard.py).
+        org = db.get(Organization, org_id, with_for_update=True)
+        if org is None:
+            raise ValueError(f"organisation inconnue : {org_id}")
+        running = db.scalar(
+            select(Assessment.id).where(
+                Assessment.organization_id == org_id,
+                Assessment.status == AssessmentStatus.RUNNING.value,
+            )
+        )
+        if running is not None:
+            raise AssessmentAlreadyRunningError(
+                "une évaluation est déjà en cours pour cette organisation "
+                f"({running}) ; terminez-la ou abandonnez-la d'abord."
+            )
+        report, stale_point_ids = sync_index(db, org_id)
+        if report["documents"] == 0:
+            raise ValueError(
+                "aucun document analysé pour cette organisation : téléversez "
+                "au moins une politique avant de lancer une évaluation."
+            )
+        docs = db.scalars(
+            select(Document).where(
+                Document.organization_id == org_id,
+                Document.status == DocumentStatus.PARSED.value,
+            )
+        ).all()
         assessment = Assessment(
             organization_id=org_id,
             corpus_version=kb["corpus_version"],
             status=AssessmentStatus.RUNNING.value,
             requirement_ids=requirement_ids,
+            retrieval_k=k,
+            document_manifest={
+                "documents": [
+                    {
+                        "document_id": d.id,
+                        "filename": d.filename,
+                        "checksum": d.checksum,
+                        "parser_version": d.parser_version,
+                        "page_count": d.page_count,
+                    }
+                    for d in docs
+                ],
+                "chunker_version": CHUNKER_VERSION,
+                "chunk_count": report["chunks"],
+                "indexed_at": _now().isoformat(),
+            },
         )
         db.add(assessment)
         db.commit()
-        return assessment.id
+        assessment_id = assessment.id
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    # After the commit: a failure here is reconciliation debt, never a failed
+    # creation (see drop_stale_points docstring).
+    try:
+        drop_stale_points(stale_point_ids)
+    except Exception:  # pragma: no cover - best-effort cleanup
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "stale-point cleanup failed after assessment creation; "
+            "next /index will reconcile",
+            exc_info=True,
+        )
+    return assessment_id
+
+
+def adopt_manifest(
+    session_factory: SessionFactory, assessment_id: str, requirement_ids: list[str]
+) -> None:
+    """One-time manifest adoption for a legacy (pre-manifest) RUNNING row: the
+    CLI resume path validates the explicit selection via resume_manifest, then
+    persists it so the shared runner (which reads the row) can execute it.
+    No-op when a manifest already exists — the stored manifest stays
+    authoritative."""
+    db = session_factory()
+    try:
+        assessment = db.get(Assessment, assessment_id, with_for_update=True)
+        if assessment is None:
+            raise ValueError(f"assessment inconnu : {assessment_id}")
+        if not assessment.requirement_ids:
+            assessment.requirement_ids = list(requirement_ids)
+            db.commit()
     finally:
         db.close()
 
@@ -279,12 +400,18 @@ def run_requirement(
     k: int = 6,
     checkpointer=None,
     compiled_graph=None,
+    on_node=None,
 ) -> AssessmentResult:
     """Run the pipeline for one requirement of an existing assessment.
 
     Terminal idempotency: if a terminal finding already exists for
     (assessment_id, requirement_id), it is returned WITHOUT invoking the
     graph — re-running a batch never duplicates work or rows.
+
+    on_node(node_name) is called as each graph node completes (best-effort
+    progress decoration; exceptions in it are swallowed). The final state is
+    identical to the invoke() path: streaming uses stream_mode "values", whose
+    last emission IS the final aggregated state.
     """
     db = session_factory()
     try:
@@ -366,7 +493,21 @@ def run_requirement(
         "audit_log": [],
         "attempt_history": [],
     }
-    final_state = graph.invoke(initial, config)
+    if on_node is None:
+        final_state = graph.invoke(initial, config)
+    else:
+        final_state = None
+        for mode, payload in graph.stream(
+            initial, config, stream_mode=["updates", "values"]
+        ):
+            if mode == "updates":
+                for node_name in payload:
+                    try:
+                        on_node(node_name)
+                    except Exception:  # progress must never abort the run
+                        pass
+            else:
+                final_state = payload
     return _result_from_state(final_state, assessment_id, requirement_id)
 
 

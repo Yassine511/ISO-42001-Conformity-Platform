@@ -11,12 +11,12 @@ Needs MISTRAL_API_KEY (or GROQ_API_KEY) in backend/.env. Checkpointing uses
 the LangGraph PostgresSaver; export LANGGRAPH_STRICT_MSGPACK=true (set below
 if absent) or pass --no-checkpointer.
 
-Gold labels are read ONLY to select dev-split requirement ids for --all-dev —
-the test split is reserved for the M6 report and is never touched here.
+Requirement selection is restricted to the frozen dev split
+(app.pipeline.dev_split) — the 14 test-split requirements are reserved for
+the M6 report and are never runnable here.
 """
 
 import argparse
-import json
 import os
 import sys
 from contextlib import nullcontext
@@ -30,11 +30,12 @@ os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 
 
 def dev_requirement_ids() -> list[str]:
-    """Dev-split requirement ids, in gold order. NEVER returns test-split ids."""
-    gold = json.loads(
-        (REPO_ROOT / "corpus" / "gold" / "gold_labels.json").read_text(encoding="utf-8")
-    )
-    return [item["requirement_id"] for item in gold["items"] if item["split"] == "dev"]
+    """Dev-split requirement ids, in gold order. NEVER returns test-split ids.
+    Delegates to the frozen manifest (runtime code never reads gold labels);
+    tests cross-check the frozen list against the gold file."""
+    from app.pipeline.dev_split import DEV_REQUIREMENT_IDS
+
+    return list(DEV_REQUIREMENT_IDS)
 
 
 def main() -> int:
@@ -62,18 +63,15 @@ def main() -> int:
     from app.db import SessionLocal
     from app.models import Assessment, Organization
     from app.pipeline.graph import (
-        CorpusVersionMismatchError,
+        adopt_manifest,
         build_graph,
         checkpointer_lifespan,
         create_assessment,
-        finalize_assessment,
         note_assessment_error,
-        resolve_run_status,
         resume_manifest,
-        run_requirement,
-        unfinished_requirements,
     )
-    from app.pipeline.state import AssessmentStatus, is_infrastructure_failure
+    from app.pipeline.runner import run_assessment
+    from app.pipeline.state import AssessmentStatus
 
     db = SessionLocal()
     org = db.scalars(select(Organization).where(Organization.name == args.org)).first()
@@ -107,37 +105,36 @@ def main() -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        # legacy pre-manifest row: persist the validated selection so the
+        # shared runner (which reads the row) can execute it
+        adopt_manifest(SessionLocal, assessment_id, requirement_ids)
+        if args.k != 6 and args.k != existing.retrieval_k:
+            print(
+                f"note : --k {args.k} ignoré en reprise — la profondeur du run "
+                f"est figée à k={existing.retrieval_k}",
+                file=sys.stderr,
+            )
         print(f"reprise de l'assessment {assessment_id}")
     else:
+        try:
+            assessment_id = create_assessment(
+                SessionLocal, org.id, requirement_ids=selected, k=args.k
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         requirement_ids = selected
-        assessment_id = create_assessment(SessionLocal, org.id, requirement_ids=requirement_ids)
     print(f"assessment {assessment_id} — org « {args.org} » — {len(requirement_ids)} exigence(s)\n")
 
-    failures = 0       # unhandled operational errors (exceptions)
-    infra_abstains = 0  # ABSTAINED(llm_error|rate_limited): providers failed
+    # The run loop (operational failures continue, corpus mismatch -> FAILED,
+    # full coverage before finalization, resolve_run_status decision) lives in
+    # the shared runner — one implementation for the CLI and the M5 API.
     try:
         with lifespan as checkpointer:
             graph = build_graph(SessionLocal, checkpointer=checkpointer)
-            for req_id in requirement_ids:
-                try:
-                    result = run_requirement(
-                        SessionLocal, assessment_id, req_id, k=args.k, compiled_graph=graph
-                    )
-                except CorpusVersionMismatchError as exc:
-                    # permanent: no resume can succeed — leaving the assessment
-                    # RUNNING would trap it in an unresumable loop
-                    finalize_assessment(
-                        SessionLocal, assessment_id, AssessmentStatus.FAILED, error=str(exc)
-                    )
-                    print(f"\nassessment {assessment_id} FAILED : {exc}", file=sys.stderr)
-                    return 1
-                except Exception as exc:  # operational failure, not a finding
-                    failures += 1
-                    print(f"[{req_id}] ERREUR OPÉRATIONNELLE : {exc}", file=sys.stderr)
-                    continue
-                if is_infrastructure_failure(result.abstain_reason):
-                    infra_abstains += 1
-                _print_result(result)
+            run = run_assessment(
+                SessionLocal, assessment_id, compiled_graph=graph, on_result=_print_result
+            )
     except Exception as exc:
         # keep the assessment RUNNING (resumable) — FAILED would block resume
         note_assessment_error(SessionLocal, assessment_id, str(exc))
@@ -148,43 +145,19 @@ def main() -> int:
         )
         raise
 
-    error_note = None
-    if failures or infra_abstains:
-        error_note = (
-            f"{failures} erreur(s) opérationnelle(s), "
-            f"{infra_abstains} abstention(s) pour panne LLM (llm_error/rate_limited)"
-        )
-
-    # Finalization requires MANIFEST COVERAGE: every planned requirement must
-    # have a terminal finding. A partially-covered run stays RUNNING so it can
-    # be resumed — completing it would silently drop the missing requirements.
-    missing = unfinished_requirements(SessionLocal, assessment_id, requirement_ids)
-    if missing:
-        note_assessment_error(
-            SessionLocal,
-            assessment_id,
-            (error_note or "") + f" ; {len(missing)} exigence(s) sans constat : "
-            + ", ".join(missing),
-        )
+    if run.status == AssessmentStatus.RUNNING.value:
         print(
-            f"\nassessment {assessment_id} INCOMPLET ({len(missing)} exigence(s) sans "
-            f"constat : {', '.join(missing)}) — resté RUNNING ; reprenez avec "
-            f"--assessment {assessment_id}",
+            f"\nassessment {assessment_id} INCOMPLET ({run.total - run.done} exigence(s) "
+            f"sans constat) — resté RUNNING ; reprenez avec --assessment {assessment_id}",
             file=sys.stderr,
         )
         return 1
-
-    # Full coverage: the COMPLETED/FAILED decision is owned by the pipeline
-    # layer (resolve_run_status), not this CLI.
-    finalize_assessment(
-        SessionLocal,
-        assessment_id,
-        resolve_run_status(len(requirement_ids), infra_abstains),
-        error=error_note,
-    )
+    if run.status == AssessmentStatus.FAILED.value:
+        print(f"\nassessment {assessment_id} FAILED : {run.error}", file=sys.stderr)
+        return 1
     print(f"\nassessment {assessment_id} finalisé"
-          + (f" — {error_note}" if error_note else ""))
-    return 1 if failures or infra_abstains else 0
+          + (f" — {run.error}" if run.error else ""))
+    return 1 if run.operational_failures or run.infra_abstains else 0
 
 
 def _print_result(result) -> None:

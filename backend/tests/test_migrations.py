@@ -371,3 +371,73 @@ def test_head_accepts_long_provider_model_names(scratch_db):
         assert stored == long_name  # full value stored, not truncated
     finally:
         con.close()
+
+
+def test_0011_preflight_demotes_duplicate_running_rows(scratch_db):
+    """0011 must be applicable to a database that already violates the new
+    single-RUNNING-per-org invariant: all but the newest RUNNING row per org
+    are finalized FAILED (error + finished_at set) before the partial unique
+    index is created."""
+    _alembic(scratch_db, "upgrade", "0010")
+    con = _connect(scratch_db)
+    org_id = str(uuid.uuid4())
+    old_id, new_id, other_org_id, other_run = (
+        str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+    )
+    try:
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+            (org_id,),
+        )
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Autre SA', now())",
+            (other_org_id,),
+        )
+        con.execute(
+            "INSERT INTO assessments (id, organization_id, corpus_version, status, started_at) "
+            "VALUES (%s, %s, '1.2.0', 'RUNNING', now() - interval '1 hour')",
+            (old_id, org_id),
+        )
+        con.execute(
+            "INSERT INTO assessments (id, organization_id, corpus_version, status, started_at) "
+            "VALUES (%s, %s, '1.2.0', 'RUNNING', now())",
+            (new_id, org_id),
+        )
+        con.execute(
+            "INSERT INTO assessments (id, organization_id, corpus_version, status, started_at) "
+            "VALUES (%s, %s, '1.2.0', 'RUNNING', now() - interval '2 hour')",
+            (other_run, other_org_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    _alembic(scratch_db, "upgrade", "head")
+
+    con = _connect(scratch_db)
+    try:
+        rows = dict(
+            con.execute(
+                "SELECT id, status FROM assessments WHERE organization_id = %s", (org_id,)
+            ).fetchall()
+        )
+        assert rows[new_id] == "RUNNING"      # newest survives
+        assert rows[old_id] == "FAILED"       # duplicate demoted
+        (err, fin) = con.execute(
+            "SELECT error, finished_at FROM assessments WHERE id = %s", (old_id,)
+        ).fetchone()
+        assert "migration 0011" in err and fin is not None
+        # the other org's single RUNNING row is untouched
+        (other_status,) = con.execute(
+            "SELECT status FROM assessments WHERE id = %s", (other_run,)
+        ).fetchone()
+        assert other_status == "RUNNING"
+        # new columns carry their defaults on legacy rows
+        (k, cancel, manifest) = con.execute(
+            "SELECT retrieval_k, cancel_requested, document_manifest "
+            "FROM assessments WHERE id = %s",
+            (new_id,),
+        ).fetchone()
+        assert k == 6 and cancel is False and manifest is None
+    finally:
+        con.close()

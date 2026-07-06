@@ -9,8 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
+from fastapi.exceptions import RequestValidationError
+
 from app import models  # noqa: F401 — register tables on Base metadata
-from app.api import chat, documents, organizations, retrieval
+from app.api import assessments, chat, documents, organizations, retrieval
 from app.config import settings
 from app.db import Base, engine, get_db
 from app.services import qdrant
@@ -38,6 +40,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="INT102 — Copilote de conformité ISO/IEC 42001", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def french_validation_errors(request: Request, exc: RequestValidationError):
+    """Normalize Pydantic request-validation errors into one usable French
+    detail string (the UI surfaces `detail` directly)."""
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ()) if p not in ("body",))
+        msg = err.get("msg", "valeur invalide")
+        parts.append(f"{loc} : {msg}" if loc else msg)
+    return JSONResponse(
+        {"detail": "Requête invalide — " + " ; ".join(parts)}, status_code=422
+    )
 
 
 @app.middleware("http")
@@ -82,6 +98,7 @@ app.include_router(organizations.router)
 app.include_router(documents.router)
 app.include_router(retrieval.router)
 app.include_router(chat.router)
+app.include_router(assessments.router)
 
 
 @app.get("/api/health")

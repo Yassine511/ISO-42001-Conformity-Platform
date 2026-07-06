@@ -235,3 +235,72 @@ class IndexReport(BaseModel):
 class KbIndexReport(BaseModel):
     requirements: int
     corpus_version: str
+
+
+# ------------------------------------------------------------ M5 assessments
+
+
+class AssessmentCreate(BaseModel):
+    # None => the frozen 51-requirement dev manifest (M6 holdout protection:
+    # ids outside the dev split are rejected by create_assessment).
+    requirement_ids: list[str] | None = None
+    k: int = Field(default=6, ge=1, le=20)
+
+
+class AssessmentProgressOut(BaseModel):
+    """Best-effort in-process progress decoration (lost on restart); the
+    findings tallies in the same payload are the authoritative progress."""
+
+    requirement_id: str
+    node: str
+    done: int
+    total: int
+
+
+class AssessmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    organization_id: str
+    corpus_version: str
+    status: str
+    requirement_ids: list[str] | None
+    retrieval_k: int
+    document_manifest: dict | None
+    cancel_requested: bool
+    error: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class AssessmentListItemOut(AssessmentOut):
+    total: int
+    findings_done: int
+    verified_count: int
+    abstained_count: int
+    reviewed_count: int
+    # False for legacy pre-M5 rows (no frozen manifests): resume is refused.
+    manifest_complete: bool
+    progress: AssessmentProgressOut | None = None
+
+
+class FindingSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    requirement_id: str
+    status: str
+    verdict: str | None
+    abstain_reason: str | None
+    confidence: float | None
+    created_at: datetime
+
+
+class AssessmentDetailOut(AssessmentListItemOut):
+    findings: list[FindingSummaryOut]
+
+
+class KbRequirementOut(BaseModel):
+    id: str
+    domain: str | None = None
+    requirement_fr: str

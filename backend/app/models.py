@@ -9,10 +9,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -122,6 +124,19 @@ class Assessment(Base):
         CheckConstraint(
             "status IN ('RUNNING', 'COMPLETED', 'FAILED')", name="ck_assessments_status"
         ),
+        CheckConstraint(
+            "retrieval_k >= 1 AND retrieval_k <= 20", name="ck_assessments_retrieval_k"
+        ),
+        # DB-enforced single-RUNNING-per-org invariant: the API pre-check under
+        # the org row lock gives the friendly 409, this partial unique index is
+        # the guarantee under concurrency (IntegrityError -> same 409).
+        Index(
+            "uq_assessments_one_running",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("status = 'RUNNING'"),
+            sqlite_where=text("status = 'RUNNING'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -134,6 +149,17 @@ class Assessment(Base):
     # Resume validates against it so a crashed A.9.2 run cannot be "resumed"
     # with A.4.5 and finalized COMPLETED while A.9.2 stays unfinished.
     requirement_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Frozen run contract (reproducibility): retrieval depth and the exact
+    # document set (ids, checksums, parser/chunker versions, chunk count) as
+    # indexed at creation. NULL document_manifest = legacy pre-0011 row; the
+    # API exposes manifest_complete and refuses to resume such rows.
+    retrieval_k: Mapped[int] = mapped_column(Integer, default=6, server_default=text("6"))
+    document_manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Cooperative cancellation: the runner re-reads this between requirements
+    # and finalizes FAILED («Annulée par l'utilisateur.») when set.
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

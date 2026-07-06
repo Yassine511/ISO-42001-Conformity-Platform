@@ -9,6 +9,7 @@ from app.db import get_db
 from app.models import Chunk, Document, DocumentPage, DocumentStatus, Finding, Organization
 from app.schemas import DocumentOut, DocumentPageOut
 from app.services import qdrant
+from app.services.run_guard import RUNNING_CONFLICT_FR, lock_organization, running_assessment_id
 from app.services.parsing import (
     PARSER_VERSION,
     SUPPORTED_EXTENSIONS,
@@ -50,9 +51,14 @@ async def _read_capped(file: UploadFile, cap: int) -> bytes:
 
 @router.post("/organizations/{org_id}/documents", response_model=DocumentOut, status_code=201)
 async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(get_db)):
-    org = db.get(Organization, org_id)
+    # Org row lock + RUNNING check: a document added mid-run would change what
+    # later requirements retrieve, silently invalidating the assessment's
+    # frozen document manifest.
+    org = lock_organization(db, org_id)
     if not org:
         raise HTTPException(404, "Organisation introuvable.")
+    if running_assessment_id(db, org_id):
+        raise HTTPException(409, RUNNING_CONFLICT_FR)
     filename = file.filename or "document"
     if not any(filename.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
         raise HTTPException(415, f"Type de fichier non supporté. Formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
@@ -122,11 +128,18 @@ def get_document_pages(document_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/documents/{document_id}", status_code=204)
 def delete_document(document_id: str, db: Session = Depends(get_db)):
-    # Lock the document row (FOR UPDATE) so the citation check and the deletion
-    # are one atomic unit: concurrent deletes of the same document serialize, and
-    # the check cannot be invalidated by another delete between check and commit.
+    # Lock the ORGANIZATION row first (consistent lock order with upload/index/
+    # assessment creation), then the document row: the citation check and the
+    # deletion are one atomic unit, and a deletion cannot race an assessment
+    # launch that would retrieve from the vanishing document.
+    peek = db.get(Document, document_id)
+    if not peek:
+        raise HTTPException(404, "Document introuvable.")
+    lock_organization(db, peek.organization_id)
+    if running_assessment_id(db, peek.organization_id):
+        raise HTTPException(409, RUNNING_CONFLICT_FR)
     doc = db.get(Document, document_id, with_for_update=True)
-    if not doc:
+    if not doc:  # deleted concurrently while we waited on the org lock
         raise HTTPException(404, "Document introuvable.")
     # Audit-trail guard: refuse to delete a document a finding cites as evidence
     # (matched_chunk_id -> chunk -> this document). Citation CONTENT is already
