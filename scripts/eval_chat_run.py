@@ -172,6 +172,8 @@ def main() -> int:
         status = result["status"] if result else "AUCUNE LIGNE (ledger)"
         print(f"  [{i}/{len(items)}] {question['question_id']} -> {status}")
 
+    from app.config import settings
+
     artifact = {
         "meta": {
             "kind": "m6_chat_eval_run",
@@ -180,6 +182,8 @@ def main() -> int:
             "split": split,
             "k_policy": args.k_policy,
             "k_kb": args.k_kb,
+            "judge_429_retries": settings.judge_429_retries,
+            "judge_429_base_delay": settings.judge_429_base_delay,
             "question_set_meta": question_set["meta"],
             "question_set_sha256": hashlib.sha256(
                 Path(args.questions).read_bytes()

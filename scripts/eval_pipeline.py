@@ -177,11 +177,15 @@ def main() -> int:
         (lambda: nullcontext(None)) if args.no_checkpointer else checkpointer_lifespan
     )
 
+    from app.config import settings
+
     meta = {
         "kind": "m6_pipeline_eval",
         "split": args.split,
         "org": args.org,
         "k": args.k,
+        "judge_429_retries": settings.judge_429_retries,
+        "judge_429_base_delay": settings.judge_429_base_delay,
         "corpus_version": corpus_version,
         "contract_sha256": hashes,
         "freeze_sha": freeze_sha,
