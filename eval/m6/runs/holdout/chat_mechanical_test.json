@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "kind": "m6_chat_mechanical",
+    "run_sha256": "6c5cb24ccd4a8a66194cdfcfbd86e85cdc6b72a283d970f31daef4fb98d99e5b",
+    "question_set_sha256": "67dbf9246c6fc90350ae2b428814e0a759ba5a250df8de3e9ab18b5ee4e7082c",
+    "computed_at": "2026-07-09T22:07:48.986840+00:00",
+    "split": "test"
+  },
+  "metrics": {
+    "n_total": 14,
+    "n_scored": 14,
+    "infra_failed_ids": [],
+    "missing_ids": [],
+    "answered": 10,
+    "abstentions": 4,
+    "abstention_precision": {
+      "count": 1,
+      "n": 4,
+      "ratio": 0.25,
+      "ci_low": 0.045586062644636216,
+      "ci_high": 0.6993639475573634
+    },
+    "abstention_recall": {
+      "count": 1,
+      "n": 3,
+      "ratio": 0.3333333333333333,
+      "ci_low": 0.061490315276160556,
+      "ci_high": 0.792345044873512
+    },
+    "citation_location_validity": {
+      "count": 24,
+      "n": 24,
+      "ratio": 1.0,
+      "ci_low": 0.8620194241710247,
+      "ci_high": 1.0
+    },
+    "stripped_citations_total": 1,
+    "repair_used": {
+      "count": 5,
+      "n": 14,
+      "ratio": 0.35714285714285715,
+      "ci_low": 0.16344490737202733,
+      "ci_high": 0.6123599531785959
+    },
+    "evidence_scopes": {
+      "mixed": 9,
+      "kb_only": 1
+    },
+    "abstain_reasons": {
+      "verification_failed": 4
+    }
+  }
+}

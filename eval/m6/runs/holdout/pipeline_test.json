@@ -1,0 +1,753 @@
+{
+  "meta": {
+    "kind": "m6_pipeline_eval",
+    "split": "test",
+    "org": "Lumen AI (eval M6)",
+    "k": 6,
+    "judge_429_retries": 6,
+    "judge_429_base_delay": 5.0,
+    "corpus_version": "1.2.0",
+    "contract_sha256": {
+      "eval/m6/regles_notation_pipeline.md": "6e5797c293603f61d2c1a1bd6e6f962a5c1c4de5e67fe652065cb12317cb4118",
+      "scripts/chat_eval_generate.py": "dfd54f7ee0354cc043edae7b4590486529ce5290228d629a80f0cf15a01fc288",
+      "corpus/gold/chat_eval_rubric.md": "003a6388dddf7eda41fea6214ba39b0ce5f3cce5e7ad74c9c5d002f6b1a109b4",
+      "corpus/gold/gold_labels.json": "50b530feab1f3294aaa44d1797d966b706478e7123444664f8e614aeac6bd530",
+      "corpus/kb/iso42001_kb.json": "9cb48f13bf5a5650c7e1cbb96be4670496b1c86ae89fdfc59cddb5aed8dc0513",
+      "backend/app/eval/__init__.py": "56858a0c156bdbf76cd4abb91dc96ec8082c4323686a01c3e34bebc8f7b5a548",
+      "backend/app/eval/chat_scoring.py": "37f32f1cdd178b6725f9c584d5ba54e72a3eaed9550a532fb154bce0eb82876d",
+      "backend/app/eval/gates.py": "8e54331f337909510a8b7cbf97d212679c780c9c0448228801ebfab5735363a2",
+      "backend/app/eval/pipeline_scoring.py": "e237d3c9707df55ff1ee52c5ed8046ffb74285547748e75fd2788a41e0d3971e",
+      "backend/app/eval/posthoc.py": "a905cdd6617aeaf71b7e4679fb2cac8b92dcb0c94e484ef963e2cfffcdbf1b41",
+      "backend/app/eval/sheets.py": "867912fa7665c6cd70078571639a8121ccc7da96880f670f23b813d1c8c99462",
+      "backend/app/eval/stats.py": "1aa1fc59f9e799a88a77d3a7866e9df48049e4efe67a6375858c6600f1ca186c",
+      "scripts/eval_pipeline.py": "79b5223c9f602a0263316c866bf3756dc14d97d85d7e045632e79fc847428366",
+      "scripts/eval_chat_run.py": "a419f33ff6dcdf3144bbeb1dd8c5791b5e8803706de854c66cb493989c785423",
+      "scripts/eval_chat_score.py": "486d8f8fa9c20f0b28626f55ede403161bed9ce9b7f9a2169ff774bfbd53b19e"
+    },
+    "freeze_sha": "fb3de8f63d560d4cc096aa9a3df80a1db51cebfc",
+    "started_at": "2026-07-09T21:58:28.688975+00:00",
+    "n_total": 14,
+    "finished_at": "2026-07-09T22:02:18.652309+00:00",
+    "assessment_ids": [
+      "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    ]
+  },
+  "first_pass": {
+    "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18",
+    "runner": {
+      "status": "COMPLETED",
+      "error": null,
+      "done": 14,
+      "total": 14
+    },
+    "findings": {
+      "5.2": {
+        "requirement_id": "5.2",
+        "status": "VERIFIED",
+        "verdict": "compliant",
+        "abstain_reason": null,
+        "policy_quote": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
+        "clause_ref": "5.2",
+        "confidence": 0.95,
+        "match_method": "exact",
+        "attempts": 2,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "e991ebf0-9038-4dfc-a7f4-1e50d3b37014",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "4.2": {
+        "requirement_id": "4.2",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "Les besoins et attentes des clients concernant l'usage de l'IA par Lumen AI sont pris en compte lorsqu'un client formule une exigence explicite dans le cadre contractuel. En dehors de ce cas, aucune démarche systématique de recueil des attentes des clients en matière d'IA n'est mise en œuvre.",
+        "clause_ref": "4.2",
+        "confidence": 0.8,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "06d476cf-82df-4427-a3ef-e07f0e1abab1",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.2.4": {
+        "requirement_id": "A.2.4",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "## 8. Revue de la charte\n\nLa présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.",
+        "clause_ref": "A.2.4",
+        "confidence": 0.7,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "edfe15ec-9f2e-4eb1-96d6-451e1a080c13",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "7.2": {
+        "requirement_id": "7.2",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "Chaque collaborateur suit, lors de son intégration puis annuellement, un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'",
+        "clause_ref": "7.2",
+        "confidence": 0.85,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "798d4c2f-d9e1-41e9-a517-98d7e696507e",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.4.3": {
+        "requirement_id": "A.4.3",
+        "status": "ABSTAINED",
+        "verdict": "compliant",
+        "abstain_reason": "verification_failed",
+        "policy_quote": "Chaque jeu de données utilisé par un système d'IA est enregistré dans l'inventaire des données IA, qui documente pour chaque ressource : son identifiant, sa description, ses catégories de données, son usage prévu (entraînement, évaluation, production), son propriétaire et sa base légale le cas échéé",
+        "clause_ref": "A.4.3",
+        "confidence": 0.95,
+        "match_method": null,
+        "attempts": 2,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "cff0f0b6-2c00-4897-9c36-045cfb947505",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.5.5": {
+        "requirement_id": "A.5.5",
+        "status": "VERIFIED",
+        "verdict": "non_compliant",
+        "abstain_reason": null,
+        "policy_quote": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact, l'entreprise considérant que ses systèmes internes n'ont pas de portée sociétale.",
+        "clause_ref": "A.5.5",
+        "confidence": 0.99,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "531c3890-c9c6-4ff3-b4da-556ecd4d7560",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.6.2.3": {
+        "requirement_id": "A.6.2.3",
+        "status": "VERIFIED",
+        "verdict": "compliant",
+        "abstain_reason": null,
+        "policy_quote": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+        "clause_ref": "A.6.2.3",
+        "confidence": 0.95,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "12061e77-b37b-46b9-889e-c25b03931259",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.6.2.5": {
+        "requirement_id": "A.6.2.5",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "La mise en production des systèmes d'IA majeurs suit le plan de déploiement standard (LUM-LCM-PR-03). Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé.",
+        "clause_ref": "A.6.2.5",
+        "confidence": 0.9,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "9a4f445f-2efe-4227-b459-4510ce8129c9",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.4.4": {
+        "requirement_id": "A.4.4",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+        "clause_ref": "A.4.4",
+        "confidence": 0.8,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "3ec13f59-d15e-420e-aeb0-8e4f6159aa1a",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.8.3": {
+        "requirement_id": "A.8.3",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "4. **Signalement des dysfonctionnements** : tout comportement anormal d'un système d'IA (réponse manifestement erronée, biais apparent, fuite d'information) doit être signalé au Responsable produit IA concerné dans les meilleurs délais.",
+        "clause_ref": "A.8.3",
+        "confidence": 0.8,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "26632811-8f83-48a1-8fb9-125587c202ed",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "4.1": {
+        "requirement_id": "4.1",
+        "status": "ABSTAINED",
+        "verdict": "compliant",
+        "abstain_reason": "verification_failed",
+        "policy_quote": "Pour définir ce périmètre, l'entreprise identifie les enjeux internes (culture d'ingénierie, dépendance croissante à l'assistant interne) et externes (évolutions réglementaires européennes, attentes des clients, état de l'art technologique) pertinents pour sa gouvernance de l'IA, ainsi que son **duo",
+        "clause_ref": "4.1",
+        "confidence": 0.95,
+        "match_method": null,
+        "attempts": 2,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "93a3159b-c523-46a9-9d88-46fe8137c9fd",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "7.1": {
+        "requirement_id": "7.1",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "À cette fin, Lumen AI établit, met en œuvre et maintient un système de management de l'IA couvrant l'ensemble du cycle de vie de ses systèmes d'IA, dont les processus sont décrits dans les politiques du référentiel documentaire LUM.",
+        "clause_ref": "7.1",
+        "confidence": 0.75,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "5a57823b-8a0f-4e4a-9d34-ff11dc2411bf",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "7.4": {
+        "requirement_id": "7.4",
+        "status": "VERIFIED",
+        "verdict": "partial",
+        "abstain_reason": null,
+        "policy_quote": "La liste nominative des titulaires de ces rôles est tenue à jour par la Direction des Ressources Humaines et communiquée à l'ensemble du personnel via l'intranet.",
+        "clause_ref": "7.4",
+        "confidence": 0.8,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "38c75567-c154-4aae-989e-bda49ca7b1bb",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      },
+      "A.8.4": {
+        "requirement_id": "A.8.4",
+        "status": "VERIFIED",
+        "verdict": "non_compliant",
+        "abstain_reason": null,
+        "policy_quote": "En dehors de cette coordination, les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
+        "clause_ref": "A.8.4",
+        "confidence": 0.95,
+        "match_method": "exact",
+        "attempts": 1,
+        "final_model": "mistral-large-latest",
+        "final_provider": "mistral",
+        "finding_id": "36f71947-42ff-4f5f-80b0-1eb4ac3ce0e8",
+        "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+      }
+    }
+  },
+  "recovery": {
+    "resumed": false,
+    "recovery_assessment_id": null,
+    "runner": null
+  },
+  "findings": {
+    "5.2": {
+      "requirement_id": "5.2",
+      "status": "VERIFIED",
+      "verdict": "compliant",
+      "abstain_reason": null,
+      "policy_quote": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
+      "clause_ref": "5.2",
+      "confidence": 0.95,
+      "match_method": "exact",
+      "attempts": 2,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "e991ebf0-9038-4dfc-a7f4-1e50d3b37014",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "4.2": {
+      "requirement_id": "4.2",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "Les besoins et attentes des clients concernant l'usage de l'IA par Lumen AI sont pris en compte lorsqu'un client formule une exigence explicite dans le cadre contractuel. En dehors de ce cas, aucune démarche systématique de recueil des attentes des clients en matière d'IA n'est mise en œuvre.",
+      "clause_ref": "4.2",
+      "confidence": 0.8,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "06d476cf-82df-4427-a3ef-e07f0e1abab1",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.2.4": {
+      "requirement_id": "A.2.4",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "## 8. Revue de la charte\n\nLa présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.",
+      "clause_ref": "A.2.4",
+      "confidence": 0.7,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "edfe15ec-9f2e-4eb1-96d6-451e1a080c13",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "7.2": {
+      "requirement_id": "7.2",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "Chaque collaborateur suit, lors de son intégration puis annuellement, un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'",
+      "clause_ref": "7.2",
+      "confidence": 0.85,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "798d4c2f-d9e1-41e9-a517-98d7e696507e",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.4.3": {
+      "requirement_id": "A.4.3",
+      "status": "ABSTAINED",
+      "verdict": "compliant",
+      "abstain_reason": "verification_failed",
+      "policy_quote": "Chaque jeu de données utilisé par un système d'IA est enregistré dans l'inventaire des données IA, qui documente pour chaque ressource : son identifiant, sa description, ses catégories de données, son usage prévu (entraînement, évaluation, production), son propriétaire et sa base légale le cas échéé",
+      "clause_ref": "A.4.3",
+      "confidence": 0.95,
+      "match_method": null,
+      "attempts": 2,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "cff0f0b6-2c00-4897-9c36-045cfb947505",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.5.5": {
+      "requirement_id": "A.5.5",
+      "status": "VERIFIED",
+      "verdict": "non_compliant",
+      "abstain_reason": null,
+      "policy_quote": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact, l'entreprise considérant que ses systèmes internes n'ont pas de portée sociétale.",
+      "clause_ref": "A.5.5",
+      "confidence": 0.99,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "531c3890-c9c6-4ff3-b4da-556ecd4d7560",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.6.2.3": {
+      "requirement_id": "A.6.2.3",
+      "status": "VERIFIED",
+      "verdict": "compliant",
+      "abstain_reason": null,
+      "policy_quote": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+      "clause_ref": "A.6.2.3",
+      "confidence": 0.95,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "12061e77-b37b-46b9-889e-c25b03931259",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.6.2.5": {
+      "requirement_id": "A.6.2.5",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "La mise en production des systèmes d'IA majeurs suit le plan de déploiement standard (LUM-LCM-PR-03). Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé.",
+      "clause_ref": "A.6.2.5",
+      "confidence": 0.9,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "9a4f445f-2efe-4227-b459-4510ce8129c9",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.4.4": {
+      "requirement_id": "A.4.4",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+      "clause_ref": "A.4.4",
+      "confidence": 0.8,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "3ec13f59-d15e-420e-aeb0-8e4f6159aa1a",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.8.3": {
+      "requirement_id": "A.8.3",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "4. **Signalement des dysfonctionnements** : tout comportement anormal d'un système d'IA (réponse manifestement erronée, biais apparent, fuite d'information) doit être signalé au Responsable produit IA concerné dans les meilleurs délais.",
+      "clause_ref": "A.8.3",
+      "confidence": 0.8,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "26632811-8f83-48a1-8fb9-125587c202ed",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "4.1": {
+      "requirement_id": "4.1",
+      "status": "ABSTAINED",
+      "verdict": "compliant",
+      "abstain_reason": "verification_failed",
+      "policy_quote": "Pour définir ce périmètre, l'entreprise identifie les enjeux internes (culture d'ingénierie, dépendance croissante à l'assistant interne) et externes (évolutions réglementaires européennes, attentes des clients, état de l'art technologique) pertinents pour sa gouvernance de l'IA, ainsi que son **duo",
+      "clause_ref": "4.1",
+      "confidence": 0.95,
+      "match_method": null,
+      "attempts": 2,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "93a3159b-c523-46a9-9d88-46fe8137c9fd",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "7.1": {
+      "requirement_id": "7.1",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "À cette fin, Lumen AI établit, met en œuvre et maintient un système de management de l'IA couvrant l'ensemble du cycle de vie de ses systèmes d'IA, dont les processus sont décrits dans les politiques du référentiel documentaire LUM.",
+      "clause_ref": "7.1",
+      "confidence": 0.75,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "5a57823b-8a0f-4e4a-9d34-ff11dc2411bf",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "7.4": {
+      "requirement_id": "7.4",
+      "status": "VERIFIED",
+      "verdict": "partial",
+      "abstain_reason": null,
+      "policy_quote": "La liste nominative des titulaires de ces rôles est tenue à jour par la Direction des Ressources Humaines et communiquée à l'ensemble du personnel via l'intranet.",
+      "clause_ref": "7.4",
+      "confidence": 0.8,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "38c75567-c154-4aae-989e-bda49ca7b1bb",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    },
+    "A.8.4": {
+      "requirement_id": "A.8.4",
+      "status": "VERIFIED",
+      "verdict": "non_compliant",
+      "abstain_reason": null,
+      "policy_quote": "En dehors de cette coordination, les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
+      "clause_ref": "A.8.4",
+      "confidence": 0.95,
+      "match_method": "exact",
+      "attempts": 1,
+      "final_model": "mistral-large-latest",
+      "final_provider": "mistral",
+      "finding_id": "36f71947-42ff-4f5f-80b0-1eb4ac3ce0e8",
+      "assessment_id": "cc644bf2-250c-44f1-8e23-3dd952aa9f18"
+    }
+  },
+  "attempt1_outcomes": [
+    {
+      "requirement_id": "5.2",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": true,
+      "failure_mode": "not_found",
+      "match_method": null
+    },
+    {
+      "requirement_id": "4.2",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.2.4",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "7.2",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.4.3",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": true,
+      "failure_mode": "not_found",
+      "match_method": null
+    },
+    {
+      "requirement_id": "A.5.5",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.6.2.3",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.6.2.5",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.4.4",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.8.3",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "4.1",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": true,
+      "failure_mode": "not_found",
+      "match_method": null
+    },
+    {
+      "requirement_id": "7.1",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "7.4",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    },
+    {
+      "requirement_id": "A.8.4",
+      "kind": "asserted",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "unsupported": false,
+      "failure_mode": null,
+      "match_method": "exact"
+    }
+  ],
+  "scores": {
+    "n_total": 14,
+    "n_scored": 14,
+    "infra_failed_ids": [],
+    "missing_ids": [],
+    "accuracy": {
+      "count": 9,
+      "n": 14,
+      "ratio": 0.6428571428571429,
+      "ci_low": 0.3876400468214041,
+      "ci_high": 0.8365550926279728
+    },
+    "accuracy_by_gold_verdict": {
+      "compliant": {
+        "count": 2,
+        "n": 4,
+        "ratio": 0.5,
+        "ci_low": 0.15003570882017148,
+        "ci_high": 0.8499642911798285
+      },
+      "partial": {
+        "count": 5,
+        "n": 5,
+        "ratio": 1.0,
+        "ci_low": 0.5655085052479191,
+        "ci_high": 1.0
+      },
+      "non_compliant": {
+        "count": 2,
+        "n": 2,
+        "ratio": 1.0,
+        "ci_low": 0.34237195288961925,
+        "ci_high": 1.0
+      },
+      "missing": {
+        "count": 0,
+        "n": 3,
+        "ratio": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.5615060804490177
+      }
+    },
+    "confusion": {
+      "compliant": {
+        "compliant": 2,
+        "partial": 0,
+        "non_compliant": 0,
+        "abstained": 2
+      },
+      "partial": {
+        "compliant": 0,
+        "partial": 5,
+        "non_compliant": 0,
+        "abstained": 0
+      },
+      "non_compliant": {
+        "compliant": 0,
+        "partial": 0,
+        "non_compliant": 2,
+        "abstained": 0
+      },
+      "missing": {
+        "compliant": 0,
+        "partial": 3,
+        "non_compliant": 0,
+        "abstained": 0
+      }
+    },
+    "abstention_precision": {
+      "count": 0,
+      "n": 2,
+      "ratio": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.6576280471103807
+    },
+    "abstention_recall": {
+      "count": 0,
+      "n": 3,
+      "ratio": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.5615060804490177
+    },
+    "verified_rate": {
+      "count": 12,
+      "n": 14,
+      "ratio": 0.8571428571428571,
+      "ci_low": 0.600580922361363,
+      "ci_high": 0.9599069262620787
+    },
+    "repair_rate": {
+      "count": 3,
+      "n": 14,
+      "ratio": 0.21428571428571427,
+      "ci_low": 0.07571248336916367,
+      "ci_high": 0.4758972377320828
+    },
+    "abstain_reasons": {
+      "verification_failed": 2
+    },
+    "match_methods": {
+      "exact": 12
+    },
+    "confidence_correct": [
+      0.95,
+      0.7,
+      0.85,
+      0.99,
+      0.95,
+      0.9,
+      0.8,
+      0.8,
+      0.95
+    ],
+    "confidence_incorrect": [
+      0.8,
+      0.8,
+      0.75
+    ]
+  },
+  "gate_diagnostic": {
+    "n": 14,
+    "attempt1_kinds": {
+      "asserted": 14,
+      "missing_draft": 0,
+      "unparseable": 0,
+      "no_success_call": 0
+    },
+    "attempt1_unsupported_over_asserted": {
+      "count": 3,
+      "n": 14,
+      "ratio": 0.21428571428571427,
+      "ci_low": 0.07571248336916367,
+      "ci_high": 0.4758972377320828
+    },
+    "attempt1_unsupported_over_all": {
+      "count": 3,
+      "n": 14,
+      "ratio": 0.21428571428571427,
+      "ci_low": 0.07571248336916367,
+      "ci_high": 0.4758972377320828
+    },
+    "attempt1_failure_modes": {
+      "not_found": 3
+    },
+    "gate_outcomes": {
+      "verified": 12,
+      "repaired": 1,
+      "abstained": 2
+    }
+  },
+  "verified_invariant_failures": [],
+  "review_overrides_scoped": []
+}

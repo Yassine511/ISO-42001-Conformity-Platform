@@ -1,0 +1,322 @@
+[
+  {
+    "pair_id": "chat_eval:test:5.2#c0#c1",
+    "question_id": "chat_eval:test:5.2",
+    "claim_index": 0,
+    "claim_text": "L'organisation a établi une politique d'IA adaptée, formalisée dans la « Charte de gouvernance de l'intelligence artificielle » (LUM-GOV-001), qui constitue la politique d'IA de Lumen AI.",
+    "citation_type": "policy",
+    "cited_text": "La présente charte établit la politique de Lumen AI en matière de développement et d'utilisation de l'intelligence artificielle. La Direction Générale s'engage à ce que tout système d'IA conçu, déployé ou utilisé par Lumen AI le soit de manière responsable, conformément à nos valeurs d'entreprise, à",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:5.2#c1#c1",
+    "question_id": "chat_eval:test:5.2",
+    "claim_index": 1,
+    "claim_text": "La Direction Générale s'engage explicitement dans cette charte à ce que les systèmes d'IA soient développés et utilisés de manière responsable, conformément aux valeurs de l'entreprise, à la réglementation et au niveau de tolérance au risque approuvé.",
+    "citation_type": "policy",
+    "cited_text": "La présente charte établit la politique de Lumen AI en matière de développement et d'utilisation de l'intelligence artificielle. La Direction Générale s'engage à ce que tout système d'IA conçu, déployé ou utilisé par Lumen AI le soit de manière responsable, conformément à nos valeurs d'entreprise, à",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:5.2#c2#c2",
+    "question_id": "chat_eval:test:5.2",
+    "claim_index": 2,
+    "claim_text": "La politique d'IA est communiquée à l'ensemble des collaborateurs lors de leur intégration et publiée sur l'intranet.",
+    "citation_type": "policy",
+    "cited_text": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:5.2#c3#c2",
+    "question_id": "chat_eval:test:5.2",
+    "claim_index": 3,
+    "claim_text": "La politique d'IA est mise à la disposition des parties intéressées externes qui en font la demande.",
+    "citation_type": "policy",
+    "cited_text": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:5.2#c4#kb1",
+    "question_id": "chat_eval:test:5.2",
+    "claim_index": 4,
+    "claim_text": "La norme ISO/IEC 42001 exige que la direction établisse une politique d'IA adaptée à l'organisation, communiquée en interne et disponible pour les parties intéressées (exigence 5.2).",
+    "citation_type": "kb",
+    "cited_text": "La direction doit établir une politique d'IA adaptée à l'organisation, communiquée en interne et disponible pour les parties intéressées.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.2.4#c0#c1",
+    "question_id": "chat_eval:test:A.2.4",
+    "claim_index": 0,
+    "claim_text": "La politique d'IA de l'organisation (charte de gouvernance) prévoit une revue de la charte lorsque le Comité IA l'estime nécessaire, sans définir d'intervalles planifiés explicites.",
+    "citation_type": "policy",
+    "cited_text": "## 8. Revue de la charte\n\nLa présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.2.4#c1#c2",
+    "question_id": "chat_eval:test:A.2.4",
+    "claim_index": 1,
+    "claim_text": "La norme ISO/IEC 42001 exige que la politique d'IA soit revue à intervalles planifiés ou lors de changements significatifs pour rester appropriée et efficace (exigence A.2.4).",
+    "citation_type": "kb",
+    "cited_text": "La politique d'IA doit être revue à intervalles planifiés, ou lors de changements significatifs, pour rester appropriée et efficace.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.2.4#c2#c1",
+    "question_id": "chat_eval:test:A.2.4",
+    "claim_index": 2,
+    "claim_text": "L'organisation ne documente actuellement aucun mécanisme de revue périodique ou planifiée de sa politique d'IA, ce qui ne couvre pas pleinement l'exigence A.2.4 de la norme.",
+    "citation_type": "policy",
+    "cited_text": "## 8. Revue de la charte\n\nLa présente charte est mise à jour lorsque le Comité IA l'estime nécessaire.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:7.2#c0#c1",
+    "question_id": "chat_eval:test:7.2",
+    "claim_index": 0,
+    "claim_text": "L'organisation couvre partiellement l'exigence ISO/IEC 42001 7.2 en imposant une formation obligatoire annuelle de sensibilisation à l'IA pour tous les collaborateurs, tracée dans l'outil RH.",
+    "citation_type": "policy",
+    "cited_text": "Chaque collaborateur suit, lors de son intégration puis annuellement, un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:7.2#c1#c1",
+    "question_id": "chat_eval:test:7.2",
+    "claim_index": 1,
+    "claim_text": "L'organisation propose une formation approfondie aux outils d'IA sur la base du volontariat, sans obligation ni traçabilité systématique.",
+    "citation_type": "policy",
+    "cited_text": "Chaque collaborateur suit, lors de son intégration puis annuellement, un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:7.2#c2#kb1",
+    "question_id": "chat_eval:test:7.2",
+    "claim_index": 2,
+    "claim_text": "La norme ISO/IEC 42001 exige que l'organisation détermine et assure les compétences nécessaires des personnes travaillant sur les systèmes d'IA, avec des preuves documentées.",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit déterminer et assurer les compétences nécessaires des personnes travaillant sur les systèmes d'IA, par la formation ou d'autres moyens, avec des preuves documentées.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:7.2#c3#c1",
+    "question_id": "chat_eval:test:7.2",
+    "claim_index": 3,
+    "claim_text": "L'organisation ne documente pas explicitement les compétences spécifiques requises pour les personnes travaillant sur les systèmes d'IA, ni ne prouve la couverture de ces compétences par des moyens autres que la formation de sensibilisation.",
+    "citation_type": "policy",
+    "cited_text": "Chaque collaborateur suit, lors de son intégration puis annuellement, un module de sensibilisation couvrant la politique d'IA de l'entreprise, les règles de la présente politique, sa contribution au bon fonctionnement du système de management de l'IA et les conséquences d'un manquement aux règles d'",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.4.3#c3#kb1",
+    "question_id": "chat_eval:test:A.4.3",
+    "claim_index": 3,
+    "claim_text": "L'organisation doit documenter les ressources de données utilisées par les systèmes d'IA, incluant leur provenance, leurs catégories et leur usage prévu, conformément à l'exigence A.4.3 de la norme ISO/IEC 42001.",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit documenter les ressources de données utilisées par les systèmes d'IA (provenance, catégories, usage prévu).",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.5.5#c0#cit1",
+    "question_id": "chat_eval:test:A.5.5",
+    "claim_index": 0,
+    "claim_text": "La politique de gestion des risques liés à l'IA de l'organisation (LUM-RISK-001) exclut explicitement les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) du périmètre de l'évaluation d'impact des systèmes d'IA.",
+    "citation_type": "policy",
+    "cited_text": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact, l'entreprise considérant que ses systèmes internes n'ont pas de portée sociétale.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.5.5#c1#cit2",
+    "question_id": "chat_eval:test:A.5.5",
+    "claim_index": 1,
+    "claim_text": "La norme ISO/IEC 42001 exige que l'évaluation d'impact des systèmes d'IA considère les effets sociétaux, incluant l'environnement, l'économie, les normes sociales et la culture (exigence A.5.5).",
+    "citation_type": "kb",
+    "cited_text": "L'évaluation d'impact doit considérer les effets sociétaux des systèmes d'IA (environnement, économie, normes sociales, culture).",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.5.5#c2#cit3",
+    "question_id": "chat_eval:test:A.5.5",
+    "claim_index": 2,
+    "claim_text": "La norme ISO/IEC 42001 impose à l'organisation de définir un processus d'évaluation des impacts des systèmes d'IA sur les individus, les groupes et la société, et d'en conserver les résultats documentés (exigence 6.1.4).",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit définir un processus d'évaluation des impacts des systèmes d'IA sur les individus, les groupes et la société, et en conserver les résultats documentés.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.3#c0#cit1",
+    "question_id": "chat_eval:test:A.6.2.3",
+    "claim_index": 0,
+    "claim_text": "L'organisation couvre l'exigence ISO/IEC 42001 A.6.2.3 en documentant les choix de conception structurants des systèmes d'IA, notamment l'architecture retenue, le modèle ou algorithme choisi, les jeux de données mobilisés et les compromis effectués.",
+    "citation_type": "policy",
+    "cited_text": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.3#c1#kb1",
+    "question_id": "chat_eval:test:A.6.2.3",
+    "claim_index": 1,
+    "claim_text": "La norme ISO/IEC 42001 exige que la conception et le développement du système d'IA soient documentés, incluant les choix d'architecture, de modèle, de données et les critères de décision (exigence A.6.2.3).",
+    "citation_type": "kb",
+    "cited_text": "La conception et le développement du système d'IA doivent être documentés (choix d'architecture, de modèle, de données, critères de décision).",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.5#c0#c1",
+    "question_id": "chat_eval:test:A.6.2.5",
+    "claim_index": 0,
+    "claim_text": "L'organisation exige qu'un document d'exigences et de spécifications soit validé avant le début du développement pour tout nouveau système d'IA ou évolution significative d'un système existant.",
+    "citation_type": "policy",
+    "cited_text": "Tout nouveau système d'IA, et toute évolution significative d'un système existant, fait l'objet d'un document d'exigences et de spécifications validé avant le début du développement.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.5#c1#c2",
+    "question_id": "chat_eval:test:A.6.2.5",
+    "claim_index": 1,
+    "claim_text": "Avant la mise en production, chaque système d'IA est soumis à une phase de vérification et de validation formelle, incluant l'exécution d'un plan de tests et la comparaison des résultats aux seuils d'acceptation définis dans le document d'exigences.",
+    "citation_type": "policy",
+    "cited_text": "Avant toute mise en production, chaque système d'IA est soumis à une phase de vérification et de validation formelle : exécution du plan de tests, mesure des performances sur un jeu d'évaluation indépendant du jeu d'entraînement, et comparaison des résultats aux seuils d'acceptation définis dans le",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.5#c2#c3",
+    "question_id": "chat_eval:test:A.6.2.5",
+    "claim_index": 2,
+    "claim_text": "La politique interne prévoit que les systèmes d'IA majeurs suivent un plan de déploiement standard formalisé (LUM-LCM-PR-03), mais les systèmes jugés mineurs peuvent être déployés sans plan formalisé.",
+    "citation_type": "policy",
+    "cited_text": "La mise en production des systèmes d'IA majeurs suit le plan de déploiement standard (LUM-LCM-PR-03). Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.5#c3#kb1",
+    "question_id": "chat_eval:test:A.6.2.5",
+    "claim_index": 3,
+    "claim_text": "La norme ISO/IEC 42001 exige que le déploiement des systèmes d'IA suive un plan documenté avec des exigences vérifiées avant la mise en production (exigence A.6.2.5).",
+    "citation_type": "kb",
+    "cited_text": "Le déploiement des systèmes d'IA doit suivre un plan documenté avec des exigences vérifiées avant la mise en production.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.6.2.5#c4#c3",
+    "question_id": "chat_eval:test:A.6.2.5",
+    "claim_index": 4,
+    "claim_text": "L'organisation ne couvre pas entièrement l'exigence A.6.2.5 de la norme, car elle permet le déploiement de systèmes d'IA mineurs sans plan formalisé, ce qui n'assure pas systématiquement un déploiement conforme à un plan documenté.",
+    "citation_type": "policy",
+    "cited_text": "La mise en production des systèmes d'IA majeurs suit le plan de déploiement standard (LUM-LCM-PR-03). Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.4.4#c0#c1",
+    "question_id": "chat_eval:test:A.4.4",
+    "claim_index": 0,
+    "claim_text": "La politique interne de l'organisation couvre partiellement l'exigence A.4.4 de la norme ISO/IEC 42001 en documentant les choix de conception structurants, y compris les modèles ou algorithmes choisis, dans le dossier de conception du système.",
+    "citation_type": "policy",
+    "cited_text": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.4.4#c1#kb1",
+    "question_id": "chat_eval:test:A.4.4",
+    "claim_index": 1,
+    "claim_text": "La norme ISO/IEC 42001 exige que l'organisation documente les outils et composants utilisés pour développer et exploiter les systèmes d'IA (bibliothèques, algorithmes, plateformes).",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit documenter les outils et composants utilisés pour développer et exploiter les systèmes d'IA (bibliothèques, algorithmes, plateformes).",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.4.4#c2#c1",
+    "question_id": "chat_eval:test:A.4.4",
+    "claim_index": 2,
+    "claim_text": "La politique interne ne mentionne pas explicitement la documentation des bibliothèques ou des plateformes utilisées pour développer et exploiter les systèmes d'IA, ce qui laisse un écart par rapport à l'exigence A.4.4.",
+    "citation_type": "policy",
+    "cited_text": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système, tenu à jour tout au long du développement et conservé dans l'outil de gestion documentaire.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.3#c0#cit1",
+    "question_id": "chat_eval:test:A.8.3",
+    "claim_index": 0,
+    "claim_text": "L'organisation permet aux collaborateurs de signaler des préoccupations concernant un système d'IA en les adressant à leur manager, qui est chargé d'apprécier la suite à donner.",
+    "citation_type": "policy",
+    "cited_text": "Tout collaborateur qui a une préoccupation concernant un système d'IA de l'entreprise peut en faire part à son manager, qui appréciera la suite à donner.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.3#c1#cit2",
+    "question_id": "chat_eval:test:A.8.3",
+    "claim_index": 1,
+    "claim_text": "L'organisation impose aux collaborateurs de signaler tout comportement anormal d'un système d'IA (réponse erronée, biais apparent, fuite d'information) au Responsable produit IA concerné dans les meilleurs délais.",
+    "citation_type": "policy",
+    "cited_text": "tout comportement anormal d'un système d'IA (réponse manifestement erronée, biais apparent, fuite d'information) doit être signalé au Responsable produit IA concerné dans les meilleurs délais.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.3#c2#cit3",
+    "question_id": "chat_eval:test:A.8.3",
+    "claim_index": 2,
+    "claim_text": "La norme ISO/IEC 42001 exige que l'organisation définisse comment les parties intéressées (y compris externes) peuvent signaler les effets négatifs d'un système d'IA et comment ces signalements sont traités.",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit définir comment les parties intéressées peuvent signaler les effets négatifs d'un système d'IA, et comment ces signalements sont traités.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.4#c0#kb_A.8.4",
+    "question_id": "chat_eval:test:A.8.4",
+    "claim_index": 0,
+    "claim_text": "La norme ISO/IEC 42001 exige que l'organisation définisse un plan de communication des incidents liés aux systèmes d'IA aux utilisateurs et parties intéressées concernées (exigence A.8.4).",
+    "citation_type": "kb",
+    "cited_text": "L'organisation doit définir un plan de communication des incidents liés aux systèmes d'IA aux utilisateurs et parties intéressées concernées.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.4#c1#pol_1",
+    "question_id": "chat_eval:test:A.8.4",
+    "claim_index": 1,
+    "claim_text": "Les politiques internes de Lumen AI ne prévoient actuellement aucune communication systématique des incidents liés aux systèmes d'IA aux utilisateurs internes ou aux clients, sauf en cas d'obligation légale expresse.",
+    "citation_type": "policy",
+    "cited_text": "En dehors de cette coordination, les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
+    "label": null,
+    "comment": null
+  },
+  {
+    "pair_id": "chat_eval:test:A.8.4#c2#pol_1",
+    "question_id": "chat_eval:test:A.8.4",
+    "claim_index": 2,
+    "claim_text": "En cas d'incident impliquant un fournisseur, la coordination avec ce dernier est encadrée par une matrice de responsabilités contractuelle, mais cette matrice ne couvre pas la communication aux utilisateurs ou parties intéressées externes.",
+    "citation_type": "policy",
+    "cited_text": "En dehors de cette coordination, les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse.",
+    "label": null,
+    "comment": null
+  }
+]

@@ -1,0 +1,173 @@
+{
+  "meta": {
+    "corpus_version": "1.2.0",
+    "split": "test",
+    "generator_version": "1",
+    "template_version": "1",
+    "generator_sha256": "dfd54f7ee0354cc043edae7b4590486529ce5290228d629a80f0cf15a01fc288",
+    "rubric_sha256": "003a6388dddf7eda41fea6214ba39b0ce5f3cce5e7ad74c9c5d002f6b1a109b4",
+    "question_count": 14,
+    "unanswerable_count": 3
+  },
+  "items": [
+    {
+      "question_id": "chat_eval:test:5.2",
+      "requirement_id": "5.2",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « La direction doit établir une politique d'IA adaptée à l'organisation, communiquée en interne et disponible pour les parties intéressées. » ?",
+      "answerable": true,
+      "expected_requirement_id": "5.2",
+      "gold_evidence_anchor": {
+        "document": "ai_governance_charter.md",
+        "evidence_quote_fr": "Cette charte constitue la politique d'IA de Lumen AI. Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.2.4",
+      "requirement_id": "A.2.4",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « La politique d'IA doit être revue à intervalles planifiés, ou lors de changements significatifs, pour rester appropriée et efficace. » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.2.4",
+      "gold_evidence_anchor": {
+        "document": "ai_governance_charter.md",
+        "evidence_quote_fr": "La présente charte est mise à jour lorsque le Comité IA l'estime nécessaire."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:7.2",
+      "requirement_id": "7.2",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit déterminer et assurer les compétences nécessaires des personnes travaillant sur les systèmes d'IA, par la formation ou d'autres moyens, avec des preuves documentées. » ?",
+      "answerable": true,
+      "expected_requirement_id": "7.2",
+      "gold_evidence_anchor": {
+        "document": "ai_usage_policy.md",
+        "evidence_quote_fr": "Une formation approfondie aux outils d'IA est par ailleurs recommandée aux collaborateurs qui le souhaitent, sur la base du volontariat."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.4.3",
+      "requirement_id": "A.4.3",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit documenter les ressources de données utilisées par les systèmes d'IA (provenance, catégories, usage prévu). » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.4.3",
+      "gold_evidence_anchor": {
+        "document": "data_governance_policy.md",
+        "evidence_quote_fr": "Chaque jeu de données utilisé par un système d'IA est enregistré dans l'inventaire des données IA, qui documente pour chaque ressource : son identifiant, sa description, ses catégories de données, son usage prévu (entraînement, évaluation, production), son propriétaire"
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.5.5",
+      "requirement_id": "A.5.5",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'évaluation d'impact doit considérer les effets sociétaux des systèmes d'IA (environnement, économie, normes sociales, culture). » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.5.5",
+      "gold_evidence_anchor": {
+        "document": "ai_risk_management_policy.md",
+        "evidence_quote_fr": "Les impacts sociétaux au sens large (effets environnementaux, effets sur l'emploi, effets culturels) sont exclus du périmètre de l'évaluation d'impact"
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.6.2.3",
+      "requirement_id": "A.6.2.3",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « La conception et le développement du système d'IA doivent être documentés (choix d'architecture, de modèle, de données, critères de décision). » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.6.2.3",
+      "gold_evidence_anchor": {
+        "document": "model_lifecycle_policy.md",
+        "evidence_quote_fr": "Les choix de conception structurants — architecture retenue, modèle ou algorithme choisi, jeux de données mobilisés, compromis effectués — sont documentés dans le dossier de conception du système"
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.6.2.5",
+      "requirement_id": "A.6.2.5",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « Le déploiement des systèmes d'IA doit suivre un plan documenté avec des exigences vérifiées avant la mise en production. » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.6.2.5",
+      "gold_evidence_anchor": {
+        "document": "model_lifecycle_policy.md",
+        "evidence_quote_fr": "Pour les systèmes jugés mineurs par l'équipe de développement, le déploiement peut être réalisé directement par l'équipe sans plan formalisé."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.4.4",
+      "requirement_id": "A.4.4",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit documenter les outils et composants utilisés pour développer et exploiter les systèmes d'IA (bibliothèques, algorithmes, plateformes). » ?",
+      "answerable": false,
+      "expected_requirement_id": "A.4.4",
+      "gold_evidence_anchor": null
+    },
+    {
+      "question_id": "chat_eval:test:A.8.3",
+      "requirement_id": "A.8.3",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit définir comment les parties intéressées peuvent signaler les effets négatifs d'un système d'IA, et comment ces signalements sont traités. » ?",
+      "answerable": false,
+      "expected_requirement_id": "A.8.3",
+      "gold_evidence_anchor": null
+    },
+    {
+      "question_id": "chat_eval:test:4.1",
+      "requirement_id": "4.1",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit identifier les enjeux internes et externes pertinents pour son système de management de l'IA, y compris son rôle (fournisseur, utilisateur, développeur) vis-à-vis des systèmes d'IA. » ?",
+      "answerable": true,
+      "expected_requirement_id": "4.1",
+      "gold_evidence_anchor": {
+        "document": "ai_governance_charter.md",
+        "evidence_quote_fr": "l'entreprise identifie les enjeux internes (culture d'ingénierie, dépendance croissante à l'assistant interne) et externes (évolutions réglementaires européennes, attentes des clients, état de l'art technologique) pertinents pour sa gouvernance de l'IA"
+      }
+    },
+    {
+      "question_id": "chat_eval:test:4.2",
+      "requirement_id": "4.2",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit identifier les parties intéressées concernées par le système de management de l'IA ainsi que leurs exigences et attentes pertinentes. » ?",
+      "answerable": true,
+      "expected_requirement_id": "4.2",
+      "gold_evidence_anchor": {
+        "document": "ai_governance_charter.md",
+        "evidence_quote_fr": "Les parties intéressées du dispositif sont recensées : collaborateurs, clients, fournisseurs de composants d'IA et autorités de contrôle."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:7.1",
+      "requirement_id": "7.1",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit déterminer et fournir les ressources nécessaires à l'établissement, à la mise en œuvre, à la maintenance et à l'amélioration continue du système de management de l'IA. » ?",
+      "answerable": false,
+      "expected_requirement_id": "7.1",
+      "gold_evidence_anchor": null
+    },
+    {
+      "question_id": "chat_eval:test:7.4",
+      "requirement_id": "7.4",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit déterminer les communications internes et externes pertinentes pour le système de management de l'IA : sur quels sujets, à quels moments, avec qui et comment communiquer. » ?",
+      "answerable": true,
+      "expected_requirement_id": "7.4",
+      "gold_evidence_anchor": {
+        "document": "ai_governance_charter.md",
+        "evidence_quote_fr": "Elle est communiquée à l'ensemble des collaborateurs lors de leur intégration, publiée sur l'intranet, et mise à la disposition des parties intéressées externes qui en font la demande."
+      }
+    },
+    {
+      "question_id": "chat_eval:test:A.8.4",
+      "requirement_id": "A.8.4",
+      "split": "test",
+      "question_fr": "Comment notre organisation couvre-t-elle l'exigence ISO/IEC 42001 suivante : « L'organisation doit définir un plan de communication des incidents liés aux systèmes d'IA aux utilisateurs et parties intéressées concernées. » ?",
+      "answerable": true,
+      "expected_requirement_id": "A.8.4",
+      "gold_evidence_anchor": {
+        "document": "third_party_ai_policy.md",
+        "evidence_quote_fr": "les incidents affectant un système d'IA ne donnent lieu à aucune information des utilisateurs internes ni des clients, sauf obligation légale expresse."
+      }
+    }
+  ]
+}
