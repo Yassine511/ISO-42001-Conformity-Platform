@@ -1,0 +1,847 @@
+{
+  "meta": {
+    "dataset_id": "iso-iec-23894-2023-public-guidance",
+    "title_fr": "ISO/IEC 23894:2023 - orientations publiques sur la gestion des risques liés à l’IA",
+    "title_en": "ISO/IEC 23894:2023 - Artificial intelligence - Guidance on risk management",
+    "official_edition": "1 (2023-02)",
+    "snapshot_date": "2026-07-07",
+    "languages": [
+      "fr",
+      "en"
+    ],
+    "intended_use_fr": "Repères non normatifs pour structurer l’identification, l’analyse, le traitement et le suivi des risques liés à l’IA.",
+    "limitations_fr": "Contenu volontairement limité à des paraphrases de haut niveau issues de sources publiques. Ce fichier ne reproduit pas la norme, n’est pas exhaustif et ne permet pas d’évaluer la conformité à ISO/IEC 23894.",
+    "copyright_policy": "No proprietary ISO normative text is reproduced.",
+    "entry_count": 34,
+    "clause_guidance_count": 26,
+    "editorial_theme_count": 8
+  },
+  "sources": [
+    {
+      "id": "iso_23894_public_page",
+      "publisher": "International Organization for Standardization",
+      "title": "ISO/IEC 23894:2023 - AI - Guidance on risk management",
+      "url": "https://www.iso.org/standard/77304.html",
+      "accessed_at": "2026-07-07",
+      "status": "official_public_metadata_and_abstract",
+      "license_note": "ISO content is copyrighted; only high-level original paraphrases are included."
+    },
+    {
+      "id": "iso_public_ai_overview",
+      "publisher": "International Organization for Standardization",
+      "title": "ISO artificial intelligence overview",
+      "url": "https://www.iso.org/artificial-intelligence/",
+      "accessed_at": "2026-07-07",
+      "status": "official_public_overview",
+      "license_note": "ISO content is copyrighted; only high-level original paraphrases are included."
+    },
+    {
+      "id": "nist_iso23894_crosswalk",
+      "publisher": "National Institute of Standards and Technology",
+      "title": "Crosswalk AI RMF 1.0 and ISO/IEC FDIS 23894",
+      "url": "https://www.nist.gov/system/files/documents/2023/01/26/crosswalk_AI_RMF_1_0_ISO_IEC_23894.pdf",
+      "accessed_at": "2026-07-07",
+      "sha256": "f7f9a5ed06248afe535d585a9b2562b08048eb4893932e6740e966e613fd9c5a",
+      "status": "official_nist_crosswalk_to_the_prepublication_fdis",
+      "caveat": "The crosswalk names the FDIS; ISO/IEC 23894:2023 was subsequently published. Mappings are retained as NIST's published crosswalk, not asserted as ISO normative content."
+    }
+  ],
+  "entries": [
+    {
+      "id": "ISO23894-5.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.2",
+      "official_title_en": "Leadership and commitment",
+      "title_fr": "Leadership et engagement",
+      "summary_fr": "La direction manifeste son engagement, donne une orientation claire et rend la gestion des risques liés à l’IA visible dans les décisions.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Leadership et engagement",
+        "5.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.3",
+      "official_title_en": "Integration",
+      "title_fr": "Intégration",
+      "summary_fr": "La gestion des risques liés à l’IA est intégrée aux activités, à la gouvernance, aux processus et au cycle de vie pertinents de l’organisation.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Intégration",
+        "5.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4",
+      "official_title_en": "Design",
+      "title_fr": "Conception du cadre de gestion des risques",
+      "summary_fr": "Le dispositif de gestion des risques est conçu en fonction du contexte, des objectifs, des responsabilités et des ressources de l’organisation.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Conception du cadre de gestion des risques",
+        "5.4"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4.1",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4.1",
+      "official_title_en": "Understanding the organization and its context",
+      "title_fr": "Compréhension de l’organisation et de son contexte",
+      "summary_fr": "L’organisation comprend son contexte interne et externe, ses usages de l’IA, ses parties prenantes et les facteurs susceptibles de modifier les risques.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Compréhension de l’organisation et de son contexte",
+        "5.4.1"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4.2",
+      "official_title_en": "Articulating risk management commitment",
+      "title_fr": "Formalisation de l’engagement de gestion des risques",
+      "summary_fr": "L’engagement en faveur de la gestion des risques liés à l’IA est formalisé, communiqué et relié aux priorités de l’organisation.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Formalisation de l’engagement de gestion des risques",
+        "5.4.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4.3",
+      "official_title_en": "Assigning organizational roles, authorities, responsibilities, and accountabilities",
+      "title_fr": "Attribution des rôles, pouvoirs, responsabilités et obligations de rendre compte",
+      "summary_fr": "Les rôles, pouvoirs, responsabilités et obligations de rendre compte sont attribués pour éviter les zones sans propriétaire.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Attribution des rôles, pouvoirs, responsabilités et obligations de rendre compte",
+        "5.4.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4.4",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4.4",
+      "official_title_en": "Allocating resources",
+      "title_fr": "Affectation des ressources",
+      "summary_fr": "Des ressources humaines, financières, techniques et informationnelles proportionnées aux risques sont affectées.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Affectation des ressources",
+        "5.4.4"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.4.5",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.4.5",
+      "official_title_en": "Establishing communication and consultation",
+      "title_fr": "Communication et consultation",
+      "summary_fr": "La communication et la consultation permettent d’intégrer les connaissances des parties concernées et de partager les décisions de risque.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Communication et consultation",
+        "5.4.5"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "GOVERN"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.5",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.5",
+      "official_title_en": "Implementation",
+      "title_fr": "Mise en œuvre",
+      "summary_fr": "Le cadre de gestion des risques est mis en œuvre dans les opérations et les étapes pertinentes du cycle de vie de l’IA.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Mise en œuvre",
+        "5.5"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-5.7",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "5.7",
+      "official_title_en": "Improvement",
+      "title_fr": "Amélioration",
+      "summary_fr": "Le dispositif est amélioré à partir des incidents, mesures, retours d’expérience, changements de contexte et risques émergents.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Amélioration",
+        "5.7"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.3.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.3.2",
+      "official_title_en": "Defining the scope",
+      "title_fr": "Définition du périmètre",
+      "summary_fr": "Le périmètre de l’analyse précise les systèmes, acteurs, usages, étapes du cycle de vie et interfaces concernés.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Définition du périmètre",
+        "6.3.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.3.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.3.3",
+      "official_title_en": "External and internal context",
+      "title_fr": "Contexte externe et interne",
+      "summary_fr": "Le contexte couvre les facteurs organisationnels, techniques, juridiques, sociaux et environnementaux qui influencent le risque.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Contexte externe et interne",
+        "6.3.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.3.4",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.3.4",
+      "official_title_en": "Defining risk criteria",
+      "title_fr": "Définition des critères de risque",
+      "summary_fr": "Des critères cohérents permettent d’évaluer l’importance, l’acceptabilité et la priorité des risques en tenant compte des impacts et incertitudes.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Définition des critères de risque",
+        "6.3.4"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.2",
+      "official_title_en": "Risk identification",
+      "title_fr": "Identification des risques",
+      "summary_fr": "L’identification recherche de manière structurée les sources, événements, vulnérabilités, conséquences et contrôles liés à l’IA.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Identification des risques",
+        "6.4.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.2.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.2.3",
+      "official_title_en": "Identification of risk sources",
+      "title_fr": "Identification des sources de risque",
+      "summary_fr": "Les sources de risque humaines, organisationnelles, techniques, liées aux données, aux fournisseurs et à l’environnement d’usage sont recensées.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Identification des sources de risque",
+        "6.4.2.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.2.4",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.2.4",
+      "official_title_en": "Identification of potential events and outcomes",
+      "title_fr": "Identification des événements et résultats potentiels",
+      "summary_fr": "Les événements plausibles et leurs résultats attendus ou indésirables sont décrits, y compris les usages détournés et interactions émergentes.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Identification des événements et résultats potentiels",
+        "6.4.2.4"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.2.5",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.2.5",
+      "official_title_en": "Identification of controls",
+      "title_fr": "Identification des mesures de maîtrise",
+      "summary_fr": "Les mesures existantes ou prévues sont identifiées avec leurs limites, leur couverture et les preuves de leur fonctionnement.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Identification des mesures de maîtrise",
+        "6.4.2.5"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.2.6",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.2.6",
+      "official_title_en": "Identification of consequences",
+      "title_fr": "Identification des conséquences",
+      "summary_fr": "Les conséquences possibles pour les personnes, groupes, organisations, société et environnement sont examinées.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Identification des conséquences",
+        "6.4.2.6"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.3",
+      "official_title_en": "Risk analysis",
+      "title_fr": "Analyse des risques",
+      "summary_fr": "L’analyse estime la nature et le niveau du risque, les incertitudes, les dépendances et l’efficacité des contrôles.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Analyse des risques",
+        "6.4.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.3.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.3.2",
+      "official_title_en": "Assessment of consequences",
+      "title_fr": "Évaluation des conséquences",
+      "summary_fr": "La gravité, l’étendue, la durée, la réversibilité et la distribution des conséquences sont appréciées.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Évaluation des conséquences",
+        "6.4.3.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.4.3.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.4.3.3",
+      "official_title_en": "Assessment of likelihood",
+      "title_fr": "Évaluation de la vraisemblance",
+      "summary_fr": "La probabilité ou plausibilité des événements est estimée avec des hypothèses et limites explicites.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Évaluation de la vraisemblance",
+        "6.4.3.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.5",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.5",
+      "official_title_en": "Risk treatment",
+      "title_fr": "Traitement des risques",
+      "summary_fr": "Les risques sont évités, réduits, partagés, acceptés ou autrement traités selon les critères et responsabilités définis.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Traitement des risques",
+        "6.5"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.5.2",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.5.2",
+      "official_title_en": "Selection of risk treatment options",
+      "title_fr": "Sélection des options de traitement",
+      "summary_fr": "Les options de traitement sont comparées selon leur efficacité, faisabilité, effets secondaires et proportionnalité.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Sélection des options de traitement",
+        "6.5.2"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.5.3",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.5.3",
+      "official_title_en": "Preparing and implementing risk treatment plans",
+      "title_fr": "Préparation et mise en œuvre des plans de traitement",
+      "summary_fr": "Chaque plan précise les actions, propriétaires, ressources, échéances, risques résiduels et critères de réussite.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Préparation et mise en œuvre des plans de traitement",
+        "6.5.3"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.6",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.6",
+      "official_title_en": "Monitoring and review",
+      "title_fr": "Surveillance et revue",
+      "summary_fr": "Les risques, contrôles, hypothèses et changements du système ou du contexte sont suivis et revus à une fréquence adaptée.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Surveillance et revue",
+        "6.6"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-6.7",
+      "entry_type": "non_normative_guidance_area",
+      "reference": "6.7",
+      "official_title_en": "Recording and reporting",
+      "title_fr": "Enregistrement et communication",
+      "summary_fr": "Les analyses, décisions, responsabilités, résultats et risques résiduels sont enregistrés et communiqués aux destinataires appropriés.",
+      "normative_status": "high_level_paraphrase_not_standard_text",
+      "keywords_fr": [
+        "gestion des risques IA",
+        "Enregistrement et communication",
+        "6.7"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "nist_iso23894_crosswalk"
+      ],
+      "source_native_relationships": [
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MAP"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MEASURE"
+        },
+        {
+          "type": "mapped_by_nist_to_ai_rmf_function",
+          "target": "MANAGE"
+        }
+      ]
+    },
+    {
+      "id": "ISO23894-theme.bias_fairness",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Bias and fairness",
+      "title_fr": "Biais et équité",
+      "summary_fr": "Les analyses examinent les biais, les écarts de performance et les effets inéquitables entre personnes ou groupes.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Biais et équité"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.privacy",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Privacy",
+      "title_fr": "Vie privée",
+      "summary_fr": "Les risques pour la vie privée couvrent la collecte, l’inférence, la réidentification, la mémorisation et la divulgation de données.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Vie privée"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.safety_security",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Safety, security and resilience",
+      "title_fr": "Sûreté, sécurité et résilience",
+      "summary_fr": "Les scénarios intègrent les défaillances, attaques, abus, pertes de disponibilité et capacités de récupération.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Sûreté, sécurité et résilience"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.transparency",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Transparency and explainability",
+      "title_fr": "Transparence et explicabilité",
+      "summary_fr": "Le niveau de transparence et d’explication est adapté aux décisions, utilisateurs, personnes affectées et autorités.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Transparence et explicabilité"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.data_quality",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Data quality and provenance",
+      "title_fr": "Qualité et provenance des données",
+      "summary_fr": "La qualité, représentativité, traçabilité, actualité et gouvernance des données sont considérées comme sources de risque.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Qualité et provenance des données"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.human_oversight",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Human oversight",
+      "title_fr": "Supervision humaine",
+      "summary_fr": "Les responsabilités humaines, possibilités d’intervention, compétences et risques d’automatisation excessive sont évalués.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Supervision humaine"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.societal_environmental",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Societal and environmental impacts",
+      "title_fr": "Impacts sociétaux et environnementaux",
+      "summary_fr": "L’analyse ne se limite pas à l’organisation et prend en compte les impacts sociétaux, collectifs et environnementaux.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Impacts sociétaux et environnementaux"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    },
+    {
+      "id": "ISO23894-theme.lifecycle_third_party",
+      "entry_type": "editorial_ai_risk_theme",
+      "reference": null,
+      "official_title_en": "Lifecycle and third-party dependencies",
+      "title_fr": "Cycle de vie et dépendances tierces",
+      "summary_fr": "Les risques sont suivis sur tout le cycle de vie et dans les dépendances à des données, modèles, composants et fournisseurs tiers.",
+      "normative_status": "public_theme_not_a_clause_requirement",
+      "keywords_fr": [
+        "risque IA",
+        "Cycle de vie et dépendances tierces"
+      ],
+      "source_refs": [
+        "iso_23894_public_page",
+        "iso_public_ai_overview"
+      ],
+      "source_native_relationships": []
+    }
+  ]
+}

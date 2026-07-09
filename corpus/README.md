@@ -10,6 +10,7 @@ Ce dossier contient le livrable du jalon **M1b** : tout ce que les jalons aval c
 | `kb/iso42001_kb.json` | 65 exigences **paraphrasées** de l'ISO/IEC 42001:2023 (clauses 4–10 + Annexe A A.2–A.10, contrôles A.2.2 → A.10.4), en français — atomiques sauf les trois entrées agrégées ci-dessous |
 | `documents/*.md` | Les 6 politiques de l'organisation fictive **Lumen AI** (français), avec des écarts volontairement semés |
 | `gold/gold_labels.json` | 65 vérités terrain (couverture 100 % de la KB) : verdict + citation d'évidence verbatim — c'est le gold set de l'évaluation M6 |
+| `kb/external/*.json` | Référentiels externes **dormants** (EU AI Act, OWASP LLM Top 10, NIST AI RMF, MITRE ATLAS, ISO 23894) : actifs sources non indexés, non validés, hors périmètre du pipeline ISO 42001 — réservés à une future indexation multi-référentiels à portées explicites (post-M6) |
 
 **Granularité de la KB** : `7.5`, `9.2` et `9.3` sont représentées chacune par une entrée unique
 (plutôt que leurs sous-clauses 7.5.1–7.5.3, 9.2.1–9.2.2, 9.3.1–9.3.3) — un choix assumé de
