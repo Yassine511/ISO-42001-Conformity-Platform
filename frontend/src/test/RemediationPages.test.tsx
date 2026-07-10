@@ -102,6 +102,9 @@ const ACTION = {
   effectiveness_note: null,
   effectiveness_recorded_at: null,
   created_at: "2026-07-10T09:01:00Z",
+  effective_requirement_ids: [] as string[],
+  source_quote: null,
+  source_quote_error: null,
 };
 
 const PLAN = {
@@ -273,6 +276,141 @@ describe("plan panel", () => {
     expect(
       await screen.findByText("Rédaction interrompue (incident technique)"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("action evidence display", () => {
+  it("renders the authoritative source slice, never just the model quote", async () => {
+    mocked.getCase.mockResolvedValue(
+      makeCase({
+        status: "PLAN_READY",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "r",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        active_plan_id: "plan-1",
+        plans: [
+          {
+            ...PLAN,
+            actions: [
+              {
+                ...ACTION,
+                policy_quote: "citation modèle",
+                matched_chunk_id: "chunk-1",
+                match_start: 0,
+                match_end: 10,
+                match_method: "exact",
+                match_score: 100,
+                source_quote: "Tranche source authentique.",
+                source_quote_error: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderCase();
+    expect(await screen.findByText(/Tranche source authentique\./)).toBeInTheDocument();
+    expect(screen.getByText(/citation localisée, pertinence à confirmer/)).toBeInTheDocument();
+    expect(screen.getByText(/Justification IA :/)).toBeInTheDocument();
+  });
+
+  it("fails closed when the source slice cannot be derived", async () => {
+    mocked.getCase.mockResolvedValue(
+      makeCase({
+        status: "PLAN_READY",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "r",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        active_plan_id: "plan-1",
+        plans: [
+          {
+            ...PLAN,
+            actions: [
+              {
+                ...ACTION,
+                policy_quote: "citation modèle",
+                source_quote: null,
+                source_quote_error: "offsets invalides",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderCase();
+    expect(
+      await screen.findByText(/Citation non affichable : offsets invalides/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/citation modèle/)).not.toBeInTheDocument();
+  });
+});
+
+describe("effectiveness with reassessment evidence", () => {
+  it("cites the selected reassessment in the request", async () => {
+    const doneAction = {
+      ...ACTION,
+      review_status: "CONFIRMED" as const,
+      review_action: "approve" as const,
+      description: ACTION.ai_description,
+      rationale: ACTION.ai_rationale,
+      owner_role: ACTION.ai_owner_role,
+      success_criterion: ACTION.ai_success_criterion,
+      priority: "haute" as const,
+      reviewed_at: "2026-07-10T09:02:00Z",
+      review_count: 1,
+      lifecycle: "DONE" as const,
+      effective_requirement_ids: ["A.9.2"],
+    };
+    mocked.getCase.mockResolvedValue(
+      makeCase({
+        status: "IN_PROGRESS",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "r",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        active_plan_id: "plan-1",
+        plans: [{ ...PLAN, actions: [doneAction] }],
+      }),
+    );
+    mocked.listReassessments.mockResolvedValue([
+      {
+        id: "re-1",
+        case_id: "case-1",
+        planned_assessment_id: "aid-9",
+        assessment_id: "aid-9",
+        selected_action_ids: ["act-1"],
+        included_requirement_ids: ["A.9.2"],
+        excluded_holdout_ids: [],
+        status: "LAUNCHED",
+        error: null,
+        actor_label: null,
+        created_at: "2026-07-10T10:00:00Z",
+      },
+    ]);
+    mocked.recordEffectiveness.mockResolvedValue({
+      ...doneAction,
+      effectiveness: "EFFECTIVE",
+    });
+    renderCase();
+    const select = await screen.findByLabelText("Réévaluation citée en preuve");
+    await userEvent.selectOptions(select, "re-1");
+    await userEvent.type(
+      screen.getByPlaceholderText("Preuve / justification (requise)"),
+      "Réévaluation favorable.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() =>
+      expect(mocked.recordEffectiveness).toHaveBeenCalledWith("org-1", "case-1", "act-1", {
+        effectiveness: "EFFECTIVE",
+        note: "Réévaluation favorable.",
+        reassessment_id: "re-1",
+      }),
+    );
   });
 });
 

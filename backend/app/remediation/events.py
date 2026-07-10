@@ -19,6 +19,60 @@ class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FindingSnapshot(_Payload):
+    """Finding review state as recorded on the link row."""
+
+    finding_id: str
+    is_primary: bool
+    link_source: str
+    finding_review_count: int
+    finding_human_verdict: str
+    finding_human_rationale: str | None = None
+    finding_requirement_id: str
+    finding_requirement_fr: str | None = None
+    finding_domain: str | None = None
+
+
+class TriageProjection(_Payload):
+    """Human triage projection values (cleared/set on the case)."""
+
+    classification: str | None = None
+    correction_note: str | None = None
+    scope: str | None = None
+    scope_rationale: str | None = None
+    triage_approved_at: str | None = None
+    triage_reviewer_label: str | None = None
+    approved_triage_draft_id: str | None = None
+
+
+class TriageEffective(_Payload):
+    """Effective human-approved triage fields written at approval."""
+
+    classification: str
+    correction_note: str | None = None
+    scope: str
+    scope_rationale: str
+
+
+class ActionProjection(_Payload):
+    """Action review projection before/after one review decision."""
+
+    review_status: str
+    review_action: str | None = None
+    description: str | None = None
+    rationale: str | None = None
+    owner_role: str | None = None
+    success_criterion: str | None = None
+    priority: str | None = None
+    lifecycle: str
+    effective_requirement_ids: list[str]
+
+
+class EffectivenessState(_Payload):
+    effectiveness: str
+    effectiveness_note: str | None = None
+
+
 class CaseCreated(_Payload):
     finding_id: str
     title: str
@@ -30,7 +84,7 @@ class FindingLinked(_Payload):
     is_primary: bool
     # finding review snapshot recorded on the link row (duplicated here so
     # the event stream alone reconstructs the case basis)
-    snapshot: dict
+    snapshot: FindingSnapshot
 
 
 class FindingLinkRejected(_Payload):
@@ -40,7 +94,7 @@ class FindingLinkRejected(_Payload):
 
 class FindingUnlinked(_Payload):
     finding_id: str
-    snapshot: dict
+    snapshot: FindingSnapshot
 
 
 class TriageDrafted(_Payload):
@@ -54,14 +108,14 @@ class TriageDrafted(_Payload):
 class TriageApproved(_Payload):
     triage_draft_id: str
     # effective human-approved projection written to the case
-    after: dict
+    after: TriageEffective
     # fields where the human overrode the AI draft
     overridden_fields: list[str]
 
 
 class TriageReopened(_Payload):
     # cleared projection values (preserved history)
-    before: dict
+    before: TriageProjection
     superseded_plan_id: str | None = None
 
 
@@ -98,10 +152,10 @@ class PlanDraftRecovered(_Payload):
 class ActionReviewed(_Payload):
     action_id: str
     review_action: str
-    before: dict
-    after: dict
+    before: ActionProjection
+    after: ActionProjection
     effective_requirement_ids: list[str]
-    # True when the human supplied requirement ids different from the AI list
+    # True when the effective scope differs from the AI proposal
     requirement_override: bool
 
 
@@ -123,8 +177,8 @@ class ReassessmentLaunched(_Payload):
 
 class EffectivenessRecorded(_Payload):
     action_id: str
-    before: dict
-    after: dict
+    before: EffectivenessState
+    after: EffectivenessState
     reassessment_id: str | None = None
 
 

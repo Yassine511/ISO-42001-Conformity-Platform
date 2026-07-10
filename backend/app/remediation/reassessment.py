@@ -223,7 +223,22 @@ def reconcile_pending(
     for record in pending:
         assessment = db.get(Assessment, record.planned_assessment_id)
         if assessment is None:
-            continue  # crash before create_assessment: retry will recreate
+            # crash BEFORE create_assessment: resume THIS record under its
+            # recorded planned id and manifest — never orphan it behind a
+            # fresh launch ("every crash window recoverable").
+            try:
+                create_assessment(
+                    session_factory,
+                    org_id,
+                    list(record.included_requirement_ids or []),
+                    assessment_id=record.planned_assessment_id,
+                )
+            except AssessmentAlreadyRunningError:
+                continue  # transient: stays PENDING, next reconciliation resumes
+            except Exception as exc:
+                _finalize(db, org_id, case_id, record.id, "LAUNCH_FAILED", str(exc), None)
+                continue
+            assessment = db.get(Assessment, record.planned_assessment_id)
         if assessment.organization_id != org_id or sorted(
             assessment.requirement_ids or []
         ) != sorted(record.included_requirement_ids):

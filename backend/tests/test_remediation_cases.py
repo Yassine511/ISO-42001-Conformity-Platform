@@ -357,6 +357,17 @@ def test_abstained_draft_approval_requires_all_fields(client, gap_env):
     assert client.post(
         _url(org_id, case_id, "/triage/approve"), json={"triage_draft_id": draft_id}
     ).status_code == 422
+    # correction_note included: all four human fields are required
+    r = client.post(
+        _url(org_id, case_id, "/triage/approve"),
+        json={
+            "triage_draft_id": draft_id,
+            "classification": "nonconformity",
+            "scope": "local",
+            "scope_rationale": "Écart isolé.",
+        },
+    )
+    assert r.status_code == 422 and "correction_note" in r.json()["detail"]
     r = client.post(
         _url(org_id, case_id, "/triage/approve"),
         json={

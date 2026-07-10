@@ -427,7 +427,10 @@ def approve_triage(
         "scope": scope or draft.ai_scope,
         "scope_rationale": scope_rationale or draft.ai_scope_rationale,
     }
-    missing = [k for k in ("classification", "scope", "scope_rationale") if not effective[k]]
+    # A VERIFIED draft always carries a correction note; on an ABSTAINED
+    # draft the human supplies EVERY field, correction note included.
+    required = ("classification", "correction_note", "scope", "scope_rationale")
+    missing = [k for k in required if not effective[k]]
     if missing:
         db.rollback()
         raise RemediationInvalidError(

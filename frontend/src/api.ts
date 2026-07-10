@@ -364,6 +364,13 @@ export interface RemediationAction {
   effectiveness_note: string | null;
   effectiveness_recorded_at: string | null;
   created_at: string;
+  // human-approved effective scope (remediation_action_requirements) — the
+  // authoritative projection, distinct from ai_impacted_requirement_ids
+  effective_requirement_ids: string[];
+  // AUTHORITATIVE citation display text: raw source slice at the persisted
+  // offsets, fail-closed (render THIS, never policy_quote)
+  source_quote: string | null;
+  source_quote_error: string | null;
 }
 
 export interface RemediationPlan {

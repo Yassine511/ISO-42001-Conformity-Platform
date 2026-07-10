@@ -133,6 +133,11 @@ def test_verified_plan_with_bound_exact_quote(client, approved_case):
     assert action["policy_quote"] == QUOTE
     assert action["match_method"] == "exact"
     assert action["matched_chunk_id"]  # bound to the claimed source
+    # fail-closed display path: the AUTHORITATIVE raw source slice is served
+    # (equal to the verbatim quote here), never just the model string
+    assert action["source_quote"] == QUOTE
+    assert action["source_quote_error"] is None
+    assert action["effective_requirement_ids"] == []  # no human review yet
     assert action["lifecycle"] == "PROPOSED" and action["review_status"] == "PENDING"
     # case activated the plan and returned to PLAN_READY with the lease cleared
     detail = client.get(_url(org_id, case_id)).json()

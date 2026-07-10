@@ -111,6 +111,57 @@ def test_validate_payload_rejects_bad_shape_and_unknown_type():
         ev.validate_payload("case_exploded", {})
 
 
+def test_nested_event_payloads_are_typed():
+    """Snapshots and before/after projections validate structurally — a
+    garbage nested dict is rejected, not stored."""
+    with pytest.raises(ValidationError):
+        ev.validate_payload(
+            "action_reviewed",
+            {
+                "action_id": "a1",
+                "review_action": "approve",
+                "before": {"garbage": 1},
+                "after": {},
+                "effective_requirement_ids": [],
+                "requirement_override": False,
+            },
+        )
+    projection = {
+        "review_status": "PENDING",
+        "review_action": None,
+        "description": None,
+        "rationale": None,
+        "owner_role": None,
+        "success_criterion": None,
+        "priority": None,
+        "lifecycle": "PROPOSED",
+        "effective_requirement_ids": [],
+    }
+    ok = ev.validate_payload(
+        "action_reviewed",
+        {
+            "action_id": "a1",
+            "review_action": "approve",
+            "before": projection,
+            "after": {**projection, "review_status": "CONFIRMED",
+                      "review_action": "approve", "description": "d",
+                      "rationale": "r", "owner_role": "o",
+                      "success_criterion": "s", "priority": "haute",
+                      "lifecycle": "APPROVED",
+                      "effective_requirement_ids": ["A.9.2"]},
+            "effective_requirement_ids": ["A.9.2"],
+            "requirement_override": False,
+        },
+    )
+    assert ok["after"]["priority"] == "haute"
+    with pytest.raises(ValidationError):
+        ev.validate_payload(
+            "finding_linked",
+            {"finding_id": "f1", "link_source": "creation", "is_primary": True,
+             "snapshot": {"garbage": 1}},
+        )
+
+
 def test_prompt_blocks_json_escape_injected_content():
     """Document-derived text with fake block markers/quotes stays inert: it is
     JSON-escaped inside the data blocks, and the raw marker text cannot appear

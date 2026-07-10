@@ -18,6 +18,7 @@ from app.remediation.service import (
     RemediationInvalidError,
     RemediationNotFoundError,
 )
+from app.services.provenance import source_slice
 from app.schemas import (
     RemediationActorBody,
     RemediationCaseCreate,
@@ -86,9 +87,35 @@ def _case_payload(db: Session, case: RemediationCase, *, detail: bool = False) -
 
 def _plan_payload(plan) -> dict:
     body = RemediationPlanOut.model_validate(plan).model_dump()
-    body["actions"] = [
-        RemediationActionOut.model_validate(a).model_dump() for a in plan.actions
+    body["actions"] = [_action_payload(a, plan) for a in plan.actions]
+    return body
+
+
+def _action_payload(action, plan=None) -> dict:
+    """Action + the human-approved effective scope + the AUTHORITATIVE
+    citation display text: a raw source slice at the persisted offsets via
+    source_slice() (fail-closed — never the model's policy_quote)."""
+    body = RemediationActionOut.model_validate(action).model_dump()
+    body["effective_requirement_ids"] = [
+        r.requirement_id for r in action.requirements
     ]
+    source_quote = source_quote_error = None
+    if action.matched_chunk_id is not None:
+        plan = plan if plan is not None else action.plan
+        source = next(
+            (
+                item
+                for item in (plan.retrieved or [])
+                if item.get("result_id") == action.matched_chunk_id
+            ),
+            {},
+        )
+        match = {"match_start": action.match_start, "match_end": action.match_end}
+        source_quote, source_quote_error = source_slice(
+            source, match, action.policy_quote
+        )
+    body["source_quote"] = source_quote
+    body["source_quote_error"] = source_quote_error
     return body
 
 
@@ -236,7 +263,6 @@ def draft_plan(
 
 @router.post(
     "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/review",
-    response_model=RemediationActionOut,
 )
 def review_action(
     org_id: str,
@@ -246,7 +272,7 @@ def review_action(
     db: Session = Depends(get_db),
 ):
     _get_org(db, org_id)
-    return _run(
+    row = _run(
         actions.review_action,
         db,
         org_id,
@@ -262,11 +288,11 @@ def review_action(
         review_note=body.review_note,
         reviewer_label=body.reviewer_label,
     )
+    return _action_payload(row)
 
 
 @router.post(
     "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/lifecycle",
-    response_model=RemediationActionOut,
 )
 def change_lifecycle(
     org_id: str,
@@ -276,7 +302,7 @@ def change_lifecycle(
     db: Session = Depends(get_db),
 ):
     _get_org(db, org_id)
-    return _run(
+    row = _run(
         actions.change_lifecycle,
         db,
         org_id,
@@ -285,11 +311,11 @@ def change_lifecycle(
         lifecycle=body.lifecycle,
         actor_label=body.actor_label,
     )
+    return _action_payload(row)
 
 
 @router.post(
     "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/effectiveness",
-    response_model=RemediationActionOut,
 )
 def record_effectiveness(
     org_id: str,
@@ -299,7 +325,7 @@ def record_effectiveness(
     db: Session = Depends(get_db),
 ):
     _get_org(db, org_id)
-    return _run(
+    row = _run(
         actions.record_effectiveness,
         db,
         org_id,
@@ -310,6 +336,7 @@ def record_effectiveness(
         reassessment_id=body.reassessment_id,
         actor_label=body.actor_label,
     )
+    return _action_payload(row)
 
 
 @router.post(

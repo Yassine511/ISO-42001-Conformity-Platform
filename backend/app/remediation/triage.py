@@ -114,13 +114,17 @@ def _similar_findings(db: Session, org_id: str, linked_ids: set[str]) -> list[di
 
 
 def _similar_corpus(db: Session, org_id: str, query: str) -> list[dict]:
-    """Corpus arm of the similar-gap search (hybrid retrieval, policy scope)."""
-    results = [asdict(i) for i in hybrid_search(db, org_id, query, k=5, scope="policy")]
+    """Corpus arm of the similar-gap search: hybrid retrieval over BOTH the
+    policy corpus and the ISO KB (spec §8 — similar gaps may surface either
+    as policy passages or as related requirements)."""
+    results = [asdict(i) for i in hybrid_search(db, org_id, query, k=5, scope="both")]
     return [
         {
             "source_id": r["result_id"],
+            "type": r.get("source_type"),
             "document": r.get("filename"),
             "page": r.get("page_number"),
+            "exigence": r.get("requirement_id"),
             "texte": r["text"],
         }
         for r in results

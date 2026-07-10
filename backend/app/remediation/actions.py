@@ -166,7 +166,6 @@ def review_action(
             row.rationale = row.ai_rationale
             row.owner_role = row.ai_owner_role
             row.success_criterion = row.ai_success_criterion
-            effective_ids = list(row.ai_impacted_requirement_ids)
         else:  # edit: human text wins; omitted fields keep the AI values
             row.description = (description or "").strip() or row.ai_description
             row.rationale = (rationale or "").strip() or row.ai_rationale
@@ -174,13 +173,19 @@ def review_action(
             row.success_criterion = (
                 (success_criterion or "").strip() or row.ai_success_criterion
             )
-            if impacted_requirement_ids is not None:
-                effective_ids = impacted_requirement_ids
-                requirement_override = (
-                    sorted(effective_ids) != sorted(row.ai_impacted_requirement_ids)
-                )
-            else:
-                effective_ids = list(row.ai_impacted_requirement_ids)
+        # Effective requirement scope: an OMITTED list never silently reverts
+        # a previous human decision — on re-review it preserves the current
+        # effective rows; only the initial review defaults to the AI proposal.
+        current_ids = [r.requirement_id for r in row.requirements]
+        if impacted_requirement_ids is not None:
+            effective_ids = impacted_requirement_ids
+        elif current_ids:
+            effective_ids = current_ids
+        else:
+            effective_ids = list(row.ai_impacted_requirement_ids)
+        requirement_override = sorted(effective_ids) != sorted(
+            row.ai_impacted_requirement_ids
+        )
         # validate + snapshot the effective scope against the live KB (the
         # human owns an override, but it must still name real requirements)
         if not effective_ids:

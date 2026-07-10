@@ -398,6 +398,28 @@ function TriagePanel({
         <p className="text-sm text-slate-500">Aucune proposition de triage.</p>
       )}
 
+      {c.triage_drafts.length > 1 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+            Historique des propositions ({c.triage_drafts.length})
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {c.triage_drafts.map((d) => (
+              <li key={d.id} className="flex flex-wrap gap-2 text-xs text-slate-600">
+                <span className="font-mono">n°{d.sequence}</span>
+                <span>{d.status}</span>
+                {d.abstain_reason && <span>({d.abstain_reason})</span>}
+                {d.id === c.approved_triage_draft_id && (
+                  <span className="text-emerald-700">approuvée</span>
+                )}
+                <span className="text-slate-400">
+                  {new Date(d.created_at).toLocaleString("fr-FR")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {approved && ["TRIAGE_APPROVED", "PLAN_READY"].includes(c.status) && (
         <button
           onClick={() => reopen.mutate()}
@@ -499,6 +521,37 @@ function PlanPanel({
           </ul>
         </div>
       )}
+      {c.plans.length > (activePlan ? 1 : 0) && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+            Historique des plans ({c.plans.length})
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {c.plans.map((p) => (
+              <li key={p.id} className="flex flex-wrap gap-2 text-xs text-slate-600">
+                <span className="font-mono">n°{p.sequence}</span>
+                <span>{p.status}</span>
+                {p.abstain_reason && <span>({p.abstain_reason})</span>}
+                {p.status === "SUPERSEDED" && (
+                  <span className="text-amber-700">
+                    remplacé
+                    {p.superseded_by_plan_id
+                      ? ` par le plan ${
+                          c.plans.find((q) => q.id === p.superseded_by_plan_id)?.sequence ??
+                          "?"
+                        }`
+                      : " (réouverture du triage)"}
+                    {p.superseded_at
+                      ? ` le ${new Date(p.superseded_at).toLocaleDateString("fr-FR")}`
+                      : ""}
+                  </span>
+                )}
+                {p.id === c.active_plan_id && <span className="text-emerald-700">actif</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <ErrorText error={draft.error} />
     </section>
   );
@@ -518,11 +571,27 @@ function ActionCard({
   const [reviewAction, setReviewAction] = useState<"approve" | "edit" | "reject" | null>(null);
   const [priority, setPriority] = useState<"haute" | "normale" | "basse">("normale");
   const [description, setDescription] = useState("");
-  const [scopeIds, setScopeIds] = useState("");
+  // prefilled with the CURRENT effective scope: an untouched field re-submits
+  // the human decision, never silently reverts to the AI proposal
+  const [scopeIds, setScopeIds] = useState(
+    (a.effective_requirement_ids?.length
+      ? a.effective_requirement_ids
+      : a.ai_impacted_requirement_ids
+    ).join(", "),
+  );
   const [effNote, setEffNote] = useState("");
   const [effVerdict, setEffVerdict] = useState<
     "EFFECTIVE" | "PARTIALLY_EFFECTIVE" | "INEFFECTIVE"
   >("EFFECTIVE");
+  const [effReassessment, setEffReassessment] = useState<string>("");
+  const reassessments = useQuery({
+    queryKey: ["reassessments", orgId, c.id],
+    queryFn: () => api.listReassessments(orgId, c.id),
+    enabled: a.lifecycle === "DONE" && c.status !== "CLOSED",
+  });
+  const citable = (reassessments.data ?? []).filter(
+    (r) => r.status === "LAUNCHED" && r.selected_action_ids.includes(a.id),
+  );
 
   const review = useMutation({
     mutationFn: () =>
@@ -551,6 +620,7 @@ function ActionCard({
       api.recordEffectiveness(orgId, c.id, a.id, {
         effectiveness: effVerdict,
         note: effNote.trim(),
+        reassessment_id: effReassessment || null,
       }),
     onSuccess: onChanged,
   });
@@ -580,12 +650,33 @@ function ActionCard({
         )}
       </div>
       <p>{a.description ?? a.ai_description}</p>
+      <p className="text-xs text-slate-500">Justification IA : {a.ai_rationale}</p>
       <p className="text-xs text-slate-500">
         Rôle suggéré : {a.owner_role ?? a.ai_owner_role} · Critère de succès :{" "}
         {a.success_criterion ?? a.ai_success_criterion}
       </p>
+      {a.policy_quote &&
+        (a.source_quote ? (
+          <blockquote className="border-l-2 border-indigo-300 pl-3 text-xs text-slate-600">
+            « {a.source_quote} »
+            <span className="ml-1 text-slate-400">
+              (citation localisée, pertinence à confirmer)
+            </span>
+          </blockquote>
+        ) : (
+          <p className="text-xs text-red-600">
+            Citation non affichable : {a.source_quote_error ?? "provenance invalide"}
+          </p>
+        ))}
       <p className="text-xs text-slate-500">
         Exigences visées (proposition IA) : {a.ai_impacted_requirement_ids.join(", ")}
+        {a.effective_requirement_ids?.length > 0 && (
+          <>
+            {" "}
+            · Périmètre effectif (décision humaine) :{" "}
+            {a.effective_requirement_ids.join(", ")}
+          </>
+        )}
       </p>
 
       {reviewable && (
@@ -705,6 +796,22 @@ function ActionCard({
               <option value="PARTIALLY_EFFECTIVE">Partiellement efficace</option>
               <option value="INEFFECTIVE">Inefficace</option>
             </select>
+            {citable.length > 0 && (
+              <select
+                value={effReassessment}
+                onChange={(e) => setEffReassessment(e.target.value)}
+                aria-label="Réévaluation citée en preuve"
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              >
+                <option value="">Sans réévaluation (preuve externe)</option>
+                {citable.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Réévaluation du {new Date(r.created_at).toLocaleDateString("fr-FR")} (
+                    {r.included_requirement_ids.join(", ")})
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               value={effNote}
               onChange={(e) => setEffNote(e.target.value)}

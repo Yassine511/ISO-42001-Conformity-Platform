@@ -158,6 +158,35 @@ def test_reject_clears_effective_fields_and_terminates(client, plan_case):
     assert _lifecycle(client, org_id, case_id, action_id, "IN_PROGRESS").status_code == 409
 
 
+def test_re_review_with_omitted_scope_preserves_the_human_decision(client, plan_case):
+    """An omitted impacted_requirement_ids on re-review keeps the CURRENT
+    effective rows — it never silently reverts to the AI proposal — and the
+    action payload exposes the authoritative effective scope."""
+    org_id, case_id, action_id = plan_case
+    holdout = _holdout_id()
+    r = _review(
+        client, org_id, case_id, action_id,
+        action="edit", priority="haute",
+        impacted_requirement_ids=["A.9.2", holdout],
+    )
+    assert sorted(r.json()["effective_requirement_ids"]) == sorted(["A.9.2", holdout])
+    # re-review WITHOUT ids: human scope preserved, override still recorded
+    r = _review(client, org_id, case_id, action_id, action="approve", priority="normale")
+    assert r.status_code == 200
+    assert sorted(r.json()["effective_requirement_ids"]) == sorted(["A.9.2", holdout])
+    detail = client.get(_url(org_id, case_id)).json()
+    last_review = [
+        e for e in detail["events"] if e["event_type"] == "action_reviewed"
+    ][-1]
+    assert last_review["payload"]["requirement_override"] is True
+    # explicit ids still replace
+    r = _review(
+        client, org_id, case_id, action_id,
+        action="edit", priority="haute", impacted_requirement_ids=["A.9.2"],
+    )
+    assert r.json()["effective_requirement_ids"] == ["A.9.2"]
+
+
 def test_re_review_only_while_approved_and_write_once_ai(client, plan_case):
     org_id, case_id, action_id = plan_case
     _review(client, org_id, case_id, action_id, action="approve", priority="haute")
@@ -390,16 +419,49 @@ def test_pending_reassessment_reconciled_after_crash(client, plan_case, monkeypa
     assert record["assessment_id"] == planned
 
 
-def test_pending_without_assessment_stays_pending(client, plan_case):
-    """Crash BEFORE create_assessment: nothing to reconnect, the record stays
-    PENDING (a retry recreates the assessment under the same planned id)."""
+def test_pending_without_assessment_is_resumed_under_its_planned_id(client, plan_case):
+    """Crash BEFORE create_assessment: reconciliation resumes THIS record —
+    the assessment is created under the recorded planned id and manifest,
+    then launched. The record is never orphaned behind a fresh launch."""
     org_id, case_id, action_id = plan_case
     _to_done(client, org_id, case_id, action_id)
+    planned = "id-planifie-jamais-cree"
     db = client.session_factory()
     db.add(
         RemediationReassessment(
             case_id=case_id,
-            planned_assessment_id="jamais-cree",
+            planned_assessment_id=planned,
+            selected_action_ids=[action_id],
+            included_requirement_ids=["A.9.2"],
+            excluded_holdout_ids=[],
+            status="PENDING",
+        )
+    )
+    db.commit()
+    db.close()
+    (record,) = client.get(_url(org_id, case_id, "/reassessments")).json()
+    assert record["status"] == "LAUNCHED"
+    assert record["assessment_id"] == planned
+    db = client.session_factory()
+    assessment = db.get(Assessment, planned)
+    assert assessment is not None and assessment.requirement_ids == ["A.9.2"]
+    db.close()
+
+
+def test_pending_resume_blocked_by_running_org_stays_pending(client, plan_case):
+    """Crash-before-create with another assessment RUNNING: the resume is
+    transient-blocked and the record stays PENDING for the next
+    reconciliation — never LAUNCH_FAILED for a temporary conflict."""
+    org_id, case_id, action_id = plan_case
+    _to_done(client, org_id, case_id, action_id)
+    from app.pipeline.graph import create_assessment
+
+    create_assessment(client.session_factory, org_id, ["A.9.2"])  # occupies the slot
+    db = client.session_factory()
+    db.add(
+        RemediationReassessment(
+            case_id=case_id,
+            planned_assessment_id="planifie-bloque",
             selected_action_ids=[action_id],
             included_requirement_ids=["A.9.2"],
             excluded_holdout_ids=[],
