@@ -77,8 +77,12 @@ cd backend && .venv/Scripts/python -m pytest -q
 # corpus consistency (KB/gold/documents cross-checks; also runs under pytest)
 backend/.venv/Scripts/python scripts/validate_corpus.py
 
-# retrieval quality gates (needs live postgres+qdrant and the indexed corpus)
-backend/.venv/Scripts/python scripts/retrieval_sanity.py --org "Lumen AI"
+# retrieval quality gates (needs live postgres+qdrant and the indexed corpus;
+# use the clean eval org — the demo "Lumen AI" org has an extra upload and fails
+# the six-document checksum baseline. Host runs also need
+# FASTEMBED_CACHE_DIR="C:\Users\Yassine El Gares\.cache\fastembed" — HF downloads
+# are SSL-blocked on this machine; the model was copied out of the Docker volume)
+backend/.venv/Scripts/python scripts/retrieval_sanity.py --org "Lumen AI (eval M6)"
 
 # full stack — frontend :5173, API :8000/docs, postgres host-port 5433, qdrant :6333
 docker compose up --build -d
