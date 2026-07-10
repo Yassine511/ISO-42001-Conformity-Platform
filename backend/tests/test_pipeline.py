@@ -86,8 +86,17 @@ class FakeLLM:
     def call_count(self) -> int:
         return len(self.requests)
 
-    def complete_json(self, messages, *, json_schema=None, schema_name="draft_finding"):
+    def complete_json(
+        self,
+        messages,
+        *,
+        json_schema=None,
+        schema_name="draft_finding",
+        on_call_finished=None,
+    ):
         self.requests.append(messages)
+        if on_call_finished is not None:  # honour the lease-heartbeat contract
+            on_call_finished()
         content = self.scripts.pop(0)
         now = "2026-07-04T00:00:00+00:00"
         if content is None:

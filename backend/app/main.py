@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app import models  # noqa: F401 — register tables on Base metadata
-from app.api import assessments, chat, documents, organizations, retrieval
+from app.api import assessments, chat, documents, organizations, remediation, retrieval
 from app.config import settings
 from app.db import Base, engine, get_db
 from app.services import qdrant
@@ -99,6 +99,7 @@ app.include_router(documents.router)
 app.include_router(retrieval.router)
 app.include_router(chat.router)
 app.include_router(assessments.router)
+app.include_router(remediation.router)
 
 
 @app.get("/api/health")

@@ -419,3 +419,138 @@ class FindingDetailOut(FindingSummaryOut):
     reviewed_at: datetime | None
     review_count: int
     reviews: list[FindingReviewOut]
+
+
+# ------------------------------------------------------------ M7a remediation
+
+
+class RemediationCaseCreate(BaseModel):
+    finding_id: str
+    title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = None
+    link_note: str | None = None
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationLinkDecision(BaseModel):
+    finding_id: str
+    decision: Literal["link", "reject"]
+    link_source: Literal["search_suggested", "manual"] = "manual"
+    link_note: str | None = None
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationTriageApprove(BaseModel):
+    # explicit draft id — approval never targets an implicit "latest"
+    triage_draft_id: str
+    # omitted fields accept the AI draft; provided fields override it
+    classification: Literal[
+        "evidence_gap", "observation", "improvement_opportunity", "nonconformity"
+    ] | None = None
+    correction_note: str | None = None
+    scope: Literal["local", "related_requirements", "organization_wide"] | None = None
+    scope_rationale: str | None = None
+    reviewer_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationActorBody(BaseModel):
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationCloseBody(BaseModel):
+    close_note: str
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationCaseFindingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    finding_id: str
+    is_primary: bool
+    link_source: str
+    link_note: str | None
+    linker_label: str | None
+    finding_review_count: int
+    finding_human_verdict: str
+    finding_human_rationale: str | None
+    finding_requirement_id: str
+    finding_requirement_fr: str | None
+    finding_domain: str | None
+    created_at: datetime
+
+
+class RemediationTriageDraftOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    sequence: int
+    status: str
+    abstain_reason: str | None
+    ai_classification: str | None
+    ai_correction_note: str | None
+    ai_scope: str | None
+    ai_scope_rationale: str | None
+    input_evidence_revision: int
+    input_finding_links: list
+    similar_findings: list
+    similar_corpus: list
+    draft_attempts: int
+    prompt_version: str
+    corpus_version: str
+    final_model: str | None
+    final_provider: str | None
+    created_at: datetime
+
+
+class RemediationEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence: int
+    event_type: str
+    payload: dict
+    payload_version: int
+    # free-text, EXPLICITLY UNVERIFIED (no identity layer by design)
+    actor_label: str | None
+    created_at: datetime
+
+
+class RemediationCaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    organization_id: str
+    title: str
+    status: str
+    classification: str | None
+    correction_note: str | None
+    scope: str | None
+    scope_rationale: str | None
+    triage_approved_at: datetime | None
+    triage_reviewer_label: str | None
+    approved_triage_draft_id: str | None
+    active_plan_id: str | None
+    evidence_revision: int
+    closed_at: datetime | None
+    close_note: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RemediationLinkSuggestionOut(BaseModel):
+    finding_id: str
+    assessment_id: str
+    requirement_id: str
+    requirement_fr: str | None
+    domain: str | None
+    human_verdict: str
+    human_rationale: str | None
+    same_domain: bool
