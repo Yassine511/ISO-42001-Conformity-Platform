@@ -3,6 +3,8 @@ import HomePage from "./pages/HomePage";
 import OrganizationPage from "./pages/OrganizationPage";
 import ReviewWorkspacePage from "./pages/ReviewWorkspacePage";
 import ChatPage from "./pages/ChatPage";
+import RemediationListPage from "./pages/RemediationListPage";
+import RemediationCasePage from "./pages/RemediationCasePage";
 
 export default function App() {
   return (
@@ -26,6 +28,11 @@ export default function App() {
             element={<ReviewWorkspacePage />}
           />
           <Route path="/organizations/:orgId/chat/:conversationId?" element={<ChatPage />} />
+          <Route path="/organizations/:orgId/remediation" element={<RemediationListPage />} />
+          <Route
+            path="/organizations/:orgId/remediation/:caseId"
+            element={<RemediationCasePage />}
+          />
         </Routes>
       </main>
     </div>

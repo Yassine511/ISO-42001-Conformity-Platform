@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -391,6 +391,28 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
   );
 }
 
+function OpenRemediationCase({ orgId, findingId }: { orgId: string; findingId: string }) {
+  const navigate = useNavigate();
+  const create = useMutation({
+    mutationFn: () => api.createCase(orgId, { finding_id: findingId }),
+    onSuccess: (c) => navigate(`/organizations/${orgId}/remediation/${c.id}`),
+  });
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => create.mutate()}
+        disabled={create.isPending}
+        className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+      >
+        {create.isPending ? "Ouverture…" : "Ouvrir un cas de remédiation"}
+      </button>
+      {create.isError && (
+        <p className="mt-1 text-xs text-red-600">{(create.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
 function ReviewSection({
   orgId,
   assessmentId,
@@ -456,6 +478,9 @@ function ReviewSection({
             côté, jamais à sa place. Vous pouvez réviser votre décision : l'historique conserve
             chaque version.
           </p>
+          {["partial", "non_compliant", "missing"].includes(f.human_verdict ?? "") && (
+            <OpenRemediationCase orgId={orgId} findingId={f.id} />
+          )}
         </div>
       )}
 

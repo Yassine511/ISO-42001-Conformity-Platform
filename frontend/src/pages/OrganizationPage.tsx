@@ -31,12 +31,20 @@ export default function OrganizationPage() {
         <Link to="/" className="text-sm text-indigo-600 hover:underline">
           ← Organisations
         </Link>
+        <div className="flex gap-2">
+        <Link
+          to={`/organizations/${orgId}/remediation`}
+          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+        >
+          🛠 Remédiation
+        </Link>
         <Link
           to={`/organizations/${orgId}/chat`}
           className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
         >
           💬 Copilote
         </Link>
+        </div>
       </div>
       <DocumentsSection orgId={orgId!} />
       <AssessmentsSection orgId={orgId!} />

@@ -259,6 +259,197 @@ export interface ChatMessage {
   created_at: string;
 }
 
+// ----------------------------------------------------------- remediation
+
+export type CaseStatus =
+  | "TRIAGE"
+  | "TRIAGE_APPROVED"
+  | "PLANNING"
+  | "PLAN_READY"
+  | "IN_PROGRESS"
+  | "CLOSED";
+export type Classification =
+  | "evidence_gap"
+  | "observation"
+  | "improvement_opportunity"
+  | "nonconformity";
+export type RemediationScope = "local" | "related_requirements" | "organization_wide";
+export type ActionLifecycle =
+  | "PROPOSED"
+  | "APPROVED"
+  | "REJECTED"
+  | "IN_PROGRESS"
+  | "DONE"
+  | "CANCELLED";
+export type Effectiveness =
+  | "NOT_CHECKED"
+  | "EFFECTIVE"
+  | "PARTIALLY_EFFECTIVE"
+  | "INEFFECTIVE";
+// Operational aborts are audit rows (never activated) — rendered neutrally,
+// unlike completed drafting abstentions.
+export const OPERATIONAL_ABORT_REASONS = ["retrieval_error", "draft_interrupted"] as const;
+
+export interface CaseFindingLink {
+  finding_id: string;
+  is_primary: boolean;
+  link_source: "creation" | "search_suggested" | "manual";
+  link_note: string | null;
+  linker_label: string | null;
+  finding_review_count: number;
+  finding_human_verdict: Verdict;
+  finding_human_rationale: string | null;
+  finding_requirement_id: string;
+  finding_requirement_fr: string | null;
+  finding_domain: string | null;
+  created_at: string;
+}
+
+export interface TriageDraft {
+  id: string;
+  sequence: number;
+  status: "VERIFIED" | "ABSTAINED";
+  abstain_reason: string | null;
+  ai_classification: Classification | null;
+  ai_correction_note: string | null;
+  ai_scope: RemediationScope | null;
+  ai_scope_rationale: string | null;
+  input_evidence_revision: number;
+  input_finding_links: Record<string, unknown>[];
+  similar_findings: Record<string, unknown>[];
+  similar_corpus: Record<string, unknown>[];
+  draft_attempts: number;
+  prompt_version: string;
+  corpus_version: string;
+  final_model: string | null;
+  final_provider: string | null;
+  created_at: string;
+}
+
+export interface RemediationAction {
+  id: string;
+  plan_id: string;
+  position: number;
+  action_type:
+    | "document_amendment"
+    | "new_document"
+    | "process_change"
+    | "training"
+    | "risk_treatment_update"
+    | "other";
+  ai_description: string;
+  ai_rationale: string;
+  ai_owner_role: string;
+  ai_success_criterion: string;
+  ai_impacted_requirement_ids: string[];
+  policy_quote: string | null;
+  matched_chunk_id: string | null;
+  match_start: number | null;
+  match_end: number | null;
+  match_method: string | null;
+  match_score: number | null;
+  review_status: "PENDING" | "CONFIRMED";
+  review_action: "approve" | "edit" | "reject" | null;
+  description: string | null;
+  rationale: string | null;
+  owner_role: string | null;
+  success_criterion: string | null;
+  priority: "haute" | "normale" | "basse" | null;
+  review_note: string | null;
+  reviewer_label: string | null;
+  reviewed_at: string | null;
+  review_count: number;
+  lifecycle: ActionLifecycle;
+  effectiveness: Effectiveness;
+  effectiveness_note: string | null;
+  effectiveness_recorded_at: string | null;
+  created_at: string;
+}
+
+export interface RemediationPlan {
+  id: string;
+  case_id: string;
+  sequence: number;
+  status: "VERIFIED" | "ABSTAINED" | "SUPERSEDED";
+  abstain_reason: string | null;
+  superseded_at: string | null;
+  superseded_by_plan_id: string | null;
+  gap_restatement: string | null;
+  root_cause_hypotheses: { label: string; hypothesis: string }[] | null;
+  draft_attempts: number;
+  prompt_version: string;
+  corpus_version: string;
+  final_model: string | null;
+  final_provider: string | null;
+  input_finding_links: Record<string, unknown>[];
+  input_triage_snapshot: Record<string, unknown>;
+  allowed_requirement_ids: string[];
+  input_kb: Record<string, { requirement_fr: string; domain: string | null }>;
+  created_at: string;
+  actions: RemediationAction[];
+}
+
+export interface RemediationEvent {
+  sequence: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  payload_version: number;
+  actor_label: string | null; // free text, explicitly unverified
+  created_at: string;
+}
+
+export interface RemediationCase {
+  id: string;
+  organization_id: string;
+  title: string;
+  status: CaseStatus;
+  classification: Classification | null;
+  correction_note: string | null;
+  scope: RemediationScope | null;
+  scope_rationale: string | null;
+  triage_approved_at: string | null;
+  triage_reviewer_label: string | null;
+  approved_triage_draft_id: string | null;
+  active_plan_id: string | null;
+  evidence_revision: number;
+  closed_at: string | null;
+  close_note: string | null;
+  created_at: string;
+  updated_at: string;
+  finding_links: CaseFindingLink[];
+}
+
+export interface RemediationCaseDetail extends RemediationCase {
+  triage_drafts: TriageDraft[];
+  plans: RemediationPlan[];
+  events: RemediationEvent[];
+}
+
+export interface LinkSuggestion {
+  finding_id: string;
+  assessment_id: string;
+  requirement_id: string;
+  requirement_fr: string | null;
+  domain: string | null;
+  human_verdict: Verdict;
+  human_rationale: string | null;
+  same_domain: boolean;
+}
+
+export interface Reassessment {
+  id: string;
+  case_id: string;
+  planned_assessment_id: string;
+  assessment_id: string | null;
+  selected_action_ids: string[];
+  included_requirement_ids: string[];
+  excluded_holdout_ids: string[];
+  status: "PENDING" | "LAUNCHED" | "LAUNCH_FAILED";
+  error: string | null;
+  actor_label: string | null;
+  created_at: string;
+}
+
 // Abstentions caused by provider infrastructure — rendered as neutral
 // service failures, never as amber "needs your judgment".
 export const INFRA_ABSTAIN_REASONS = ["llm_error", "rate_limited"] as const;
@@ -333,6 +524,128 @@ export const api = {
       `/api/organizations/${orgId}/assessments/${assessmentId}/findings/${findingId}/review`,
       decision,
     ).then((r) => json<FindingDetail>(r)),
+
+  // remediation
+  listCases: (orgId: string) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases`).then((r) =>
+      json<RemediationCase[]>(r),
+    ),
+  getCase: (orgId: string, caseId: string) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}`).then((r) =>
+      json<RemediationCaseDetail>(r),
+    ),
+  createCase: (orgId: string, body: { finding_id: string; title?: string }) =>
+    post(`/api/organizations/${orgId}/remediation-cases`, body).then((r) =>
+      json<RemediationCaseDetail>(r),
+    ),
+  linkSuggestions: (orgId: string, caseId: string) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}/link-suggestions`).then(
+      (r) => json<LinkSuggestion[]>(r),
+    ),
+  linkFinding: (
+    orgId: string,
+    caseId: string,
+    body: {
+      finding_id: string;
+      decision: "link" | "reject";
+      link_source?: "search_suggested" | "manual";
+      link_note?: string;
+    },
+  ) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/findings`, body).then(
+      (r) => json<RemediationCaseDetail>(r),
+    ),
+  unlinkFinding: (orgId: string, caseId: string, findingId: string) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}/findings/${findingId}`, {
+      method: "DELETE",
+    }).then((r) => json<RemediationCaseDetail>(r)),
+  redraftTriage: (orgId: string, caseId: string) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/triage/redraft`, {}).then(
+      (r) => json<TriageDraft>(r),
+    ),
+  approveTriage: (
+    orgId: string,
+    caseId: string,
+    body: {
+      triage_draft_id: string;
+      classification?: Classification;
+      correction_note?: string;
+      scope?: RemediationScope;
+      scope_rationale?: string;
+      reviewer_label?: string;
+    },
+  ) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/triage/approve`, body).then(
+      (r) => json<RemediationCaseDetail>(r),
+    ),
+  reopenTriage: (orgId: string, caseId: string) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/triage/reopen`, {}).then(
+      (r) => json<RemediationCaseDetail>(r),
+    ),
+  draftPlan: (orgId: string, caseId: string) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/plans`, {}).then((r) =>
+      json<RemediationPlan>(r),
+    ),
+  reviewAction: (
+    orgId: string,
+    caseId: string,
+    actionId: string,
+    body: {
+      action: "approve" | "edit" | "reject";
+      description?: string;
+      rationale?: string;
+      owner_role?: string;
+      success_criterion?: string;
+      priority?: "haute" | "normale" | "basse";
+      impacted_requirement_ids?: string[];
+      review_note?: string;
+      reviewer_label?: string;
+    },
+  ) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/review`,
+      body,
+    ).then((r) => json<RemediationAction>(r)),
+  changeLifecycle: (
+    orgId: string,
+    caseId: string,
+    actionId: string,
+    lifecycle: "IN_PROGRESS" | "DONE" | "CANCELLED",
+  ) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/lifecycle`,
+      { lifecycle },
+    ).then((r) => json<RemediationAction>(r)),
+  recordEffectiveness: (
+    orgId: string,
+    caseId: string,
+    actionId: string,
+    body: {
+      effectiveness: "EFFECTIVE" | "PARTIALLY_EFFECTIVE" | "INEFFECTIVE";
+      note: string;
+      reassessment_id?: string | null;
+    },
+  ) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/effectiveness`,
+      body,
+    ).then((r) => json<RemediationAction>(r)),
+  launchReassessment: (orgId: string, caseId: string, selectedActionIds: string[]) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/reassessments`, {
+      selected_action_ids: selectedActionIds,
+    }).then((r) => json<Reassessment>(r)),
+  listReassessments: (orgId: string, caseId: string) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}/reassessments`).then((r) =>
+      json<Reassessment[]>(r),
+    ),
+  closeCase: (orgId: string, caseId: string, closeNote: string) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/close`, {
+      close_note: closeNote,
+    }).then((r) => json<RemediationCaseDetail>(r)),
+  reopenCase: (orgId: string, caseId: string) =>
+    post(`/api/organizations/${orgId}/remediation-cases/${caseId}/reopen`, {}).then((r) =>
+      json<RemediationCaseDetail>(r),
+    ),
 
   // chat
   listConversations: (orgId: string) =>
