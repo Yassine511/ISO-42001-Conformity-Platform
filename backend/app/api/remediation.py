@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
 from app.models import Organization, RemediationCase
-from app.remediation import planner, service, triage
+from app.remediation import actions, planner, reassessment, service, triage
 from app.remediation.service import (
     RemediationConflictError,
     RemediationInvalidError,
@@ -27,8 +27,13 @@ from app.schemas import (
     RemediationEventOut,
     RemediationLinkDecision,
     RemediationActionOut,
+    RemediationActionReview,
+    RemediationEffectivenessBody,
+    RemediationLifecycleBody,
     RemediationLinkSuggestionOut,
     RemediationPlanOut,
+    RemediationReassessmentCreate,
+    RemediationReassessmentOut,
     RemediationTriageApprove,
     RemediationTriageDraftOut,
 )
@@ -227,6 +232,131 @@ def draft_plan(
         actor_label=body.actor_label,
     )
     return _plan_payload(plan)
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/review",
+    response_model=RemediationActionOut,
+)
+def review_action(
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    body: RemediationActionReview,
+    db: Session = Depends(get_db),
+):
+    _get_org(db, org_id)
+    return _run(
+        actions.review_action,
+        db,
+        org_id,
+        case_id,
+        action_id,
+        action=body.action,
+        description=body.description,
+        rationale=body.rationale,
+        owner_role=body.owner_role,
+        success_criterion=body.success_criterion,
+        priority=body.priority,
+        impacted_requirement_ids=body.impacted_requirement_ids,
+        review_note=body.review_note,
+        reviewer_label=body.reviewer_label,
+    )
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/lifecycle",
+    response_model=RemediationActionOut,
+)
+def change_lifecycle(
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    body: RemediationLifecycleBody,
+    db: Session = Depends(get_db),
+):
+    _get_org(db, org_id)
+    return _run(
+        actions.change_lifecycle,
+        db,
+        org_id,
+        case_id,
+        action_id,
+        lifecycle=body.lifecycle,
+        actor_label=body.actor_label,
+    )
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/effectiveness",
+    response_model=RemediationActionOut,
+)
+def record_effectiveness(
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    body: RemediationEffectivenessBody,
+    db: Session = Depends(get_db),
+):
+    _get_org(db, org_id)
+    return _run(
+        actions.record_effectiveness,
+        db,
+        org_id,
+        case_id,
+        action_id,
+        effectiveness=body.effectiveness,
+        note=body.note,
+        reassessment_id=body.reassessment_id,
+        actor_label=body.actor_label,
+    )
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/reassessments",
+    response_model=RemediationReassessmentOut,
+    status_code=202,
+)
+def launch_reassessment(
+    org_id: str,
+    case_id: str,
+    body: RemediationReassessmentCreate,
+    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
+):
+    _get_org(db, org_id)
+    return _run(
+        reassessment.launch_reassessment,
+        db,
+        session_factory,
+        org_id,
+        case_id,
+        selected_action_ids=body.selected_action_ids,
+        actor_label=body.actor_label,
+    )
+
+
+@router.get(
+    "/organizations/{org_id}/remediation-cases/{case_id}/reassessments",
+    response_model=list[RemediationReassessmentOut],
+)
+def list_reassessments(
+    org_id: str,
+    case_id: str,
+    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
+):
+    _get_org(db, org_id)
+    case = _run(service.get_case, db, org_id, case_id)
+    _run(reassessment.reconcile_pending, db, session_factory, org_id, case.id)
+    db.expire_all()
+    from app.models import RemediationReassessment
+
+    return db.scalars(
+        select(RemediationReassessment)
+        .where(RemediationReassessment.case_id == case_id)
+        .order_by(RemediationReassessment.created_at)
+    ).all()
 
 
 @router.post("/organizations/{org_id}/remediation-cases/{case_id}/close")

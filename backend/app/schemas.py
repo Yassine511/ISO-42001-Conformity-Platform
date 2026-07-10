@@ -614,3 +614,61 @@ class RemediationPlanOut(BaseModel):
     allowed_requirement_ids: list
     input_kb: dict
     created_at: datetime
+
+
+class RemediationActionReview(BaseModel):
+    action: Literal["approve", "edit", "reject"]
+    # edit only: human text wins, omitted fields keep the AI values
+    description: str | None = None
+    rationale: str | None = None
+    owner_role: str | None = None
+    success_criterion: str | None = None
+    # mandatory on approve/edit, forbidden meaning on reject
+    priority: Literal["haute", "normale", "basse"] | None = None
+    # edit only: human-supplied effective requirement scope (override)
+    impacted_requirement_ids: list[str] | None = None
+    review_note: str | None = None
+    reviewer_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationLifecycleBody(BaseModel):
+    lifecycle: Literal["IN_PROGRESS", "DONE", "CANCELLED"]
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationEffectivenessBody(BaseModel):
+    effectiveness: Literal["EFFECTIVE", "PARTIALLY_EFFECTIVE", "INEFFECTIVE"]
+    note: str
+    # optional EVIDENCE citation, validated server-side; null = external
+    # human evidence only (mandatory for actions with zero dev-split scope)
+    reassessment_id: str | None = None
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationReassessmentCreate(BaseModel):
+    selected_action_ids: list[str]
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationReassessmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    case_id: str
+    planned_assessment_id: str
+    assessment_id: str | None
+    selected_action_ids: list
+    included_requirement_ids: list
+    excluded_holdout_ids: list
+    status: str
+    error: str | None
+    actor_label: str | None
+    created_at: datetime

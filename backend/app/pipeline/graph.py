@@ -96,8 +96,14 @@ def create_assessment(
     *,
     k: int = 6,
     allow_holdout: bool = False,
+    assessment_id: str | None = None,
 ) -> str:
     """Create a RUNNING assessment with its frozen run contract.
+
+    assessment_id (optional) lets a caller PRE-GENERATE the id and record it
+    before this commit (M7a reassessment launch protocol): a crash between
+    this function's commit and the caller's linkage write is then
+    deterministically reconcilable by that id.
 
     requirement_ids is the run MANIFEST: what this assessment is meant to
     cover. Resume paths validate against it (see resume_manifest). Creation is
@@ -169,6 +175,7 @@ def create_assessment(
             )
         ).all()
         assessment = Assessment(
+            **({"id": assessment_id} if assessment_id is not None else {}),
             organization_id=org_id,
             corpus_version=kb["corpus_version"],
             status=AssessmentStatus.RUNNING.value,
