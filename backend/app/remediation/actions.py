@@ -67,7 +67,13 @@ def _operable_action(
     db: Session, case: RemediationCase, action_id: str
 ) -> RemediationAction:
     """Resolve an action under the active-plan authority invariant. The case
-    lock is already held by the caller."""
+    lock is already held by the caller. A CLOSED case is immutable except
+    through reopen."""
+    if case.status == "CLOSED":
+        db.rollback()
+        raise RemediationConflictError(
+            "Cas clôturé : rouvrez-le avant toute opération sur ses actions."
+        )
     action = db.get(RemediationAction, action_id)
     if action is None:
         db.rollback()
