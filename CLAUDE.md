@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
 abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§14 = milestone
-roadmap). Currently through **M5** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
+roadmap). Currently through **M6** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`. M4: grounded
 chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
@@ -38,7 +38,22 @@ rejects test-split ids unless `allow_holdout=True` (M6-script-only, unreachable 
 Frontend pages: upload & run (per-node live progress), review workspace (split view + offset
 highlighting), chat (footnote citations, amber «Écart potentiel» abstention cards; infrastructure
 abstentions always neutral). Frontend tests: Vitest + Testing Library (`npm run test`).
-Next is **M6** (evaluation). After M6, core continues
+M6 (evaluation) is **done** — harness `backend/app/eval/` (frozen scoring rules
+`eval/m6/regles_notation_pipeline.md`; the headline pipeline table is a **verification-gate
+diagnostic**, never an "ablation": post-gate 0 unsupported displayed citations is a structural
+invariant, checked empirically; Wilson CIs everywhere; tamper-proof grading sheets with
+structural rubric-§4 masking) + runners `scripts/eval_{pipeline,chat_run,chat_score}.py`
+(`--m6-holdout` requires HEAD == `m6-freeze` tag and a worktree clean outside
+`eval/m6/runs/<run_id>/`; sealed first pass, ONE predeclared recovery per failure mode —
+resume / lineage-linked recovery assessment / re-ask; explicit N vs n_scored). Holdout results
+(n=14, full report `eval/m6/rapport_m6.md`): verdict accuracy 9/14 (64,3 % [38,8; 83,7]), gate
+blocked 3/14 unsupported first drafts, 0 invariant failures; chat location validity 24/24,
+pair support precision 23/32, faithfulness 7/10. Known weakness: abstention recall on the
+uncovered requirements (0/3 pipeline — authentic-but-irrelevant citations earn VERIFIED
+partial verdicts; the M5 review + M7 remediation are the countermeasures). Grading: AI-prefilled
+labels reviewed/accepted by the author (declared deviation from rubric §6). Eval runs use the
+dedicated org **"Lumen AI (eval M6)"** (exactly the six corpus documents — the demo org carries
+an extra upload and fails the checksum baseline). After M6, core continues
 with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →
 corrective-action plan → per-action human approval → anchored patch with raw-equality unique anchors;
 **original uploads are immutable** — agent output is always a separate artifact or an explicitly

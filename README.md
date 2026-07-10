@@ -98,10 +98,27 @@ rationale queries (floor 0.60).
 ## Milestones
 
 M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
-(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL (this state) → M6 evaluation →
+(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation (this state) →
 M7a remediation planning agent (triage → corrective-action plan → per-action human approval) →
 M7b document-editing tool (anchored patches, versioning; originals immutable) →
 M8 scoring & artifacts → M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
+
+## Evaluation (M6)
+
+Measured on the frozen corpus v1.2.0 with the pre-M5-frozen contract (question generator +
+grading rubric, sha256-bound) plus pipeline scoring rules frozen before the holdout run.
+Full French report: `eval/m6/rapport_m6.md`; harness `backend/app/eval/`; runners
+`scripts/eval_pipeline.py`, `scripts/eval_chat_run.py`, `scripts/eval_chat_score.py`
+(the holdout requires `--m6-holdout` AND `HEAD == m6-freeze` with a clean worktree outside
+the run's artifact directory). Holdout (test split, n=14, Wilson 95% CIs, raw counts always
+published): pipeline verdict accuracy 9/14; the verification gate blocked 3/14 unsupported
+first-draft citations (0 unsupported citations displayed — a structural invariant, checked
+empirically, never claimed as a measured "hallucination reduction"); chat citation-location
+validity 24/24; claim–citation semantic support precision 23/32; answer faithfulness 7/10
+FAITHFUL, 0 UNFAITHFUL. Weakest measured point (stated, not hidden): abstention recall on
+deliberately uncovered requirements — the system asserts authentic-but-irrelevant citations
+instead of abstaining (0/3 pipeline, 1/3 chat); human review (M5) and remediation (M7) are
+the designed countermeasures. Dev diagnostics (n=51) reported separately, never aggregated.
 
 ## Frontend + HITL (M5)
 
