@@ -554,3 +554,63 @@ class RemediationLinkSuggestionOut(BaseModel):
     human_verdict: str
     human_rationale: str | None
     same_domain: bool
+
+
+class RemediationActionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    plan_id: str
+    position: int
+    action_type: str
+    ai_description: str
+    ai_rationale: str
+    ai_owner_role: str
+    ai_success_criterion: str
+    ai_impacted_requirement_ids: list
+    policy_quote: str | None
+    matched_chunk_id: str | None
+    match_start: int | None
+    match_end: int | None
+    match_method: str | None
+    match_score: float | None
+    review_status: str
+    review_action: str | None
+    description: str | None
+    rationale: str | None
+    owner_role: str | None
+    success_criterion: str | None
+    priority: str | None
+    review_note: str | None
+    reviewer_label: str | None
+    reviewed_at: datetime | None
+    review_count: int
+    lifecycle: str
+    effectiveness: str
+    effectiveness_note: str | None
+    effectiveness_recorded_at: datetime | None
+    created_at: datetime
+
+
+class RemediationPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    case_id: str
+    sequence: int
+    status: str
+    abstain_reason: str | None
+    superseded_at: datetime | None
+    superseded_by_plan_id: str | None
+    gap_restatement: str | None
+    root_cause_hypotheses: list | None
+    draft_attempts: int
+    prompt_version: str
+    corpus_version: str
+    final_model: str | None
+    final_provider: str | None
+    input_finding_links: list
+    input_triage_snapshot: dict
+    allowed_requirement_ids: list
+    input_kb: dict
+    created_at: datetime

@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Organization, RemediationCase
-from app.remediation import service, triage
+from app.remediation import planner, service, triage
 from app.remediation.service import (
     RemediationConflictError,
     RemediationInvalidError,
@@ -26,12 +26,20 @@ from app.schemas import (
     RemediationCloseBody,
     RemediationEventOut,
     RemediationLinkDecision,
+    RemediationActionOut,
     RemediationLinkSuggestionOut,
+    RemediationPlanOut,
     RemediationTriageApprove,
     RemediationTriageDraftOut,
 )
 
 router = APIRouter(prefix="/api", tags=["remediation"])
+
+
+def get_session_factory():
+    """Session factory for the planner's short heartbeat transactions
+    (overridden in tests to share the request database)."""
+    return SessionLocal
 
 
 def _get_org(db: Session, org_id: str) -> Organization:
@@ -64,10 +72,19 @@ def _case_payload(db: Session, case: RemediationCase, *, detail: bool = False) -
             RemediationTriageDraftOut.model_validate(d).model_dump()
             for d in case.triage_drafts
         ]
+        base["plans"] = [_plan_payload(p) for p in case.plans]
         base["events"] = [
             RemediationEventOut.model_validate(e).model_dump() for e in case.events
         ]
     return base
+
+
+def _plan_payload(plan) -> dict:
+    body = RemediationPlanOut.model_validate(plan).model_dump()
+    body["actions"] = [
+        RemediationActionOut.model_validate(a).model_dump() for a in plan.actions
+    ]
+    return body
 
 
 @router.post("/organizations/{org_id}/remediation-cases", status_code=201)
@@ -186,6 +203,30 @@ def reopen_triage(
     _get_org(db, org_id)
     case = _run(service.reopen_triage, db, org_id, case_id, actor_label=body.actor_label)
     return _case_payload(db, case, detail=True)
+
+
+@router.post("/organizations/{org_id}/remediation-cases/{case_id}/plans")
+def draft_plan(
+    org_id: str,
+    case_id: str,
+    body: RemediationActorBody,
+    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
+):
+    """Synchronous plan draft. Always returns the persisted plan row —
+    including operational aborts (an ABSTAINED retrieval_error row rather
+    than an ambiguous 5xx that would invite blind retries). Performs
+    stale-PLANNING recovery when the previous lease expired."""
+    _get_org(db, org_id)
+    plan = _run(
+        planner.draft_plan,
+        db,
+        session_factory,
+        org_id,
+        case_id,
+        actor_label=body.actor_label,
+    )
+    return _plan_payload(plan)
 
 
 @router.post("/organizations/{org_id}/remediation-cases/{case_id}/close")

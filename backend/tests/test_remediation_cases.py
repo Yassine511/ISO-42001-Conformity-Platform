@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import assessments as assessments_api
+from app.api import remediation as remediation_api
 from app.db import Base, get_db
 from app.main import app
 from app.models import (
@@ -57,6 +58,7 @@ def client(monkeypatch):
     monkeypatch.setattr(runner, "launch", lambda sf, aid: True)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[assessments_api.get_session_factory] = lambda: TestSession
+    app.dependency_overrides[remediation_api.get_session_factory] = lambda: TestSession
     tc = TestClient(app)
     tc.session_factory = TestSession
     yield tc
