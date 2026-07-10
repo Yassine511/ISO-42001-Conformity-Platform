@@ -98,8 +98,10 @@ rationale queries (floor 0.60).
 ## Milestones
 
 M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
-(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation (this state) →
-M7a remediation planning agent (triage → corrective-action plan → per-action human approval) →
+(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation →
+M7a remediation planning agent (this state: LLM-suggested/human-approved triage →
+schema-and-binding-verified corrective-action plan → per-action human review →
+lifecycle/effectiveness tracking with scoped reassessments as evidence) →
 M7b document-editing tool (anchored patches, versioning; originals immutable) →
 M8 scoring & artifacts → M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
 

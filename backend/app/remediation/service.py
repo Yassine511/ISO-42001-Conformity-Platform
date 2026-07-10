@@ -69,6 +69,11 @@ def append_event(
     """Append one audit event. The CALLER must hold the case row lock —
     sequence assignment is only race-free under it."""
     payload = validate_payload(event_type, payload)
+    # SessionLocal runs with autoflush=False: a previous append_event in the
+    # same transaction would be invisible to the SELECT below and both events
+    # would claim the same sequence (caught by the live E2E, not SQLite tests
+    # whose sessions autoflush).
+    db.flush()
     last = db.scalar(
         select(RemediationEvent.sequence)
         .where(RemediationEvent.case_id == case_id)

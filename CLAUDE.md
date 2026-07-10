@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ISO/IEC 42001 compliance copilot with a **verifiable trust layer**: AI drafts compliance findings and
 chat answers, deterministic code verifies every citation against source text, uncertain outputs become
 abstentions, and a human confirms every verdict. Full spec: `Plan_Projet_INT102.md` (§14 = milestone
-roadmap). Currently through **M6** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
+roadmap). Currently through **M7a** (M3: LangGraph pipeline `backend/app/pipeline/`: retrieve → judge →
 verify, fuzzy citation verifier, one bounded repair retry then abstention, per-attempt provenance in
 `assessments/findings/assessment_attempts/llm_calls`, CLI demo `scripts/assess_demo.py`. M4: grounded
 chat `backend/app/chat/` — claim-bound draft (a claim survives only if EVERY citation it references
@@ -53,11 +53,42 @@ uncovered requirements (0/3 pipeline — authentic-but-irrelevant citations earn
 partial verdicts; the M5 review + M7 remediation are the countermeasures). Grading: AI-prefilled
 labels reviewed/accepted by the author (declared deviation from rubric §6). Eval runs use the
 dedicated org **"Lumen AI (eval M6)"** (exactly the six corpus documents — the demo org carries
-an extra upload and fails the checksum baseline). After M6, core continues
-with **M7a/M7b** (remediation planning agent + optional document-editing tool, spec §8: triage →
-corrective-action plan → per-action human approval → anchored patch with raw-equality unique anchors;
-**original uploads are immutable** — agent output is always a separate artifact or an explicitly
-activated `DocumentVersion`); the former M7/M8 stretch milestones are now **M8/M9** — old milestone
+an extra upload and fails the checksum baseline).
+**M7a (remediation planning agent) is done** — `backend/app/remediation/` +
+`api/remediation.py` + frontend remediation pages, migration `0013`. A case opens from a
+CONFIRMED **gap** finding only (`human_verdict IN partial/non_compliant/missing` — CONFIRMED
+alone includes compliant); one ACTIVE case per finding (finding row lock at
+creation/link/reopen); link rows snapshot the finding's review state. Triage is
+LLM-suggested/human-approved with a stale-input contract: `evidence_revision` on the case,
+drafts snapshot it, link/unlink only in TRIAGE, approval names an EXPLICIT draft id. Plans
+draft synchronously (chat-style ≤2 attempts) under a PLANNING lease renewed via
+`complete_json(on_call_finished=...)` (stale lease ⇒ `draft_interrupted` recovery row, never
+activated; lost heartbeat ⇒ persistence refused), gated deterministically by **requirement
+binding** (`impacted_requirement_ids ⊆ allowed_requirement_ids` actually offered in the
+prompt — a KB-valid-but-unoffered id fails) and **quote binding** (`quote_source_id` must
+name one server evidence item, exact-only against THAT item, `matched_chunk_id ==
+quote_source_id`). Abstention taxonomy: completed outcomes
+(`schema_invalid|verification_failed|llm_error|rate_limited` — may activate/supersede per
+`active_plan_id`, the sole authority) vs operational aborts
+(`retrieval_error|draft_interrupted` — audit rows, never activated, previous state
+restored). Actions: write-once AI columns + human projection (approve/edit/reject; re-review
+only while APPROVED; mandatory priority); the human-approved effective scope lives in
+`remediation_action_requirements` (never the AI list); lifecycle and effectiveness are
+independent dimensions; **active-plan action authority** — actions of superseded/abstained
+plans are inert archives and never block closure; CLOSED cases are immutable except reopen
+(which re-locks findings against active-case collisions). Scoped reassessments: append-only
+launch records with a pre-generated `planned_assessment_id`
+(`create_assessment(assessment_id=...)`), PENDING until `runner.launch` (False = live local
+thread = success), deterministic reconciliation with org+manifest verification; holdout
+exclusions always explicit (`included_requirement_ids`/`excluded_holdout_ids`); zero-dev
+scopes cannot cite a reassessment. Everything audits into append-only `remediation_events`
+(validated versioned payloads) + the `remediation_attempts`/`remediation_llm_calls` pair.
+Injection posture: JSON-escaped evidence blocks + server-owned identifier lists; the
+adversarial suite proves the deterministic contracts hold, never that a live model is
+unsteerable. Core continues with **M7b** (document-editing tool, spec §8: anchored patch
+with raw-equality unique anchors via `find_all_exact_anchors`; **original uploads are
+immutable** — agent output is always a separate artifact or an explicitly activated
+`DocumentVersion`); the former M7/M8 stretch milestones are now **M8/M9** — old milestone
 numbers in commit history predate this renumbering. M3 semantics: `VERIFIED`
 means **citation/schema-verified via an EXACT match after normalization** (quote exists in source,
 clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
