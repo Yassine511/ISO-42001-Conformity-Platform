@@ -81,6 +81,14 @@ def main() -> int:
         return 2
 
     run_dir = REPO_ROOT / "eval" / "m6" / "runs" / args.run_id
+    out_path = run_dir / f"chat_run_{split}.json"
+    if out_path.exists():
+        print(
+            f"REFUS : l'artefact {out_path} existe déjà — un run est unique ; "
+            "choisissez un autre --run-id.",
+            file=sys.stderr,
+        )
+        return 2
     run_dir.mkdir(parents=True, exist_ok=True)
 
     from sqlalchemy import select
@@ -89,11 +97,12 @@ def main() -> int:
     from app.db import SessionLocal
     from app.eval.gates import (
         GateError,
+        check_document_baseline,
         check_freeze_gate,
         check_generator_drift,
         contract_hashes,
     )
-    from app.models import Organization
+    from app.models import Document, Organization
     from app.pipeline.state import is_infrastructure_failure
 
     try:
@@ -106,9 +115,26 @@ def main() -> int:
 
     db = SessionLocal()
     org = db.scalars(select(Organization).where(Organization.name == args.org)).first()
+    org_docs = (
+        [
+            (d.filename, d.checksum)
+            for d in db.scalars(
+                select(Document).where(Document.organization_id == org.id)
+            ).all()
+        ]
+        if org
+        else []
+    )
     db.close()
     if org is None:
         print(f"organisation introuvable : {args.org}", file=sys.stderr)
+        return 2
+    try:
+        # strict six-document corpus baseline (chat has no frozen manifest —
+        # this runtime check is the only structural guarantee for chat runs)
+        check_document_baseline(org_docs, REPO_ROOT)
+    except GateError as exc:
+        print(f"REFUS : {exc}", file=sys.stderr)
         return 2
 
     def _ask(question: dict, conversation_id: str | None):
@@ -198,7 +224,6 @@ def main() -> int:
         "error_ledger": ledger,
         "recovery_log": recovery_log,
     }
-    out_path = run_dir / f"chat_run_{split}.json"
     out_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
 
     infra = sum(

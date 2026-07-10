@@ -16,6 +16,7 @@ import pytest
 from app.eval.gates import (
     FREEZE_TAG,
     GateError,
+    check_document_baseline,
     check_freeze_gate,
     check_generator_drift,
     contract_hashes,
@@ -91,6 +92,40 @@ def test_freeze_gate_mixed_dirty_still_refuses():
     git = _fake_git("abc123", "abc123", status)
     with pytest.raises(GateError):
         check_freeze_gate(REPO_ROOT, _run_dir(REPO_ROOT), git=git)
+
+
+# ---------------------------------------------------------------- doc baseline
+
+
+def _corpus_docs() -> list[tuple[str, str]]:
+    import hashlib
+
+    return [
+        (p.name, hashlib.sha256(p.read_bytes()).hexdigest())
+        for p in sorted((REPO_ROOT / "corpus" / "documents").glob("*.md"))
+    ]
+
+
+def test_document_baseline_accepts_exact_corpus():
+    check_document_baseline(_corpus_docs(), REPO_ROOT)
+
+
+def test_document_baseline_refuses_extra_document():
+    docs = _corpus_docs() + [("ISO 24001 synthese.pdf", "0" * 64)]
+    with pytest.raises(GateError, match="hors corpus"):
+        check_document_baseline(docs, REPO_ROOT)
+
+
+def test_document_baseline_refuses_missing_document():
+    with pytest.raises(GateError, match="absent"):
+        check_document_baseline(_corpus_docs()[:-1], REPO_ROOT)
+
+
+def test_document_baseline_refuses_checksum_drift():
+    docs = _corpus_docs()
+    docs[0] = (docs[0][0], "0" * 64)
+    with pytest.raises(GateError, match="checksum"):
+        check_document_baseline(docs, REPO_ROOT)
 
 
 # ---------------------------------------------------------------- sha drift

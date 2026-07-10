@@ -9,7 +9,8 @@
     "filled_pairs_sha256": "4ce3a2c5b7d1cb62aeb573c9ca128e1c3f68635aabd421c4c118ae0619b47bf1",
     "filled_answers_sha256": "3903e7bcf0d0f5337adc5dbda1f0a19b8347ca068c5c8ba0f528f3dbe0e7fa1c",
     "rubric_sha256": "003a6388dddf7eda41fea6214ba39b0ce5f3cce5e7ad74c9c5d002f6b1a109b4",
-    "computed_at": "2026-07-10T08:45:07.049224+00:00"
+    "scoring_rules_sha256": "6e5797c293603f61d2c1a1bd6e6f962a5c1c4de5e67fe652065cb12317cb4118",
+    "computed_at": "2026-07-10T09:38:33.917077+00:00"
   },
   "aggregates": {
     "pairs": {

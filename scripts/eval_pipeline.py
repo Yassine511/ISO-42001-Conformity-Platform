@@ -132,12 +132,25 @@ def main() -> int:
         return 2
 
     run_dir = REPO_ROOT / "eval" / "m6" / "runs" / args.run_id
+    out_path = run_dir / f"pipeline_{args.split}.json"
+    if out_path.exists():
+        print(
+            f"REFUS : l'artefact {out_path} existe déjà — un run est unique ; "
+            "choisissez un autre --run-id.",
+            file=sys.stderr,
+        )
+        return 2
     run_dir.mkdir(parents=True, exist_ok=True)
 
     from sqlalchemy import select
 
     from app.db import SessionLocal
-    from app.eval.gates import GateError, check_freeze_gate, contract_hashes
+    from app.eval.gates import (
+        GateError,
+        check_document_baseline,
+        check_freeze_gate,
+        contract_hashes,
+    )
     from app.eval.pipeline_scoring import load_gold, score_findings, system_label
     from app.eval.posthoc import gate_diagnostic, reverify_final
     from app.models import Finding, FindingReview, Organization
@@ -165,11 +178,30 @@ def main() -> int:
         )
         return 2
 
+    from app.models import Document
+
     db = SessionLocal()
     org = db.scalars(select(Organization).where(Organization.name == args.org)).first()
+    org_docs = (
+        [
+            (d.filename, d.checksum)
+            for d in db.scalars(
+                select(Document).where(Document.organization_id == org.id)
+            ).all()
+        ]
+        if org
+        else []
+    )
     db.close()
     if org is None:
         print(f"organisation introuvable : {args.org}", file=sys.stderr)
+        return 2
+    try:
+        # strict six-document corpus baseline, enforced at run time (the
+        # assessment's frozen document_manifest captures the same fact)
+        check_document_baseline(org_docs, REPO_ROOT)
+    except GateError as exc:
+        print(f"REFUS : {exc}", file=sys.stderr)
         return 2
 
     requirement_ids = list(gold.keys())
@@ -284,7 +316,6 @@ def main() -> int:
         "verified_invariant_failures": invariant_failures,
         "review_overrides_scoped": override_log,
     }
-    out_path = run_dir / f"pipeline_{args.split}.json"
     out_path.write_text(
         json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8"
     )

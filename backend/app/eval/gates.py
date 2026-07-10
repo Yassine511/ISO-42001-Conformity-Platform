@@ -78,6 +78,38 @@ def check_generator_drift(question_set: dict, repo_root: Path) -> None:
         )
 
 
+def check_document_baseline(
+    org_documents: list[tuple[str, str]], repo_root: Path
+) -> None:
+    """Enforce the strict six-document corpus baseline on an organization.
+
+    `org_documents` = [(filename, checksum sha256)] of the org's documents.
+    Refuses extra documents, missing corpus documents, and checksum drift —
+    the eval must run on exactly the committed corpus (the assessment's
+    frozen document_manifest then captures the same fact in the artifact).
+    """
+    corpus = {
+        p.name: _sha256(p) for p in sorted((repo_root / "corpus" / "documents").glob("*.md"))
+    }
+    names = dict(org_documents)
+    extra = sorted(set(names) - set(corpus))
+    missing = sorted(set(corpus) - set(names))
+    mismatched = sorted(n for n in names if n in corpus and names[n] != corpus[n])
+    if len(names) != len(org_documents):
+        raise GateError("documents en double dans l'organisation — baseline non propre.")
+    if extra or missing or mismatched:
+        problems = []
+        if extra:
+            problems.append(f"document(s) hors corpus : {', '.join(extra)}")
+        if missing:
+            problems.append(f"document(s) du corpus absent(s) : {', '.join(missing)}")
+        if mismatched:
+            problems.append(f"checksum différent du corpus : {', '.join(mismatched)}")
+        raise GateError(
+            "baseline six-documents non respectée — " + " ; ".join(problems)
+        )
+
+
 def _git(repo_root: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args], cwd=repo_root, capture_output=True, text=True, check=True

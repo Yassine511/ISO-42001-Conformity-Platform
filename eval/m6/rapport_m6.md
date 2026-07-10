@@ -19,7 +19,7 @@ sont jamais agrégés**.
 | KB (`corpus/kb/iso42001_kb.json`) | sha256 `9cb48f13bf5a5650…` |
 | Jeu de questions holdout | sha256 `67dbf9246c6fc903…` (14 questions, 3 sans réponse attendue) |
 | Modèle juge | `mistral-large-latest` (Mistral) pour les 14 constats et les 14 réponses chat du holdout ; température 0 ; k=6 (pipeline), k=8/4 (chat) ; `JUDGE_429_RETRIES=6`, `JUDGE_429_BASE_DELAY=5` |
-| Organisation | « Lumen AI (eval M6) » — exactement les six documents du corpus, checksums vérifiés ; portes M2 re-validées avant gel (policy 0.95/0.86/0.93 ; KB hybride 0.96) |
+| Organisation | « Lumen AI (eval M6) » — exactement les six documents du corpus. Preuve : le `document_manifest` gelé de chaque assessment (holdout `cc644bf2…`, dev `98b703c8…`, recouvrement `85e220e6…`) contient exactement les 6 fichiers avec des sha256 égaux à ceux de `corpus/documents/` (vérifié post-run sur les lignes persistées) ; `retrieval_sanity.py` (qui refuse tout document hors baseline) a validé l'organisation avant gel (policy 0.95/0.86/0.93 ; KB hybride 0.96). Les runners n'imposaient pas ce contrôle à l'exécution au moment du run — la porte `check_document_baseline` a été ajoutée post-run (voir §8) |
 | Assessments | holdout `cc644bf2…` (première passe complète, aucun recouvrement nécessaire) ; dev `98b703c8…` + recouvrement `85e220e6…` |
 | Empreintes des feuilles de notation | vides `73d87aca…`/`f9dfdaaf…`, remplies `4ce3a2c5…`/`3903e7bc…`, liées au run `6c5cb24c…` (ingestion inviolable : seuls `label`/`comment` modifiables) |
 
@@ -79,8 +79,10 @@ structurellement la localisation exacte, donc le 0 post-porte est un contrôle d
 |---|---|---|
 | Premiers jets analysables et affirmants | 14/14 | — |
 | **Assertions de premier jet non étayées** (citation introuvable) | 3/14 | 21,4 % [7,6 %, 47,6 %] |
-| Issues de la porte : vérifié / réparé / abstenu | 12 / 1 / 2 | — |
-| Assertions finales affichées non localisables (invariant) | **0**/14 | 0 % — attendu par construction |
+| Issues de la porte (exclusives) : vérifié sans réparation / réparé→vérifié / abstenu | 11 / 1 / 2 | — |
+| Usage de la réparation (tentative 2 déclenchée) | 3/14 | 21,4 % [7,6 %, 47,6 %] — 1 réparée→VERIFIED (5.2), 2 re-tentées puis abstenues (A.4.3, 4.1) |
+| Méthodes de correspondance des constats VERIFIED | 12/12 `exact` | — (`fuzzy` n'est jamais affichable) |
+| Assertions finales affichées non localisables (invariant) | **0**/14 | 0 % [0 %, 21,5 %] — attendu par construction |
 
 La porte a **bloqué 3 citations de premier jet non localisables sur 14** : 1 récupérée par la
 réparation bornée (citation exacte au second essai), 2 converties en abstentions routées vers
@@ -107,7 +109,7 @@ rapporté séparément) :
 |---|---|---|
 | **Précision de support (paires)** † | 23/32 SUPPORTS | 71,9 % [54,6 %, 84,4 %] |
 | — dont PARTIAL | 9/32 | 28,1 % [15,6 %, 45,4 %] |
-| — dont IRRELEVANT | 0/32 | 0 % |
+| — dont IRRELEVANT | 0/32 | 0 % [0 %, 10,7 %] |
 | **Précision de support (claims, toutes paires SUPPORTS)** | 23/32 | 71,9 % [54,6 %, 84,4 %] |
 | Macro-moyenne par question (10 questions à paires) | — | 75,2 % |
 | Ligne dédiée `kb_only` (rubrique §5) | 1 paire, 1 SUPPORTS | — |
@@ -140,7 +142,8 @@ défini — n'est pas énoncé).
 
 Lecture : 3 abstentions `verification_failed` sur des questions à réponse attendue (couverture
 réelle non citée exactement) et 2 questions sans réponse attendue répondues (dont 1 `kb_only`
-encadrée par le caveat serveur). 1 citation retirée (stripped) sur le run. Diagnostics dev :
+encadrée par le caveat serveur). 1 citation retirée (stripped) sur le run ; réparation de
+brouillon utilisée sur 5/14 questions (35,7 % [16,3 %, 61,2 %]). Diagnostics dev :
 précision 3/6, rappel 3/8, 13 citations retirées, réparation utilisée sur 24/51.
 
 ## 5. Diagnostics de développement (dev, n=51 — jamais agrégés au holdout)
@@ -183,3 +186,28 @@ P 3/6, R 3/8. Artefacts : `eval/m6/runs/dev-diagnostics/`.
 9. Écart mineur d'exécution : dev lancé avec les réglages 429 par défaut (17 abstentions),
    holdout et chat avec `JUDGE_429_RETRIES=6` — réglage d'infrastructure enregistré dans les
    méta des artefacts, sans effet sur les règles de notation.
+10. **Caractère « one-shot » procédural au moment du run** : les runners n'empêchaient pas
+    structurellement la ré-exécution (écrasement d'artefact possible) ; le refus d'un artefact
+    existant a été ajouté post-run (§8). Aucun run n'a été répété : les artefacts committés
+    immédiatement après chaque run et l'historique git en font foi.
+
+## 8. Corrections post-audit (après les runs, sans ré-exécution)
+
+Un audit indépendant du présent rapport a relevé quatre écarts de clôture, corrigés comme
+suit — **aucun run LLM n'a été répété, aucune règle de notation ni aucun label modifiés** :
+
+1. **Baseline six-documents non imposée par les runners au moment du run.** Le fait était
+   vrai (prouvé par les `document_manifest` gelés — voir §1) mais l'application relevait de
+   `retrieval_sanity.py` avant gel, pas des runners. Ajouté : `check_document_baseline`
+   (refus de tout document hors corpus / manquant / au checksum différent) exécutée par les
+   deux runners avant tout run, testée unitairement.
+2. **Empreinte des règles de notation absente de l'artefact d'agrégats.** Ajout de
+   `scoring_rules_sha256` au méta ; `chat_scores_test.json` régénéré (agrégation
+   déterministe : mêmes feuilles remplies, mêmes chiffres, seule la méta change).
+3. **Publication** : intervalles de Wilson ajoutés aux deux taux nuls (0/14 invariant,
+   0/32 IRRELEVANT) ; métriques compagnons ajoutées (réparation pipeline 3/14, réparation
+   chat 5/14, distribution des méthodes de correspondance) ; issues de la porte présentées
+   en catégories exclusives (11 vérifié sans réparation / 1 réparé→vérifié / 2 abstenu —
+   l'ancienne présentation « 12 vérifiés » incluait l'item réparé).
+4. **Ré-exécution non bloquée** : les deux runners refusent désormais un artefact de run
+   existant (limite n° 10).

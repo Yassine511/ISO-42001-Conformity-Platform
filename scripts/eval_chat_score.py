@@ -131,6 +131,9 @@ def cmd_aggregate(args) -> int:
                 "filled_pairs_sha256": _sha(args.pairs),
                 "filled_answers_sha256": _sha(args.answers),
                 "rubric_sha256": run["meta"]["question_set_meta"]["rubric_sha256"],
+                "scoring_rules_sha256": _sha(
+                    str(REPO_ROOT / "eval" / "m6" / "regles_notation_pipeline.md")
+                ),
                 "computed_at": datetime.now(timezone.utc).isoformat(),
             },
             "aggregates": aggregates,
