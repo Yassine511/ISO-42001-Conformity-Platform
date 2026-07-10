@@ -373,6 +373,102 @@ def test_head_accepts_long_provider_model_names(scratch_db):
         con.close()
 
 
+def test_0013_creates_remediation_tables(scratch_db):
+    """0013: the ten remediation tables exist at head, the circular case FKs
+    are real on Postgres, and the key CHECK constraints are enforced
+    (gap-verdict link snapshot, triage projection coherence)."""
+    _alembic(scratch_db, "upgrade", "head")
+    con = _connect(scratch_db)
+    try:
+        for table in (
+            "remediation_cases",
+            "remediation_triage_drafts",
+            "remediation_case_findings",
+            "remediation_plans",
+            "remediation_actions",
+            "remediation_action_requirements",
+            "remediation_reassessments",
+            "remediation_events",
+            "remediation_attempts",
+            "remediation_llm_calls",
+        ):
+            assert _columns(con, table), f"{table} missing"
+
+        # both circular FKs were added post-creation
+        fks = [
+            row[0]
+            for row in con.execute(
+                "SELECT conname FROM pg_constraint WHERE contype = 'f' "
+                "AND conrelid = 'remediation_cases'::regclass"
+            ).fetchall()
+        ]
+        assert "fk_remediation_cases_approved_triage_draft" in fks
+        assert "fk_remediation_cases_active_plan" in fks
+
+        import psycopg
+
+        org_id, case_id = str(uuid.uuid4()), str(uuid.uuid4())
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+            (org_id,),
+        )
+        con.execute(
+            "INSERT INTO remediation_cases (id, organization_id, title, status, "
+            "evidence_revision, created_at, updated_at) "
+            "VALUES (%s, %s, 'Cas', 'TRIAGE', 0, now(), now())",
+            (case_id, org_id),
+        )
+        con.commit()
+
+        # a link snapshotting a compliant verdict violates the gap-verdict CHECK
+        aid, fid = str(uuid.uuid4()), str(uuid.uuid4())
+        con.execute(
+            "INSERT INTO assessments (id, organization_id, corpus_version, status, "
+            "started_at) VALUES (%s, %s, '1.2.0', 'COMPLETED', now())",
+            (aid, org_id),
+        )
+        con.execute(
+            "INSERT INTO findings (id, assessment_id, requirement_id, status, attempts, "
+            "retrieved, created_at) VALUES (%s, %s, 'A.9.2', 'VERIFIED', 1, '[]', now())",
+            (fid, aid),
+        )
+        con.commit()
+
+        def _insert_link(verdict):
+            con.execute(
+                "INSERT INTO remediation_case_findings (id, case_id, finding_id, "
+                "is_primary, link_source, finding_review_count, finding_human_verdict, "
+                "finding_requirement_id, created_at) "
+                "VALUES (%s, %s, %s, true, 'creation', 1, %s, 'A.9.2', now())",
+                (str(uuid.uuid4()), case_id, fid, verdict),
+            )
+
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _insert_link("compliant")
+        con.rollback()
+        _insert_link("non_compliant")
+        con.commit()
+
+        # TRIAGE_APPROVED without the triage projection violates coherence
+        with pytest.raises(psycopg.errors.CheckViolation):
+            con.execute(
+                "UPDATE remediation_cases SET status = 'TRIAGE_APPROVED' WHERE id = %s",
+                (case_id,),
+            )
+        con.rollback()
+    finally:
+        con.close()
+
+    # downgrade removes every remediation table
+    _alembic(scratch_db, "downgrade", "0012")
+    con = _connect(scratch_db)
+    try:
+        assert not _columns(con, "remediation_cases")
+        assert not _columns(con, "remediation_llm_calls")
+    finally:
+        con.close()
+
+
 def test_0011_preflight_demotes_duplicate_running_rows(scratch_db):
     """0011 must be applicable to a database that already violates the new
     single-RUNNING-per-org invariant: all but the newest RUNNING row per org

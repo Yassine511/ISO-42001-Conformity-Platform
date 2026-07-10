@@ -517,3 +517,739 @@ class ChatLlmCall(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     message: Mapped[ChatMessage] = relationship(back_populates="llm_calls")
+
+
+# --------------------------------------------------------------- M7a remediation
+# Human-supervised corrective-action workflow (spec §8). A case starts from a
+# human-confirmed GAP finding (CONFIRMED + human_verdict in partial/
+# non_compliant/missing — CONFIRMED alone includes compliant findings), goes
+# through LLM-suggested/human-approved triage, an LLM-drafted plan of typed
+# actions gated by deterministic verification (requirement + quote binding),
+# per-action human review, lifecycle/effectiveness tracking and a scoped
+# reassessment as effectiveness evidence.
+#
+# Write-once doctrine (same as Finding): the agent writes AI columns once;
+# humans write only projection columns + append-only events. The only AI-row
+# mutations are plan supersession (status -> SUPERSEDED) and the reassessment
+# launch record's controlled PENDING -> terminal transition.
+#
+# remediation_attempts/remediation_llm_calls deliberately mirror
+# assessment_attempts/llm_calls (chat precedent, 0009): llm_calls rows require
+# an assessment attempt, so remediation gets its own pair.
+
+# Abstention taxonomy shared by triage drafts and plans. Two classes:
+# - completed drafting outcomes: schema_invalid (validation exhausted),
+#   verification_failed (KB/quote binding exhausted), llm_error/rate_limited
+#   (provider trail exhausted, via classify_failure);
+# - operational aborts: retrieval_error (search failed before any LLM call),
+#   draft_interrupted (stale PLANNING lease recovery). Operational-abort plan
+#   rows are audit records and are never activated.
+REMEDIATION_ABSTAIN_REASONS = (
+    "schema_invalid",
+    "verification_failed",
+    "llm_error",
+    "rate_limited",
+    "retrieval_error",
+    "draft_interrupted",
+)
+
+_REMEDIATION_ABSTAIN_SQL = ", ".join(f"'{r}'" for r in REMEDIATION_ABSTAIN_REASONS)
+
+REMEDIATION_EVENT_TYPES = (
+    "case_created",
+    "finding_linked",
+    "finding_link_rejected",
+    "finding_unlinked",
+    "triage_drafted",
+    "triage_approved",
+    "triage_reopened",
+    "plan_draft_started",
+    "plan_drafted",
+    "plan_abstained",
+    "plan_superseded",
+    "plan_draft_recovered",
+    "action_reviewed",
+    "lifecycle_changed",
+    "reassessment_launched",
+    "effectiveness_recorded",
+    "case_closed",
+    "case_reopened",
+)
+
+
+class RemediationCase(Base):
+    """One corrective-action case over one or more linked CONFIRMED gap
+    findings.
+
+    The case row holds only the HUMAN-approved triage projection; every AI
+    triage proposal lives in the append-only remediation_triage_drafts table.
+    active_plan_id is the sole authority for which plan is executable —
+    never inferred from plan sequence. evidence_revision increments on every
+    successful finding link/unlink and on triage reopen; triage drafts
+    snapshot it so stale LLM results are discarded, never persisted against
+    a different case composition.
+
+    approved_triage_draft_id / active_plan_id are plain columns in the ORM
+    (SQLite create_all cannot ALTER-add circular FKs); migration 0013 adds
+    the real SET NULL foreign keys on Postgres after all tables exist.
+    """
+
+    __tablename__ = "remediation_cases"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('TRIAGE', 'TRIAGE_APPROVED', 'PLANNING', 'PLAN_READY', "
+            "'IN_PROGRESS', 'CLOSED')",
+            name="ck_remediation_cases_status",
+        ),
+        CheckConstraint(
+            "classification IS NULL OR classification IN "
+            "('evidence_gap', 'observation', 'improvement_opportunity', 'nonconformity')",
+            name="ck_remediation_cases_classification",
+        ),
+        CheckConstraint(
+            "scope IS NULL OR scope IN "
+            "('local', 'related_requirements', 'organization_wide')",
+            name="ck_remediation_cases_scope",
+        ),
+        # Human triage projection is all-NULL in TRIAGE and fully set beyond
+        # (correction_note stays optional — the immediate correction may be
+        # legitimately empty).
+        CheckConstraint(
+            "(status = 'TRIAGE' AND classification IS NULL AND scope IS NULL "
+            "AND scope_rationale IS NULL AND triage_approved_at IS NULL "
+            "AND approved_triage_draft_id IS NULL) "
+            "OR (status != 'TRIAGE' AND classification IS NOT NULL "
+            "AND scope IS NOT NULL AND scope_rationale IS NOT NULL "
+            "AND triage_approved_at IS NOT NULL)",
+            name="ck_remediation_cases_triage_coherence",
+        ),
+        CheckConstraint(
+            "(status = 'CLOSED' AND closed_at IS NOT NULL AND close_note IS NOT NULL) "
+            "OR (status != 'CLOSED' AND closed_at IS NULL AND close_note IS NULL)",
+            name="ck_remediation_cases_closed_coherence",
+        ),
+        CheckConstraint(
+            "(status = 'PLANNING' AND planning_token IS NOT NULL "
+            "AND planning_started_at IS NOT NULL AND planning_heartbeat_at IS NOT NULL) "
+            "OR (status != 'PLANNING' AND planning_token IS NULL "
+            "AND planning_started_at IS NULL AND planning_heartbeat_at IS NULL)",
+            name="ck_remediation_cases_lease_coherence",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(
+        String(20), default="TRIAGE", server_default=text("'TRIAGE'")
+    )
+    # Human-approved triage projection (AI drafts live in
+    # remediation_triage_drafts; approval snapshots/overrides one draft).
+    classification: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    correction_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    scope_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triage_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # free-text, EXPLICITLY UNVERIFIED (no identity layer by design)
+    triage_reviewer_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    approved_triage_draft_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    active_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Stale-input protection: bumped on every finding link/unlink and triage
+    # reopen; triage drafts must match it to persist / be approved.
+    evidence_revision: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    # PLANNING lease (synchronous plan drafting crash recovery): the drafter
+    # renews planning_heartbeat_at between provider calls; recovery is allowed
+    # only once the heartbeat is stale (see remediation/planner.py).
+    planning_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    planning_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    planning_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    finding_links: Mapped[list["RemediationCaseFinding"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
+    triage_drafts: Mapped[list["RemediationTriageDraft"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="RemediationTriageDraft.sequence",
+        foreign_keys="RemediationTriageDraft.case_id",
+    )
+    plans: Mapped[list["RemediationPlan"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="RemediationPlan.sequence",
+        foreign_keys="RemediationPlan.case_id",
+    )
+    events: Mapped[list["RemediationEvent"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="RemediationEvent.sequence",
+    )
+    reassessments: Mapped[list["RemediationReassessment"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="RemediationReassessment.created_at",
+    )
+
+
+class RemediationTriageDraft(Base):
+    """One AI triage proposal — immutable, append-only (a redraft appends the
+    next sequence; the case's AI columns are never overwritten). Snapshot of
+    the exact finding links + evidence_revision it was drafted from."""
+
+    __tablename__ = "remediation_triage_drafts"
+    __table_args__ = (
+        UniqueConstraint("case_id", "sequence", name="uq_remediation_triage_drafts_sequence"),
+        CheckConstraint(
+            "status IN ('VERIFIED', 'ABSTAINED')",
+            name="ck_remediation_triage_drafts_status",
+        ),
+        CheckConstraint(
+            f"abstain_reason IS NULL OR abstain_reason IN ({_REMEDIATION_ABSTAIN_SQL})",
+            name="ck_remediation_triage_drafts_abstain_reason",
+        ),
+        CheckConstraint(
+            "ai_classification IS NULL OR ai_classification IN "
+            "('evidence_gap', 'observation', 'improvement_opportunity', 'nonconformity')",
+            name="ck_remediation_triage_drafts_classification",
+        ),
+        CheckConstraint(
+            "ai_scope IS NULL OR ai_scope IN "
+            "('local', 'related_requirements', 'organization_wide')",
+            name="ck_remediation_triage_drafts_scope",
+        ),
+        # VERIFIED requires the complete structured proposal and no reason;
+        # ABSTAINED requires a reason (raw_draft may be NULL on provider
+        # failure — nothing truthful exists to store).
+        CheckConstraint(
+            "(status = 'VERIFIED' AND abstain_reason IS NULL "
+            "AND ai_classification IS NOT NULL AND ai_correction_note IS NOT NULL "
+            "AND ai_scope IS NOT NULL AND ai_scope_rationale IS NOT NULL) "
+            "OR (status = 'ABSTAINED' AND abstain_reason IS NOT NULL)",
+            name="ck_remediation_triage_drafts_coherence",
+        ),
+        CheckConstraint(
+            "draft_attempts >= 0 AND draft_attempts <= 2",
+            name="ck_remediation_triage_drafts_attempts",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)  # 1-based
+    status: Mapped[str] = mapped_column(String(20))
+    abstain_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ai_classification: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ai_correction_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_scope: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    ai_scope_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stale-input protection (see RemediationCase.evidence_revision).
+    input_evidence_revision: Mapped[int] = mapped_column(Integer)
+    # exact finding-link snapshots at draft start
+    input_finding_links: Mapped[list] = mapped_column(JSON, default=list)
+    # similar-gap search provenance (retrieval passages + candidate findings)
+    similar_findings: Mapped[list] = mapped_column(JSON, default=list)
+    similar_corpus: Mapped[list] = mapped_column(JSON, default=list)
+    draft_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_version: Mapped[str] = mapped_column(String(20))
+    corpus_version: Mapped[str] = mapped_column(String(20))
+    # Text, not VARCHAR: provider-controlled (0008 rationale)
+    final_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    case: Mapped[RemediationCase] = relationship(
+        back_populates="triage_drafts", foreign_keys=[case_id]
+    )
+
+
+class RemediationCaseFinding(Base):
+    """One finding linked to a case, with the finding's review state
+    SNAPSHOTTED at link time — a later re-review of the finding never
+    silently changes the case's recorded basis. One active (non-CLOSED) case
+    per finding is service-enforced under the finding row lock (creation,
+    link, reopen); the DB cannot express that cross-table invariant."""
+
+    __tablename__ = "remediation_case_findings"
+    __table_args__ = (
+        UniqueConstraint("case_id", "finding_id", name="uq_remediation_case_findings_pair"),
+        CheckConstraint(
+            "link_source IN ('creation', 'search_suggested', 'manual')",
+            name="ck_remediation_case_findings_source",
+        ),
+        # eligibility snapshot: only gap verdicts may ever be linked
+        CheckConstraint(
+            "finding_human_verdict IN ('partial', 'non_compliant', 'missing')",
+            name="ck_remediation_case_findings_verdict",
+        ),
+        # at most one primary finding per case
+        Index(
+            "uq_remediation_case_findings_primary",
+            "case_id",
+            unique=True,
+            postgresql_where=text("is_primary"),
+            sqlite_where=text("is_primary"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"), index=True
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    link_source: Mapped[str] = mapped_column(String(20))
+    link_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    linker_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # finding snapshot at link time
+    finding_review_count: Mapped[int] = mapped_column(Integer)
+    finding_human_verdict: Mapped[str] = mapped_column(String(20))
+    finding_human_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    finding_requirement_id: Mapped[str] = mapped_column(String(20))
+    finding_requirement_fr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    finding_domain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    case: Mapped[RemediationCase] = relationship(back_populates="finding_links")
+    finding: Mapped[Finding] = relationship()
+
+
+class RemediationPlan(Base):
+    """One drafted corrective-action plan — write-once except the
+    VERIFIED/ABSTAINED -> SUPERSEDED transition. Input snapshots make the
+    plan self-contained: later unlinking a finding or reopening triage never
+    changes the apparent basis of a historical plan."""
+
+    __tablename__ = "remediation_plans"
+    __table_args__ = (
+        UniqueConstraint("case_id", "sequence", name="uq_remediation_plans_sequence"),
+        CheckConstraint(
+            "status IN ('VERIFIED', 'ABSTAINED', 'SUPERSEDED')",
+            name="ck_remediation_plans_status",
+        ),
+        CheckConstraint(
+            f"abstain_reason IS NULL OR abstain_reason IN ({_REMEDIATION_ABSTAIN_SQL})",
+            name="ck_remediation_plans_abstain_reason",
+        ),
+        # VERIFIED requires the complete structured plan; ABSTAINED requires a
+        # reason. SUPERSEDED keeps whatever shape it had before supersession.
+        CheckConstraint(
+            "(status = 'VERIFIED' AND abstain_reason IS NULL "
+            "AND gap_restatement IS NOT NULL AND root_cause_hypotheses IS NOT NULL "
+            "AND raw_draft IS NOT NULL) "
+            "OR (status = 'ABSTAINED' AND abstain_reason IS NOT NULL) "
+            "OR (status = 'SUPERSEDED')",
+            name="ck_remediation_plans_coherence",
+        ),
+        # superseded_by_plan_id stays NULL when supersession came from triage
+        # reopening rather than replacement by another plan.
+        CheckConstraint(
+            "(status = 'SUPERSEDED' AND superseded_at IS NOT NULL) "
+            "OR (status != 'SUPERSEDED' AND superseded_at IS NULL "
+            "AND superseded_by_plan_id IS NULL)",
+            name="ck_remediation_plans_superseded_coherence",
+        ),
+        CheckConstraint(
+            "draft_attempts >= 0 AND draft_attempts <= 2",
+            name="ck_remediation_plans_attempts",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)  # 1-based
+    status: Mapped[str] = mapped_column(String(20))
+    abstain_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    superseded_by_plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey("remediation_plans.id", ondelete="SET NULL"), nullable=True
+    )
+    gap_restatement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # [{label, hypothesis}] — hypotheses are LABELED as such (spec §8)
+    root_cause_hypotheses: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    raw_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_version: Mapped[str] = mapped_column(String(20))
+    corpus_version: Mapped[str] = mapped_column(String(20))
+    final_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # exact server evidence set offered to the model (quote binding target)
+    retrieved: Mapped[list] = mapped_column(JSON, default=list)
+    # input snapshots (self-contained historical basis)
+    input_finding_links: Mapped[list] = mapped_column(JSON, default=list)
+    # the four effective human-approved triage fields + reviewer label +
+    # approval time + source draft id — NOT the AI draft
+    input_triage_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    # server-owned list of KB ids actually offered in the prompt evidence;
+    # impacted_requirement_ids must be a subset (requirement binding)
+    allowed_requirement_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # requirement_fr/domain snapshots for every offered KB id
+    input_kb: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    case: Mapped[RemediationCase] = relationship(
+        back_populates="plans", foreign_keys=[case_id]
+    )
+    actions: Mapped[list["RemediationAction"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan",
+        order_by="RemediationAction.position",
+    )
+
+
+class RemediationAction(Base):
+    """One typed corrective action inside a plan. AI columns are write-once;
+    the human decision lives in the review projection columns + events.
+    Operable only while its plan is the case's active_plan_id AND VERIFIED
+    (active-plan action authority — superseded plans' actions are immutable
+    historical records and never block case closure)."""
+
+    __tablename__ = "remediation_actions"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "position", name="uq_remediation_actions_position"),
+        CheckConstraint(
+            "action_type IN ('document_amendment', 'new_document', 'process_change', "
+            "'training', 'risk_treatment_update', 'other')",
+            name="ck_remediation_actions_type",
+        ),
+        CheckConstraint(
+            "review_status IN ('PENDING', 'CONFIRMED')",
+            name="ck_remediation_actions_review_status",
+        ),
+        CheckConstraint(
+            "review_action IS NULL OR review_action IN ('approve', 'edit', 'reject')",
+            name="ck_remediation_actions_review_action",
+        ),
+        CheckConstraint(
+            "priority IS NULL OR priority IN ('haute', 'normale', 'basse')",
+            name="ck_remediation_actions_priority",
+        ),
+        CheckConstraint(
+            "lifecycle IN ('PROPOSED', 'APPROVED', 'REJECTED', 'IN_PROGRESS', "
+            "'DONE', 'CANCELLED')",
+            name="ck_remediation_actions_lifecycle",
+        ),
+        CheckConstraint(
+            "effectiveness IN ('NOT_CHECKED', 'EFFECTIVE', 'PARTIALLY_EFFECTIVE', "
+            "'INEFFECTIVE')",
+            name="ck_remediation_actions_effectiveness",
+        ),
+        # quote binding provenance: no quote => no match fields; a quote
+        # requires COMPLETE exact-match provenance (fuzzy is never persisted)
+        CheckConstraint(
+            "(policy_quote IS NULL AND matched_chunk_id IS NULL "
+            "AND match_start IS NULL AND match_end IS NULL "
+            "AND match_method IS NULL AND match_score IS NULL) "
+            "OR (policy_quote IS NOT NULL AND matched_chunk_id IS NOT NULL "
+            "AND match_start IS NOT NULL AND match_end IS NOT NULL "
+            "AND match_method = 'exact' AND match_score IS NOT NULL)",
+            name="ck_remediation_actions_quote_coherence",
+        ),
+        # three-branch review coherence (deliberately NOT a mirror of
+        # ck_findings_review_coherence — reject clears effective fields)
+        CheckConstraint(
+            "(review_status = 'PENDING' AND review_action IS NULL "
+            "AND description IS NULL AND rationale IS NULL AND owner_role IS NULL "
+            "AND success_criterion IS NULL AND priority IS NULL "
+            "AND reviewed_at IS NULL AND lifecycle = 'PROPOSED') "
+            "OR (review_status = 'CONFIRMED' AND review_action IN ('approve', 'edit') "
+            "AND description IS NOT NULL AND rationale IS NOT NULL "
+            "AND owner_role IS NOT NULL AND success_criterion IS NOT NULL "
+            "AND priority IS NOT NULL AND reviewed_at IS NOT NULL "
+            "AND lifecycle NOT IN ('PROPOSED', 'REJECTED')) "
+            "OR (review_status = 'CONFIRMED' AND review_action = 'reject' "
+            "AND description IS NULL AND rationale IS NULL AND owner_role IS NULL "
+            "AND success_criterion IS NULL AND priority IS NULL "
+            "AND reviewed_at IS NOT NULL AND lifecycle = 'REJECTED')",
+            name="ck_remediation_actions_review_coherence",
+        ),
+        CheckConstraint(
+            "(effectiveness = 'NOT_CHECKED' AND effectiveness_note IS NULL "
+            "AND effectiveness_recorded_at IS NULL) "
+            "OR (effectiveness != 'NOT_CHECKED' AND effectiveness_note IS NOT NULL "
+            "AND effectiveness_recorded_at IS NOT NULL)",
+            name="ck_remediation_actions_effectiveness_coherence",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_plans.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)  # 1-based, plan order
+    # ---- write-once AI proposal
+    action_type: Mapped[str] = mapped_column(String(30))
+    ai_description: Mapped[str] = mapped_column(Text)
+    ai_rationale: Mapped[str] = mapped_column(Text)
+    ai_owner_role: Mapped[str] = mapped_column(Text)
+    ai_success_criterion: Mapped[str] = mapped_column(Text)
+    # immutable AI proposal; the human-approved effective scope lives in
+    # remediation_action_requirements
+    ai_impacted_requirement_ids: Mapped[list] = mapped_column(JSON, default=list)
+    policy_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    matched_chunk_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    match_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_method: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # ---- human review projection (approve snapshots AI values; edit stores
+    # human text; reject clears — AI columns above are never touched)
+    review_status: Mapped[str] = mapped_column(
+        String(20), default="PENDING", server_default=text("'PENDING'")
+    )
+    review_action: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    success_criterion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    review_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # ---- independent tracking dimensions
+    lifecycle: Mapped[str] = mapped_column(
+        String(20), default="PROPOSED", server_default=text("'PROPOSED'")
+    )
+    effectiveness: Mapped[str] = mapped_column(
+        String(30), default="NOT_CHECKED", server_default=text("'NOT_CHECKED'")
+    )
+    effectiveness_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effectiveness_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    plan: Mapped[RemediationPlan] = relationship(back_populates="actions")
+    requirements: Mapped[list["RemediationActionRequirement"]] = relationship(
+        back_populates="action", cascade="all, delete-orphan"
+    )
+
+
+class RemediationActionRequirement(Base):
+    """Human-approved EFFECTIVE requirement scope of one action. Written only
+    by the action-review endpoint: approve snapshots ai_impacted_requirement_ids,
+    edit stores validated human ids, reject deletes the rows (prior values
+    preserved in the event payload). Feeds the effectiveness reassessment
+    manifest now and M7b RemediationContext.requirement_ids later."""
+
+    __tablename__ = "remediation_action_requirements"
+    __table_args__ = (
+        UniqueConstraint(
+            "action_id", "requirement_id", name="uq_remediation_action_requirements_pair"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    action_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_actions.id", ondelete="CASCADE"), index=True
+    )
+    requirement_id: Mapped[str] = mapped_column(String(20))
+    # requirement snapshot (M5 0012 precedent: review must not depend on the
+    # live KB)
+    requirement_fr: Mapped[str] = mapped_column(Text)
+    domain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    action: Mapped[RemediationAction] = relationship(back_populates="requirements")
+
+
+class RemediationReassessment(Base):
+    """Append-only launch record for one scoped effectiveness reassessment,
+    with a controlled PENDING -> LAUNCHED/LAUNCH_FAILED transition
+    (status/error/assessment_id are the only mutable fields).
+    planned_assessment_id is pre-generated BEFORE create_assessment so a crash
+    between assessment creation and linkage is deterministically reconcilable.
+    Holdout exclusions are recorded, never silent."""
+
+    __tablename__ = "remediation_reassessments"
+    __table_args__ = (
+        UniqueConstraint(
+            "planned_assessment_id", name="uq_remediation_reassessments_planned"
+        ),
+        CheckConstraint(
+            "status IN ('PENDING', 'LAUNCHED', 'LAUNCH_FAILED')",
+            name="ck_remediation_reassessments_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    planned_assessment_id: Mapped[str] = mapped_column(String(36))
+    assessment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assessments.id", ondelete="SET NULL"), nullable=True
+    )
+    selected_action_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # manifest actually launched (dev split only) + the recorded exclusions
+    included_requirement_ids: Mapped[list] = mapped_column(JSON, default=list)
+    excluded_holdout_ids: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(
+        String(20), default="PENDING", server_default=text("'PENDING'")
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    case: Mapped[RemediationCase] = relationship(back_populates="reassessments")
+
+
+class RemediationEvent(Base):
+    """Append-only audit trail for the whole case aggregate — rows are never
+    updated or deleted. sequence is assigned under the case row lock.
+    Payloads are versioned discriminated schemas (remediation/events.py) with
+    full before/after values for mutations. actor_label is free-text,
+    EXPLICITLY UNVERIFIED (no identity layer by design)."""
+
+    __tablename__ = "remediation_events"
+    __table_args__ = (
+        UniqueConstraint("case_id", "sequence", name="uq_remediation_events_sequence"),
+        CheckConstraint(
+            "event_type IN (" + ", ".join(f"'{t}'" for t in REMEDIATION_EVENT_TYPES) + ")",
+            name="ck_remediation_events_type",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)  # 1-based
+    event_type: Mapped[str] = mapped_column(String(40))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
+    actor_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    case: Mapped[RemediationCase] = relationship(back_populates="events")
+
+
+class RemediationAttempt(Base):
+    """One semantic LLM attempt of the triage drafter or the planner. Mirrors
+    AssessmentAttempt; stage names the flow and exactly one parent FK is set
+    (coherence CHECK)."""
+
+    __tablename__ = "remediation_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "stage IN ('triage', 'plan')", name="ck_remediation_attempts_stage"
+        ),
+        CheckConstraint(
+            "(stage = 'triage' AND triage_draft_id IS NOT NULL AND plan_id IS NULL) "
+            "OR (stage = 'plan' AND plan_id IS NOT NULL AND triage_draft_id IS NULL)",
+            name="ck_remediation_attempts_stage_coherence",
+        ),
+        # unique attempt numbering per parent (one FK is always NULL, hence
+        # partial indexes instead of a plain UniqueConstraint)
+        Index(
+            "uq_remediation_attempts_triage",
+            "triage_draft_id",
+            "attempt_number",
+            unique=True,
+            postgresql_where=text("triage_draft_id IS NOT NULL"),
+            sqlite_where=text("triage_draft_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_remediation_attempts_plan",
+            "plan_id",
+            "attempt_number",
+            unique=True,
+            postgresql_where=text("plan_id IS NOT NULL"),
+            sqlite_where=text("plan_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_cases.id", ondelete="CASCADE"), index=True
+    )
+    stage: Mapped[str] = mapped_column(String(10))
+    triage_draft_id: Mapped[str | None] = mapped_column(
+        ForeignKey("remediation_triage_drafts.id", ondelete="CASCADE"), nullable=True
+    )
+    plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey("remediation_plans.id", ondelete="CASCADE"), nullable=True
+    )
+    attempt_number: Mapped[int] = mapped_column(Integer)  # 1-based
+    prompt_version: Mapped[str] = mapped_column(String(20))
+    parsed_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    verifier_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    llm_calls: Mapped[list["RemediationLlmCall"]] = relationship(
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+        order_by="RemediationLlmCall.call_number",
+    )
+
+
+class RemediationLlmCall(Base):
+    """One HTTP attempt against one provider within a remediation attempt.
+    Deliberate mirror of llm_calls (chat precedent, 0009): llm_calls rows
+    require an assessment attempt."""
+
+    __tablename__ = "remediation_llm_calls"
+    __table_args__ = (
+        UniqueConstraint(
+            "remediation_attempt_id", "call_number", name="uq_remediation_llm_calls_key"
+        ),
+        CheckConstraint(
+            "status IN ('SUCCESS', 'HTTP_ERROR', 'NETWORK_ERROR', 'BAD_RESPONSE', "
+            "'SKIPPED_NO_KEY')",
+            name="ck_remediation_llm_calls_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    remediation_attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("remediation_attempts.id", ondelete="CASCADE"), index=True
+    )
+    call_number: Mapped[int] = mapped_column(Integer)  # 1-based
+    prompt_version: Mapped[str] = mapped_column(String(20), default="")
+    provider: Mapped[str] = mapped_column(String(20))
+    requested_model: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20))
+    reported_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_messages: Mapped[list] = mapped_column(JSON, default=list)
+    response_format: Mapped[dict] = mapped_column(JSON, default=dict)
+    temperature: Mapped[float] = mapped_column(Float, default=0.0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    attempt: Mapped[RemediationAttempt] = relationship(back_populates="llm_calls")
