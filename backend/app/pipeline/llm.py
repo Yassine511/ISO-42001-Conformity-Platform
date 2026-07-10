@@ -16,7 +16,7 @@ persisted in llm_calls.
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Callable, Protocol
 
 import httpx
 
@@ -84,6 +84,7 @@ class LLMProvider(Protocol):
         *,
         json_schema: dict | None = None,
         schema_name: str = "draft_finding",
+        on_call_finished: Callable[[], None] | None = None,
     ) -> LLMOutcome: ...
 
 
@@ -163,8 +164,21 @@ class HttpJsonLLM:
         *,
         json_schema: dict | None = None,
         schema_name: str = "draft_finding",
+        on_call_finished: Callable[[], None] | None = None,
     ) -> LLMOutcome:
+        """on_call_finished (optional) is invoked after EVERY provider call is
+        recorded — success, failure or skip — and before any 429 backoff
+        sleep. It exists for long-running callers that must renew a lease
+        between calls (M7a planner heartbeat): the whole provider/fallback/
+        retry loop is encapsulated here, so callers have no other observation
+        point. Callback exceptions are the callback's problem — it must catch
+        internally (the planner marks its lease lost instead of raising)."""
         calls: list[LLMCall] = []
+
+        def _notify() -> None:
+            if on_call_finished is not None:
+                on_call_finished()
+
         providers = [
             (
                 "mistral",
@@ -201,6 +215,7 @@ class HttpJsonLLM:
                     call.error = "clé API absente"
                     call.finished_at = _now()
                     calls.append(call)
+                    _notify()
                     break  # no key: retrying is pointless, go to fallback
                 try:
                     resp = httpx.post(
@@ -219,6 +234,7 @@ class HttpJsonLLM:
                     call.error = f"{type(exc).__name__}: {exc}"
                     call.finished_at = _now()
                     calls.append(call)
+                    _notify()
                     break  # network error: try the fallback provider
                 call.http_status = resp.status_code
                 call.finished_at = _now()
@@ -227,6 +243,7 @@ class HttpJsonLLM:
                     call.error = resp.text[:2000]
                     call.raw_response = resp.text[:2000]  # error body is provenance too
                     calls.append(call)
+                    _notify()  # before the backoff sleep — lease renewal window
                     if resp.status_code == 429 and backoff_round < settings.judge_429_retries:
                         time.sleep(_backoff_delay(resp, backoff_round))
                         continue  # retry the same provider
@@ -245,11 +262,13 @@ class HttpJsonLLM:
                     call.error = f"réponse 200 malformée — {type(exc).__name__}: {exc}"
                     call.raw_response = resp.text[:2000]
                     calls.append(call)
+                    _notify()
                     break  # the fallback provider may still succeed
                 call.status = CALL_SUCCESS
                 call.reported_model = data.get("model")
                 call.raw_response = content
                 calls.append(call)
+                _notify()
                 return LLMOutcome(content=content, calls=calls)
         return LLMOutcome(
             content=None,
@@ -280,7 +299,17 @@ def complete_json(
     *,
     json_schema: dict | None = None,
     schema_name: str = "draft_finding",
+    on_call_finished: Callable[[], None] | None = None,
 ) -> LLMOutcome:
+    # The kwarg is forwarded only when set: existing fakes/providers that
+    # predate it keep working unchanged for every caller that doesn't use it.
+    if on_call_finished is None:
+        return get_provider().complete_json(
+            messages, json_schema=json_schema, schema_name=schema_name
+        )
     return get_provider().complete_json(
-        messages, json_schema=json_schema, schema_name=schema_name
+        messages,
+        json_schema=json_schema,
+        schema_name=schema_name,
+        on_call_finished=on_call_finished,
     )

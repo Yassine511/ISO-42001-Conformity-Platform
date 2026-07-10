@@ -462,6 +462,51 @@ def test_429_retried_with_backoff_before_fallback(monkeypatch):
     assert len(sleeps) == 1
 
 
+def test_on_call_finished_invoked_per_call_before_backoff(monkeypatch):
+    """M7a lease heartbeat hook: on_call_finished fires after EVERY recorded
+    provider call — including a 429 BEFORE its backoff sleep — so a long
+    retry trail keeps renewing the caller's lease between calls."""
+    from unittest.mock import MagicMock
+
+    from app.pipeline import llm as L
+
+    ok_body = {"model": "mistral-large-2411", "choices": [{"message": {"content": "{}"}}]}
+    resp_429 = MagicMock(status_code=429, text="rate limited", headers={"retry-after": "0"})
+    resp_ok = MagicMock(status_code=200, headers={})
+    resp_ok.json.return_value = ok_body
+    responses = [resp_429, resp_ok]
+    trace: list[str] = []
+    monkeypatch.setattr(L.settings, "mistral_api_key", "k")
+    monkeypatch.setattr(L.settings, "groq_api_key", "")
+    monkeypatch.setattr(L.httpx, "post", lambda *a, **kw: responses.pop(0))
+    monkeypatch.setattr(L.time, "sleep", lambda _s: trace.append("sleep"))
+
+    out = L.HttpJsonLLM().complete_json(
+        [{"role": "user", "content": "x"}],
+        on_call_finished=lambda: trace.append("notify"),
+    )
+    assert out.content == "{}"
+    # one notify per call; the 429's notify precedes the backoff sleep
+    assert trace == ["notify", "sleep", "notify"]
+
+
+def test_on_call_finished_default_none_keeps_existing_providers_working(monkeypatch):
+    """Module wrapper forwards the kwarg only when set: a provider that
+    predates on_call_finished (legacy fakes) keeps working."""
+    from app.pipeline import llm as L
+
+    class LegacyFake:
+        def complete_json(self, messages, *, json_schema=None, schema_name="x"):
+            return L.LLMOutcome(content="{}", calls=[])
+
+    L.set_provider(LegacyFake())
+    try:
+        out = L.complete_json([{"role": "user", "content": "x"}])
+        assert out.content == "{}"
+    finally:
+        L.set_provider(None)
+
+
 def test_provider_with_blank_timestamps_does_not_crash(env):
     """LLMCall timestamps default to '': the judge must not crash on them."""
     from app.pipeline.llm import CALL_SUCCESS as _CS
