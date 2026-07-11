@@ -120,6 +120,26 @@ def _url(org_id, case_id="", tail=""):
 # ------------------------------------------------------------------ creation
 
 
+def test_triage_corpus_changed_maps_to_retrieval_error(client, gap_env, monkeypatch):
+    """The triage similar-gap search failing with CorpusChangedError (a mid-
+    search version activation) is an operational abort -> the triage draft is
+    ABSTAINED(retrieval_error), the case still opens (rev.6 triage mapping)."""
+    from app.remediation import triage as triage_module
+    from app.services.retrieval import CorpusChangedError
+
+    org_id, _aid, by_req = gap_env
+
+    def boom(*a, **kw):
+        raise CorpusChangedError()
+
+    monkeypatch.setattr(triage_module, "hybrid_search", boom)
+    r = _create_case(client, org_id, by_req["A.9.2"])
+    assert r.status_code == 201
+    (draft,) = r.json()["triage_drafts"]
+    assert draft["status"] == "ABSTAINED"
+    assert draft["abstain_reason"] == "retrieval_error"
+
+
 def test_create_case_from_confirmed_gap_finding(client, gap_env):
     org_id, _aid, by_req = gap_env
     r = _create_case(client, org_id, by_req["A.9.2"], actor_label="Aïcha")

@@ -80,16 +80,28 @@
       "note": "raw-unique but under MIN_ANCHOR_LEN=20 -> the patch layer rejects it before the one-span check"
     },
     {
-      "id": "exactly-min-len",
-      "anchor": "Comité IA peuvent être",
+      "id": "min-len-20-accept",
+      "anchor": "responsable des syst",
       "expect": "accept",
-      "note": "exactly 22 chars, raw-unique -> the length gate passes and one span resolves"
+      "note": "EXACTLY MIN_ANCHOR_LEN (20 chars), raw-unique -> the length gate passes at the boundary"
     },
     {
-      "id": "one-below-min-len",
+      "id": "below-min-19-reject",
+      "anchor": "responsable des sys",
+      "expect": "reject_too_short",
+      "note": "19 chars (one below MIN_ANCHOR_LEN=20), raw-unique -> rejected by the length gate before the span check"
+    },
+    {
+      "id": "above-min-22-accept",
+      "anchor": "Comité IA peuvent être",
+      "expect": "accept",
+      "note": "22 chars, raw-unique -> accepted (well above the boundary)"
+    },
+    {
+      "id": "above-min-21-accept",
       "anchor": "documentée et validée",
       "expect": "accept",
-      "note": "21 chars raw-unique (guards the MIN_ANCHOR_LEN boundary from the accept side)"
+      "note": "21 chars, raw-unique -> accepted"
     },
     {
       "id": "near-trailing-space",
