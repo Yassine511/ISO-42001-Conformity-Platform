@@ -975,6 +975,15 @@ function ArtifactCard({
       onChanged();
     },
   });
+  // Recovery re-drives a stranded activation WITHOUT re-uploading the file —
+  // it operates on the candidate version the first upload already created.
+  const recover = useMutation({
+    mutationFn: (versionId: string) => api.recoverUpload(art.document_id, versionId),
+    onSuccess: onChanged,
+  });
+  const result = recover.data ?? supersede.data;
+  const outcome = result?.outcome ?? "";
+  const recoverable = outcome === "pending" || outcome === "index_failed" || outcome === "assessment_conflict";
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
       <p className="font-medium text-slate-700">
@@ -1007,12 +1016,39 @@ function ArtifactCard({
           Téléverser la version révisée
         </button>
       </div>
-      {supersede.data?.outcome === "activated" && (
+      {(outcome === "activated" || outcome === "already_active") && (
         <p className="text-emerald-700">
           Nouvelle version créée et activée à partir de votre fichier révisé.
         </p>
       )}
-      <ErrorText error={supersede.error} />
+      {outcome === "index_failed" && (
+        <p className="text-amber-700">
+          Indexation vectorielle échouée ; la version est conservée et peut être reprise.
+        </p>
+      )}
+      {outcome === "pending" && (
+        <p className="text-amber-700">Activation en attente ; vous pouvez la reprendre.</p>
+      )}
+      {outcome === "assessment_conflict" && (
+        <p className="text-amber-700">
+          Une évaluation est en cours ; réessayez la reprise une fois qu'elle est terminée.
+        </p>
+      )}
+      {outcome.startsWith("abandoned:") && (
+        <p className="text-red-600">
+          Activation abandonnée ({outcome.split(":")[1]}) : retéléversez la version révisée.
+        </p>
+      )}
+      {recoverable && result?.version_id && (
+        <button
+          onClick={() => recover.mutate(result.version_id!)}
+          disabled={recover.isPending}
+          className="rounded-lg border border-indigo-300 px-3 py-1 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+        >
+          Reprendre l'activation
+        </button>
+      )}
+      <ErrorText error={supersede.error || recover.error} />
     </div>
   );
 }

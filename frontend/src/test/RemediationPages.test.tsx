@@ -38,6 +38,7 @@ vi.mock("../api", async (importOriginal) => {
       recoverPatch: vi.fn(),
       createArtifact: vi.fn(),
       supersedeUpload: vi.fn(),
+      recoverUpload: vi.fn(),
       artifactDownloadUrl: mod.api.artifactDownloadUrl,
     },
   };
@@ -363,6 +364,40 @@ describe("patch flow", () => {
     expect(
       await screen.findByText(/Nouvelle version créée et activée/),
     ).toBeInTheDocument();
+  });
+
+  it("surfaces an index_failed upload and offers recovery", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([]);
+    mocked.listArtifacts.mockResolvedValue([
+      {
+        id: "art-1", case_id: "case-1", action_id: "act-1", document_id: "doc-9",
+        document_version_id: "ver-9", canonical_format: "docx" as const,
+        status: "VERIFIED" as const, abstain_reason: null, verifier_errors: null,
+        filename: "proposition.md", content_md: "x", rationale: "r", attempts: 1,
+        requirement_ids: ["A.9.2"], created_at: "2026-07-11T09:00:00Z",
+      },
+    ]);
+    // a real Qdrant outage -> index_failed with the candidate version id
+    mocked.supersedeUpload.mockResolvedValue({
+      outcome: "index_failed", decision_id: null, version_id: "ver-10",
+    });
+    mocked.recoverUpload.mockResolvedValue({
+      outcome: "activated", decision_id: null, version_id: "ver-10",
+    });
+
+    renderCase();
+    const input = await screen.findByLabelText("Fichier révisé à téléverser");
+    const file = new File([new Uint8Array([1])], "revise.docx");
+    await userEvent.upload(input, file);
+    await userEvent.click(screen.getByRole("button", { name: "Téléverser la version révisée" }));
+    // the failure is surfaced (not swallowed), with a recovery affordance
+    expect(await screen.findByText(/Indexation vectorielle échouée/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reprendre l'activation" }));
+    await waitFor(() =>
+      expect(mocked.recoverUpload).toHaveBeenCalledWith("doc-9", "ver-10"),
+    );
+    expect(await screen.findByText(/Nouvelle version créée et activée/)).toBeInTheDocument();
   });
 });
 

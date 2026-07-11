@@ -768,6 +768,10 @@ export const api = {
     fetch(`/api/documents/${docId}/versions`).then((r) => json<DocumentVersionSummary[]>(r)),
   versionDownloadUrl: (docId: string, versionId: string) =>
     `/api/documents/${docId}/versions/${versionId}/download`,
+  // Re-drive a stranded superseding-upload activation (INDEX_FAILED after a
+  // Qdrant outage, or PENDING_INDEX after an assessment conflict).
+  recoverUpload: (docId: string, versionId: string) =>
+    post(`/api/documents/${docId}/versions/${versionId}/recover`, {}).then((r) => activation(r)),
   createPatchProposal: (orgId: string, caseId: string, actionId: string, documentId: string) =>
     post(
       `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/patch-proposals`,
