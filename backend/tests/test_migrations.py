@@ -674,6 +674,41 @@ def test_0014_backfills_document_versions(scratch_db):
                 (str(uuid.uuid4()), parsed_id, org_id, by_id[parsed_id][2], str(uuid.uuid4())),
             )
         con.rollback()
+
+        # Composite ownership FKs (audit finding 6): a page/chunk whose
+        # document_id and document_version_id name DIFFERENT logical documents
+        # is rejected. Base.metadata.create_all builds these (they live in
+        # __table_args__), but only the alembic DB proves the migration's copy.
+        legacy_vid = by_id[legacy_id][2]  # a version of ANOTHER document
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            con.execute(
+                "INSERT INTO document_pages (id, document_id, document_version_id, "
+                "page_number, text) VALUES (%s, %s, %s, 9, 'x')",
+                (str(uuid.uuid4()), parsed_id, legacy_vid),
+            )
+        con.rollback()
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            con.execute(
+                "INSERT INTO chunks (id, document_id, document_version_id, "
+                "page_number, char_start, char_end, text) "
+                "VALUES ('x-cross', %s, %s, 1, 0, 1, 'x')",
+                (parsed_id, legacy_vid),
+            )
+        con.rollback()
+
+        # The two POST-HOC circular FKs are added by the migration only (they
+        # are plain columns in the ORM, so create_all-based test DBs — pg_env,
+        # SQLite unit tests — never build them). Confirm the migration did:
+        # current_version has no ondelete ('a' = NO ACTION); source_artifact_id
+        # is RESTRICT ('r') so a cited artifact cannot be deleted.
+        fk_rules = dict(
+            con.execute(
+                "SELECT conname, confdeltype FROM pg_constraint WHERE conname IN "
+                "('fk_documents_current_version', 'fk_document_versions_source_artifact')"
+            ).fetchall()
+        )
+        assert fk_rules.get("fk_documents_current_version") == "a"
+        assert fk_rules.get("fk_document_versions_source_artifact") == "r"
     finally:
         con.close()
 

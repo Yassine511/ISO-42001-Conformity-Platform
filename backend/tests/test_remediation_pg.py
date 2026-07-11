@@ -22,6 +22,7 @@ from app.models import (
     DocumentPage,
     Finding,
     Organization,
+    RemediationArtifact,
     RemediationCase,
     RemediationCaseFinding,
     RemediationEvent,
@@ -478,4 +479,174 @@ def test_concurrent_patch_approvals_share_one_base(pg_env):
         )
     ).all()
     assert len(active) == 1 and active[0].origin == "patch"
+    db.close()
+
+
+def _seed_docx(session_factory, org_id: str, checksum: str = "docx-base"):
+    """A parsed DOCX-format document (canonical_format derives from the .docx
+    filename; no real docx bytes needed for the version row)."""
+    from tests.conftest import seed_parsed_document
+
+    db = session_factory()
+    doc = seed_parsed_document(
+        db, org_id, "politique.docx", ["Politique documentaire initiale."], checksum=checksum
+    )
+    doc_id, base_vid = doc.id, doc.current_version_id
+    db.close()
+    return doc_id, base_vid
+
+
+def _artifact_json(content: str = "## Révision\n\nNouveau paragraphe.") -> str:
+    import json as _json
+
+    return _json.dumps(
+        {"content_md": content, "rationale": "Couvre l'action approuvée."},
+        ensure_ascii=False,
+    )
+
+
+def _verified_artifact_pg(session_factory, org_id, case_id, action_id, docx_id):
+    from app.remediation import patcher as patcher_module
+    from tests.test_remediation_planner import DynamicFake as _DF
+
+    llm_service.set_provider(_DF([_artifact_json()]))
+    db = session_factory()
+    artifact = patcher_module.draft_artifact(
+        db, session_factory, org_id, case_id, action_id, docx_id
+    )
+    assert artifact.status == "VERIFIED", artifact.abstain_reason
+    artifact_id = artifact.id
+    db.close()
+    return artifact_id
+
+
+def test_supersede_upload_with_artifact_lineage_pg(pg_env):
+    """The PDF/DOCX corrective-action loop on real Postgres: a VERIFIED
+    artifact -> human superseding upload citing it -> new version ACTIVE with
+    source_artifact_id lineage, base SUPERSEDED, and BOTH audit streams emit
+    version_superseded_by_upload (the composite FKs + dual events never ran on
+    PG before)."""
+    from app.models import (
+        DocumentVersion,
+        DocumentVersionEvent,
+        RemediationEvent,
+    )
+    from app.remediation import patcher as patcher_module
+
+    session_factory, org_id, finding_id = pg_env
+    case_id = _approved_case(session_factory, org_id, finding_id)
+    action_id, _txt = _approved_action_pg(session_factory, org_id, case_id)
+    docx_id, base_vid = _seed_docx(session_factory, org_id)
+    artifact_id = _verified_artifact_pg(session_factory, org_id, case_id, action_id, docx_id)
+
+    db = session_factory()
+    out = patcher_module.supersede_upload(
+        db,
+        org_id,
+        supersedes_version_id=base_vid,
+        remediation_artifact_id=artifact_id,
+        filename="politique.docx",
+        data=b"contenu docx revise",
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        pages=["Politique documentaire révisée par un humain."],
+        canonical_format="docx",
+    )
+    assert out["outcome"] == "activated", out
+    new_vid = out["version_id"]
+    db.close()
+
+    db = session_factory()
+    new = db.get(DocumentVersion, new_vid)
+    base = db.get(DocumentVersion, base_vid)
+    doc = db.get(Document, docx_id)
+    assert new.state == "ACTIVE" and new.origin == "upload"
+    assert new.source_artifact_id == artifact_id  # lineage persisted (RESTRICT FK)
+    assert base.state == "SUPERSEDED"
+    assert doc.current_version_id == new_vid
+    # document_version_events stream carries the supersession
+    vevents = [
+        e.event_type
+        for e in db.scalars(
+            select(DocumentVersionEvent)
+            .where(DocumentVersionEvent.document_id == docx_id)
+            .order_by(DocumentVersionEvent.sequence)
+        )
+    ]
+    assert "version_superseded_by_upload" in vevents
+    assert vevents[-3:] == ["version_indexed", "version_activated", "version_superseded_by_upload"]
+    # case-scoped remediation event references the artifact + both versions
+    case_ev = db.scalars(
+        select(RemediationEvent).where(
+            RemediationEvent.case_id == case_id,
+            RemediationEvent.event_type == "version_superseded_by_upload",
+        )
+    ).all()
+    assert len(case_ev) == 1
+    payload = case_ev[0].payload
+    assert payload["artifact_id"] == artifact_id
+    assert payload["superseded_version_id"] == base_vid
+    assert payload["new_version_id"] == new_vid
+    assert payload["document_version_event_id"]  # correlates the two streams
+    # NB the source_artifact_id lineage value is persisted here, but the
+    # RESTRICT FK itself is a POST-HOC circular FK that Base.metadata.create_all
+    # (this fixture) does not build — its enforcement is asserted against the
+    # alembic-built DB in test_migrations.test_0014_backfills_document_versions.
+    db.close()
+
+
+def test_supersede_upload_authority_lost_between_tx_a_and_tx_b_pg(pg_env):
+    """Round-4 gate on PG: the action/plan/evidence can change during the
+    lock-free indexing window; Tx B's artifact-authority recheck must catch it
+    and mark the candidate ABANDONED(authority_lost) rather than activate a
+    revision whose corrective-action lineage no longer holds."""
+    from app.models import DocumentVersion, RemediationCase
+    from app.remediation import patcher as patcher_module
+
+    session_factory, org_id, finding_id = pg_env
+    case_id = _approved_case(session_factory, org_id, finding_id)
+    action_id, _txt = _approved_action_pg(session_factory, org_id, case_id)
+    docx_id, base_vid = _seed_docx(session_factory, org_id)
+    artifact_id = _verified_artifact_pg(session_factory, org_id, case_id, action_id, docx_id)
+
+    # Inject a concurrent authority change in the lock-free window: bump the
+    # case evidence_revision after indexing but before Tx B.
+    real_index = patcher_module._index_candidate_points
+
+    def racing_index(db, org, version_id, token):
+        real_index(db, org, version_id, token)
+        other = session_factory()
+        try:
+            case = other.get(RemediationCase, case_id, with_for_update=True)
+            case.evidence_revision += 1
+            other.commit()
+        finally:
+            other.close()
+
+    patcher_module._index_candidate_points = racing_index
+    try:
+        db = session_factory()
+        out = patcher_module.supersede_upload(
+            db,
+            org_id,
+            supersedes_version_id=base_vid,
+            remediation_artifact_id=artifact_id,
+            filename="politique.docx",
+            data=b"contenu docx revise 2",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            pages=["Politique révisée alors que le contexte a changé."],
+            canonical_format="docx",
+        )
+    finally:
+        patcher_module._index_candidate_points = real_index
+    assert out["outcome"] == "abandoned:authority_lost", out
+    cand_vid = out["version_id"]
+    db.close()
+
+    db = session_factory()
+    cand = db.get(DocumentVersion, cand_vid)
+    base = db.get(DocumentVersion, base_vid)
+    doc = db.get(Document, docx_id)
+    assert cand.state == "ABANDONED" and cand.abandoned_reason == "authority_lost"
+    assert base.state == "ACTIVE"  # the base version was never displaced
+    assert doc.current_version_id == base_vid
     db.close()
