@@ -964,6 +964,17 @@ function ArtifactCard({
   onChanged: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  // A candidate this artifact spawned that never finished activating (a crash /
+  // Qdrant outage / assessment conflict). Detecting it on LOAD makes recovery
+  // reachable after a refresh, not only within the failed upload's session.
+  const versions = useQuery({
+    queryKey: ["document-versions", art.document_id],
+    queryFn: () => api.listDocumentVersions(art.document_id),
+  });
+  const refresh = () => {
+    versions.refetch();
+    onChanged();
+  };
   // The superseding upload replaces the version the artifact was drafted
   // against and records the artifact as lineage (action -> artifact -> file ->
   // version).
@@ -972,18 +983,27 @@ function ArtifactCard({
       api.supersedeUpload(orgId, f, art.document_version_id, art.id),
     onSuccess: () => {
       setFile(null);
-      onChanged();
+      refresh();
     },
   });
   // Recovery re-drives a stranded activation WITHOUT re-uploading the file —
   // it operates on the candidate version the first upload already created.
   const recover = useMutation({
     mutationFn: (versionId: string) => api.recoverUpload(art.document_id, versionId),
-    onSuccess: onChanged,
+    onSuccess: refresh,
   });
+  const stranded = (versions.data ?? []).find(
+    (v) =>
+      v.source_artifact_id === art.id &&
+      v.supersedes_version_id === art.document_version_id &&
+      (v.state === "PENDING_INDEX" || v.state === "INDEX_FAILED"),
+  );
   const result = recover.data ?? supersede.data;
   const outcome = result?.outcome ?? "";
-  const recoverable = outcome === "pending" || outcome === "index_failed" || outcome === "assessment_conflict";
+  const inSessionRecoverable =
+    outcome === "pending" || outcome === "index_failed" || outcome === "assessment_conflict";
+  // recover id: the in-session mutation result, else the stranded version on load
+  const recoverVersionId = inSessionRecoverable ? result?.version_id : stranded?.id;
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
       <p className="font-medium text-slate-700">
@@ -1039,9 +1059,17 @@ function ArtifactCard({
           Activation abandonnée ({outcome.split(":")[1]}) : retéléversez la version révisée.
         </p>
       )}
-      {recoverable && result?.version_id && (
+      {/* stranded on load (survives a refresh), when no in-session outcome shows it */}
+      {!inSessionRecoverable && stranded && (
+        <p className="text-amber-700">
+          Une activation de version ({stranded.state === "INDEX_FAILED"
+            ? "échec d'indexation"
+            : "en attente"}) est restée inachevée ; vous pouvez la reprendre.
+        </p>
+      )}
+      {recoverVersionId && (
         <button
-          onClick={() => recover.mutate(result.version_id!)}
+          onClick={() => recover.mutate(recoverVersionId)}
           disabled={recover.isPending}
           className="rounded-lg border border-indigo-300 px-3 py-1 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
         >

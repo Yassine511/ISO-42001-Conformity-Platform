@@ -399,6 +399,44 @@ describe("patch flow", () => {
     );
     expect(await screen.findByText(/Nouvelle version créée et activée/)).toBeInTheDocument();
   });
+
+  it("detects a stranded activation on load and offers recovery after refresh", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([]);
+    mocked.listArtifacts.mockResolvedValue([
+      {
+        id: "art-1", case_id: "case-1", action_id: "act-1", document_id: "doc-9",
+        document_version_id: "ver-9", canonical_format: "docx" as const,
+        status: "VERIFIED" as const, abstain_reason: null, verifier_errors: null,
+        filename: "proposition.md", content_md: "x", rationale: "r", attempts: 1,
+        requirement_ids: ["A.9.2"], created_at: "2026-07-11T09:00:00Z",
+      },
+    ]);
+    // a candidate this artifact spawned that stranded at INDEX_FAILED — with no
+    // in-session upload, the card must still surface it from the versions list
+    mocked.listDocumentVersions.mockResolvedValue([
+      {
+        id: "ver-10", document_id: "doc-9", version_number: 2,
+        state: "INDEX_FAILED" as const, origin: "upload" as const,
+        canonical_format: "docx" as const, filename: "revise.docx", page_count: 1,
+        source_checksum: "s", text_checksum: "t", parser_version: "2",
+        chunker_version: "3", chunk_id_scheme: "version_id_v3",
+        supersedes_version_id: "ver-9", source_artifact_id: "art-1",
+        abandoned_reason: null, activation_error: "boom", created_at: "2026-07-11T09:05:00Z",
+      },
+    ]);
+    mocked.recoverUpload.mockResolvedValue({
+      outcome: "activated", decision_id: null, version_id: "ver-10",
+    });
+
+    renderCase();
+    // the stranded activation is surfaced without any upload this session
+    expect(await screen.findByText(/activation de version.*inachevée/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reprendre l'activation" }));
+    await waitFor(() =>
+      expect(mocked.recoverUpload).toHaveBeenCalledWith("doc-9", "ver-10"),
+    );
+  });
 });
 
 describe("RemediationListPage", () => {
