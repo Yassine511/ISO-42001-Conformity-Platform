@@ -83,9 +83,13 @@ def quote_occurrences(pages: list[DocumentPage], quote: str) -> list[tuple[int, 
 
 def arm_results(db, org_id: str, query: str, kb: dict) -> dict[str, list[Chunk]]:
     """Top-K_MAX policy chunks per arm."""
-    bm25_hits = Bm25Index(retrieval._bm25_entries(db, "policy", org_id, kb)).search(query, K_MAX)
+    # M7b: the arms are snapshot-scoped to the org's current versions.
+    current_ids = sorted(retrieval._current_snapshot(db, org_id).values())
+    bm25_hits = Bm25Index(
+        retrieval._bm25_entries(db, "policy", kb, current_ids)
+    ).search(query, K_MAX)
     vec_ids = retrieval._vector_arm(
-        embed_texts([query])[0], "policy", org_id, kb["corpus_version"], K_MAX
+        embed_texts([query])[0], "policy", org_id, kb["corpus_version"], K_MAX, current_ids
     )
     hybrid = retrieval.hybrid_search(db, org_id, query, K_MAX, "policy")
     out = {
@@ -153,7 +157,13 @@ def main() -> int:
 
     for item in items:
         gold_doc = docs_by_name[item["document"]]
-        occurrences = quote_occurrences(gold_doc.pages, item["quote"])
+        # M7b: pages hang off the CURRENT version, not the document row.
+        gold_pages = db.scalars(
+            select(DocumentPage)
+            .where(DocumentPage.document_version_id == gold_doc.current_version_id)
+            .order_by(DocumentPage.page_number)
+        ).all()
+        occurrences = quote_occurrences(gold_pages, item["quote"])
         if not occurrences:
             print(f"  !! citation introuvable pour {item['gold_id']} (corpus modifié ?)")
             return 1
@@ -210,13 +220,14 @@ def main() -> int:
     # can hide a dead vector index behind a strong BM25.
     gold = json.loads((ROOT / "corpus" / "gold" / "gold_labels.json").read_text(encoding="utf-8"))
     kb_cases = [g for g in gold["items"] if g["split"] == "dev"]
-    kb_entries = retrieval._bm25_entries(db, "kb", org.id, kb)
+    # KB scope ignores the policy version snapshot (current_ids unused there).
+    kb_entries = retrieval._bm25_entries(db, "kb", kb, [])
     kb_arm_hits = {"BM25": 0, "Vector": 0, "Hybrid": 0}
     for g in kb_cases:
         want = retrieval.kb_result_id(kb["corpus_version"], g["requirement_id"])
         bm25_ids = [rid for rid, _ in Bm25Index(kb_entries).search(g["rationale_fr"], 5)]
         vec_ids = retrieval._vector_arm(
-            embed_texts([g["rationale_fr"]])[0], "kb", org.id, kb["corpus_version"], 5
+            embed_texts([g["rationale_fr"]])[0], "kb", org.id, kb["corpus_version"], 5, []
         )
         hybrid = retrieval.hybrid_search(db, org.id, g["rationale_fr"], 5, "kb")
         kb_arm_hits["BM25"] += want in bm25_ids
