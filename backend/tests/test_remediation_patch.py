@@ -279,6 +279,30 @@ def test_edit_applies_the_human_text_only(client, approved_action):
     db.close()
 
 
+def test_edit_preserves_exact_whitespace(client, approved_action):
+    """The human's edited text is applied EXACTLY — leading/trailing (and
+    internal) whitespace is preserved, not stripped (contract: 'appliquée
+    telle quelle')."""
+    org_id, case_id, _action_id, _doc = approved_action
+    proposal = _verified_proposal(client, approved_action, operation="replace")
+    # a whitespace-only edit is rejected BEFORE any decision is recorded, so
+    # the proposal stays decidable
+    r = _decide(client, org_id, case_id, proposal["id"], decision="edit", final_text_fr="   \n  ")
+    assert r.status_code == 422
+    # real text with significant leading/trailing whitespace is applied EXACTLY
+    human = "  \tTexte avec espaces significatifs en début et fin.  \n"
+    r = _decide(
+        client, org_id, case_id, proposal["id"], decision="edit", final_text_fr=human
+    )
+    assert r.status_code == 200
+    db = client.session_factory()
+    new = db.get(DocumentVersion, r.json()["version_id"])
+    assert human in new.pages[0].text  # exact bytes, untouched
+    decision = db.scalar(select(PatchDecision))
+    assert decision.final_text_fr == human
+    db.close()
+
+
 def test_reject_records_decision_without_version(client, approved_action):
     org_id, case_id, _action_id, _doc = approved_action
     proposal = _verified_proposal(client, approved_action)

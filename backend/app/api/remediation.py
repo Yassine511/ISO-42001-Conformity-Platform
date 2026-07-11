@@ -64,6 +64,16 @@ def _get_org(db: Session, org_id: str) -> Organization:
     return org
 
 
+def _get_case(db: Session, org_id: str, case_id: str) -> RemediationCase:
+    """Tenant guard: the case must exist AND belong to the org in the URL.
+    Direct-read routes (artifact list/download) must not trust case_id alone —
+    a case id from another org would otherwise leak its rows."""
+    case = db.get(RemediationCase, case_id)
+    if case is None or case.organization_id != org_id:
+        raise HTTPException(404, "Cas de remédiation introuvable.")
+    return case
+
+
 def _run(fn, *args, **kwargs):
     """Map service exceptions to HTTP errors."""
     try:
@@ -471,7 +481,7 @@ def create_artifact(
 def list_artifacts(
     org_id: str, case_id: str, action_id: str, db: Session = Depends(get_db)
 ):
-    _get_org(db, org_id)
+    _get_case(db, org_id, case_id)  # tenant guard: case must belong to org
     rows = db.scalars(
         select(RemediationArtifact)
         .where(
@@ -496,7 +506,7 @@ ARTIFACT_HEADER_FR = (
 def download_artifact(
     org_id: str, case_id: str, artifact_id: str, db: Session = Depends(get_db)
 ):
-    _get_org(db, org_id)
+    _get_case(db, org_id, case_id)  # tenant guard: case must belong to org
     artifact = db.get(RemediationArtifact, artifact_id)
     if artifact is None or artifact.case_id != case_id:
         raise HTTPException(404, "Artefact introuvable.")

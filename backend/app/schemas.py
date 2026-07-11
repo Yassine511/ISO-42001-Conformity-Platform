@@ -684,9 +684,10 @@ class PatchProposalCreate(BaseModel):
 
 class PatchDecisionBody(BaseModel):
     decision: Literal["approve", "edit", "reject"]
-    final_text_fr: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
-    ] | None = None
+    # NOT stripped: the human's edited text is applied EXACTLY (the UI promises
+    # "appliquée telle quelle"). Emptiness/whitespace-only is rejected in the
+    # service, which keeps intentional leading/trailing whitespace intact.
+    final_text_fr: Annotated[str, StringConstraints(max_length=8000)] | None = None
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None

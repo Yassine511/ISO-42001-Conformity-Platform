@@ -674,14 +674,23 @@ def decide_patch(
             "(somme de contrôle différente) ; redemandez un correctif."
         )
 
-    final_text = (
-        proposal.new_text_fr if decision == "approve" else (final_text_fr or "").strip()
-    )
-    if not final_text or len(final_text) > MAX_FINAL_TEXT_CHARS:
+    # The human's edited text is applied EXACTLY — never stripped/normalized
+    # (the "serialize UTF-8, no normalization" contract, and the UI's
+    # "appliquée telle quelle"). Only reject an empty/whitespace-only edit;
+    # intentional leading/trailing whitespace is preserved.
+    if decision == "approve":
+        final_text = proposal.new_text_fr
+    else:
+        final_text = final_text_fr or ""
+        if not final_text.strip():
+            db.rollback()
+            raise RemediationInvalidError(
+                "Le texte final est obligatoire pour « edit »."
+            )
+    if len(final_text) > MAX_FINAL_TEXT_CHARS:
         db.rollback()
         raise RemediationInvalidError(
-            "Le texte final est obligatoire pour « edit » et limité à "
-            f"{MAX_FINAL_TEXT_CHARS} caractères."
+            f"Le texte final est limité à {MAX_FINAL_TEXT_CHARS} caractères."
         )
 
     page_text = base.pages[0].text
@@ -1464,6 +1473,39 @@ def supersede_upload(
         # lock order org -> case -> document -> versions
         lock_case(db, org_id, artifact.case_id)
     doc = db.get(Document, base.document_id, with_for_update=True)
+
+    # Retry idempotency FIRST (before rejecting a now-SUPERSEDED base): a
+    # client that timed out after a successful/pending activation resubmits
+    # the identical request. Match the SAME supersession (base + format +
+    # artifact) by resulting content; return its real state instead of the
+    # stale-base 409. A genuinely different upload falls through to the strict
+    # validations below.
+    new_text_ck = text_checksum(pages)
+    twin = db.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == doc.id,
+            DocumentVersion.text_checksum == new_text_ck,
+            DocumentVersion.state != "ABANDONED",
+        )
+    )
+    if twin is not None:
+        same_supersession = (
+            twin.supersedes_version_id == supersedes_version_id
+            and twin.canonical_format == canonical_format
+            and twin.source_artifact_id == remediation_artifact_id
+        )
+        if same_supersession and twin.state == "ACTIVE":
+            db.rollback()
+            return {"outcome": "already_active", "decision_id": None, "version_id": twin.id}
+        if same_supersession and twin.state in ("PENDING_INDEX", "INDEX_FAILED"):
+            db.rollback()
+            return {"outcome": "pending", "decision_id": None, "version_id": twin.id}
+        db.rollback()
+        raise RemediationConflictError(
+            f"Contenu identique à la version {twin.version_number} "
+            f"({twin.state}) de ce document."
+        )
+
     if doc.current_version_id != base.id or base.state != "ACTIVE":
         db.rollback()
         raise RemediationConflictError(
@@ -1484,31 +1526,6 @@ def supersede_upload(
                 "La proposition (artefact) ne fait plus autorité "
                 f"({reason}) : l'action, le plan ou la version cible a changé."
             )
-
-    new_text_ck = text_checksum(pages)
-    twin = db.scalar(
-        select(DocumentVersion).where(
-            DocumentVersion.document_id == doc.id,
-            DocumentVersion.text_checksum == new_text_ck,
-            DocumentVersion.state != "ABANDONED",
-        )
-    )
-    if twin is not None:
-        # retry idempotency: the SAME supersession attempt resumes its
-        # candidate; anything else is a per-document content conflict
-        if (
-            twin.state in ("PENDING_INDEX", "INDEX_FAILED")
-            and twin.supersedes_version_id == supersedes_version_id
-            and twin.canonical_format == canonical_format
-            and twin.source_artifact_id == remediation_artifact_id
-        ):
-            db.rollback()
-            return {"outcome": "pending", "decision_id": None, "version_id": twin.id}
-        db.rollback()
-        raise RemediationConflictError(
-            f"Contenu identique à la version {twin.version_number} "
-            f"({twin.state}) de ce document."
-        )
 
     worker_token = str(uuid.uuid4())
     max_number = db.scalar(

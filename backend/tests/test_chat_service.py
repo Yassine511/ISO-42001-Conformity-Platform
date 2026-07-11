@@ -150,6 +150,31 @@ def _ask(env, scripts, question=QUESTION, org_id=None, conversation_id=None, **k
     return session_factory, fake, message
 
 
+def test_corpus_changed_raises_and_persists_nothing(env, monkeypatch):
+    """A CorpusChangedError during retrieval propagates (router maps it to a
+    retryable 409) and NO ChatMessage is persisted — retrieval happens before
+    any row is written, same doctrine as a Qdrant outage (rev.6 chat mapping)."""
+    from app.services.retrieval import CorpusChangedError
+
+    session_factory, org_id = env
+
+    def boom(*a, **kw):
+        raise CorpusChangedError()
+
+    monkeypatch.setattr(service, "hybrid_search", boom)
+    db = session_factory()
+    try:
+        with pytest.raises(CorpusChangedError):
+            service.ask(db, org_id, QUESTION, None)
+    finally:
+        db.close()
+    db = session_factory()
+    try:
+        assert db.scalars(select(ChatMessage)).first() is None
+    finally:
+        db.close()
+
+
 def _retrieved_kb_ids(env, question=QUESTION, k_kb=4):
     """KB clause ids the service will retrieve (deterministic) — a valid KB
     citation must reference one of these."""

@@ -316,6 +316,24 @@ def test_retrieval_failure_persists_abstained_row_and_restores_state(
     assert detail["active_plan_id"] == p1["id"] and detail["status"] == "PLAN_READY"
 
 
+def test_corpus_changed_maps_to_retrieval_error(client, approved_case, monkeypatch):
+    """A CorpusChangedError from a mid-search version activation is the same
+    operational-abort class as Qdrant being down -> ABSTAINED(retrieval_error),
+    never a crash (rev.6 caller mapping for triage/planner)."""
+    from app.services.retrieval import CorpusChangedError
+
+    org_id, case_id = approved_case
+
+    def boom(*a, **kw):
+        raise CorpusChangedError()
+
+    monkeypatch.setattr(planner_module, "hybrid_search", boom)
+    r = _post_plan(client, org_id, case_id)
+    assert r.status_code == 200
+    assert r.json()["status"] == "ABSTAINED"
+    assert r.json()["abstain_reason"] == "retrieval_error"
+
+
 def test_stale_planning_lease_recovered_then_fresh_draft(client, approved_case):
     org_id, case_id = approved_case
     # simulate a crashed draft: PLANNING with an expired heartbeat

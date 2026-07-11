@@ -272,6 +272,86 @@ def test_supersede_plain_upload_no_lineage(client, docx_action):
     db.close()
 
 
+def test_supersede_upload_retry_is_idempotent(client, docx_action):
+    """A client that timed out after a successful superseding upload resubmits
+    the identical request: the second call returns already_active (200), not a
+    stale-base 409 (rev.6 timeout/lost-response recovery contract)."""
+    org_id, case_id, action_id, doc_id = docx_action
+    artifact = _post_artifact(
+        client, org_id, case_id, action_id, doc_id, [_artifact_json()]
+    ).json()
+    db = client.session_factory()
+    base_vid = db.get(Document, doc_id).current_version_id
+    db.close()
+
+    def _upload():
+        return client.post(
+            f"/api/organizations/{org_id}/documents",
+            files={"file": ("politique.docx", _docx_bytes("Contenu révisé idempotent."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            data={"supersedes_version_id": base_vid, "remediation_artifact_id": artifact["id"]},
+        )
+
+    r1 = _upload()
+    assert r1.status_code == 201 and r1.json()["outcome"] == "activated"
+    v2 = r1.json()["version_id"]
+    # identical retry against the now-SUPERSEDED base -> idempotent success
+    r2 = _upload()
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["outcome"] == "already_active"
+    assert r2.json()["version_id"] == v2
+    # no third version was created
+    db = client.session_factory()
+    versions = db.scalars(
+        select(DocumentVersion).where(DocumentVersion.document_id == doc_id)
+    ).all()
+    assert len(versions) == 2
+    db.close()
+
+
+def test_supersede_ignores_forged_mime(client, docx_action):
+    """canonical_format is derived from the extension, never the client
+    content_type: a .docx uploaded with a forged text/plain MIME is still
+    treated as docx and supersedes the docx base."""
+    org_id, case_id, action_id, doc_id = docx_action
+    db = client.session_factory()
+    base_vid = db.get(Document, doc_id).current_version_id
+    db.close()
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("politique.docx", _docx_bytes("Révision avec MIME falsifié."), "text/plain")},
+        data={"supersedes_version_id": base_vid},
+    )
+    assert r.status_code == 201 and r.json()["outcome"] == "activated"
+    db = client.session_factory()
+    new = db.get(DocumentVersion, r.json()["version_id"])
+    assert new.canonical_format == "docx"  # extension wins, not the forged MIME
+    db.close()
+
+
+def test_artifact_reads_enforce_tenant(client, docx_action):
+    """An artifact from org A must not be readable through an org-B URL even
+    with A's case/artifact ids (tenant-ownership guard on the M7b routes)."""
+    org_a, case_id, action_id, doc_id = docx_action
+    art = _post_artifact(client, org_a, case_id, action_id, doc_id, [_artifact_json()]).json()
+    org_b = client.post("/api/organizations", json={"name": "Autre locataire"}).json()["id"]
+
+    # list through the wrong org -> 404 (case not in org B)
+    r = client.get(
+        f"/api/organizations/{org_b}/remediation-cases/{case_id}/actions/{action_id}/artifacts"
+    )
+    assert r.status_code == 404
+    # download through the wrong org -> 404
+    r = client.get(
+        f"/api/organizations/{org_b}/remediation-cases/{case_id}/artifacts/{art['id']}/download"
+    )
+    assert r.status_code == 404
+    # the legitimate org still works
+    r = client.get(
+        f"/api/organizations/{org_a}/remediation-cases/{case_id}/artifacts/{art['id']}/download"
+    )
+    assert r.status_code == 200
+
+
 # --------------------------------------------------------------- deletion
 
 

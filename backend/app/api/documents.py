@@ -71,8 +71,11 @@ def _activation_json(result: dict):
     """Deterministic outcome -> HTTP mapping (same contract as the patch
     decision endpoint)."""
     outcome = result["outcome"]
-    if outcome in ("activated", "already_active"):
-        return JSONResponse(status_code=201, content=result)
+    if outcome == "activated":
+        return JSONResponse(status_code=201, content=result)  # new version created
+    if outcome == "already_active":
+        # idempotent replay of a completed activation — nothing created
+        return JSONResponse(status_code=200, content=result)
     if outcome == "pending":
         return JSONResponse(status_code=202, content=result)
     if outcome == "assessment_conflict":

@@ -78,6 +78,60 @@
       "anchor": "Comité IA",
       "expect": "reject_too_short",
       "note": "raw-unique but under MIN_ANCHOR_LEN=20 -> the patch layer rejects it before the one-span check"
+    },
+    {
+      "id": "exactly-min-len",
+      "anchor": "Comité IA peuvent être",
+      "expect": "accept",
+      "note": "exactly 22 chars, raw-unique -> the length gate passes and one span resolves"
+    },
+    {
+      "id": "one-below-min-len",
+      "anchor": "documentée et validée",
+      "expect": "accept",
+      "note": "21 chars raw-unique (guards the MIN_ANCHOR_LEN boundary from the accept side)"
+    },
+    {
+      "id": "near-trailing-space",
+      "anchor": "validée par la direction. ",
+      "expect": "reject_not_found",
+      "note": "a trailing space the source does not have -> not raw-equal"
+    },
+    {
+      "id": "near-leading-space",
+      "anchor": " Toute exception doit être documentée",
+      "expect": "reject_not_found",
+      "note": "a leading space the source does not have -> not raw-equal"
+    },
+    {
+      "id": "cross-paragraph-newline",
+      "anchor": "direction.\n\nLes collaborateurs doivent signaler",
+      "expect": "accept",
+      "note": "an anchor spanning a paragraph break with the exact newline run is raw-equal and unique"
+    },
+    {
+      "id": "wrong-newline-count",
+      "anchor": "direction.\nLes collaborateurs doivent signaler",
+      "expect": "reject_not_found",
+      "note": "one newline where the source has two -> not raw-equal (whitespace is never folded)"
+    },
+    {
+      "id": "apostrophe-typography",
+      "anchor": "Politique d'utilisation responsable",
+      "expect": "accept",
+      "note": "straight ASCII apostrophe matching the source verbatim (unique)"
+    },
+    {
+      "id": "apostrophe-curly-mismatch",
+      "anchor": "Politique d’utilisation responsable",
+      "expect": "reject_not_found",
+      "note": "curly apostrophe where the source has a straight one -> not raw-equal (no typography folding)"
+    },
+    {
+      "id": "whole-page-unique",
+      "anchor_whole_page": true,
+      "expect": "accept",
+      "note": "the entire page text is itself a unique verbatim anchor (upper bound of anchor length within MAX)"
     }
   ]
 }

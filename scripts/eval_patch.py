@@ -54,6 +54,8 @@ def main() -> int:
         document = case.get("document_override", base_doc)
         if "anchor_nfd_of" in case:
             anchor = unicodedata.normalize("NFD", case["anchor_nfd_of"])
+        elif case.get("anchor_whole_page"):
+            anchor = document
         else:
             anchor = case["anchor"]
         got = gate_decision(document, anchor)
