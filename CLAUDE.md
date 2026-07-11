@@ -140,7 +140,14 @@ vs the one-ACTIVE partial unique)→candidate→ACTIVE + mirrors + `version_inde
 reserve its `text_checksum`** (partial unique `WHERE state <> 'ABANDONED'`) so a fresh
 authorized proposal reproducing the same correct content can still activate. Superseded
 versions/pages/chunks are **never deleted** (findings keep citing their exact text; the
-delete guard refuses on any version history or patch/artifact lineage). Two audit streams:
+delete guard refuses on any version history or patch/artifact lineage). This is
+**intentional, not an oversight**: `DELETE /documents/{id}` returns a clean 409 once a
+document has version history or is referenced by a patch proposal/artifact, and the DB
+backstops it (`document_versions.source_artifact_id` is `ON DELETE RESTRICT`, so a cited
+artifact cannot be removed out from under its version) — never CASCADE/SET NULL, which would
+silently drop the action→artifact→file→version audit chain. There is deliberately no
+org-delete endpoint. Legitimate erasure (GDPR, a wrongly-uploaded file) would be a **separate,
+explicitly audited purge workflow**, not a silent cascade — out of scope for now. Two audit streams:
 case-scoped `remediation_events` (patch_*/artifact_*/version_superseded_by_upload) and the
 new append-only `document_version_events` (generic lifecycle, sequence under the document
 lock — `version_indexed` recorded only in the locked activation/recovery tx after Qdrant
