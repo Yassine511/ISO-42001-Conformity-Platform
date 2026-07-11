@@ -92,11 +92,18 @@ def test_create_freezes_run_contract_and_launches(client):
     assert body["manifest_complete"] is True
     assert body["total"] == 2 and body["findings_done"] == 0
     manifest = body["document_manifest"]
-    assert manifest["chunker_version"] == CHUNKER_VERSION
     assert manifest["chunk_count"] > 0
     assert manifest["indexed_at"]
     assert [d["filename"] for d in manifest["documents"]] == ["politique_ia.txt"]
-    assert manifest["documents"][0]["checksum"]
+    entry = manifest["documents"][0]
+    assert entry["checksum"]
+    # M7b: provenance is per document VERSION (no global chunker claim)
+    assert "chunker_version" not in manifest
+    assert entry["document_version_id"]
+    assert entry["version_number"] == 1
+    assert entry["chunker_version"] == CHUNKER_VERSION
+    assert entry["chunk_id_scheme"] == "version_id_v3"
+    assert entry["text_checksum"] and entry["source_checksum"] == entry["checksum"]
     assert client.launched == [body["id"]]
     # auto-index actually ran: chunks exist in PG
     db = client.session_factory()

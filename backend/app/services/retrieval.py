@@ -20,10 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Chunk, Document, DocumentStatus
+from app.models import Chunk, Document, DocumentStatus, DocumentVersion
 from app.services import qdrant
 from app.services.bm25 import Bm25Index
-from app.services.chunking import chunk_page, make_chunk_id
+from app.services.chunking import chunk_page, make_chunk_id_v3
 from app.services.parsing import PARSER_VERSION
 from app.services.embeddings import embed_texts
 
@@ -82,47 +82,89 @@ def drop_stale_points(stale_point_ids: list) -> None:
     qdrant.delete_points_by_ids(stale_point_ids)
 
 
+def materialize_version_chunks(db: Session, version: DocumentVersion) -> list[Chunk]:
+    """One-time PG chunk creation for a version (write-once: a version's text
+    is immutable, so existing rows are ALWAYS reused verbatim — pre-M7b
+    document_id_v2 ids survive and findings.matched_chunk_id stays valid).
+    Stages new rows in the caller's transaction; returns the version's rows."""
+    existing = db.scalars(
+        select(Chunk).where(Chunk.document_version_id == version.id)
+    ).all()
+    if existing:
+        return existing
+    rows: list[Chunk] = []
+    for page in version.pages:
+        for span in chunk_page(page.text):
+            rows.append(
+                Chunk(
+                    id=make_chunk_id_v3(
+                        version.id, version.parser_version, page.page_number,
+                        span.char_start, span.char_end,
+                    ),
+                    document_id=version.document_id,
+                    document_version_id=version.id,
+                    page_number=page.page_number,
+                    char_start=span.char_start,
+                    char_end=span.char_end,
+                    text=span.text,
+                )
+            )
+    db.add_all(rows)
+    return rows
+
+
 def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
-    """Reconciliation WITHOUT committing: embed + upsert Qdrant (wait=True) and
-    synchronize the PG chunk rows in the caller's open transaction; returns
-    (report, stale_point_ids) for the caller to pass to drop_stale_points()
-    AFTER its commit. This lets assessment creation freeze its document
-    manifest and the index result in one atomic transaction (a commit inside
-    this function would release the org row lock mid-sequence). If the caller's
-    commit fails, the upserted Qdrant points are harmless orphans (hydration
-    rejects ids unknown to PG)."""
+    """Reconciliation WITHOUT committing: materialize + embed + upsert the
+    CURRENT version of every parsed document (wait=True) in the caller's open
+    transaction; returns (report, stale_point_ids) for the caller to pass to
+    drop_stale_points() AFTER its commit. This lets assessment creation freeze
+    its document manifest and the index result in one atomic transaction. If
+    the caller's commit fails, the upserted Qdrant points are harmless orphans
+    (hydration rejects ids unknown to PG).
+
+    M7b invariants: PG chunk rows are NEVER deleted here — historical versions
+    keep their rows for finding provenance. The Qdrant keep-set is the chunks
+    of current versions plus recoverable activation candidates
+    (PENDING_INDEX/INDEX_FAILED — a mid-activation candidate indexed lock-free
+    must survive a concurrent /index); everything else is stale. Pending
+    versions are never activated here."""
     qdrant.ensure_collection()
     docs = db.scalars(
         select(Document).where(
             Document.organization_id == org_id,
             Document.status == DocumentStatus.PARSED.value,
+            Document.current_version_id.is_not(None),
         )
     ).all()
 
-    desired: list[tuple[Chunk, str]] = []  # (row, text) — text kept for embedding
+    desired: list[Chunk] = []
+    versions: list[DocumentVersion] = []
+    previous_ids: set[str] = set()
     for doc in docs:
-        for page in doc.pages:
-            for span in chunk_page(page.text):
-                cid = make_chunk_id(doc.id, doc.parser_version, page.page_number, span.char_start, span.char_end)
-                desired.append(
-                    (
-                        Chunk(
-                            id=cid,
-                            document_id=doc.id,
-                            page_number=page.page_number,
-                            char_start=span.char_start,
-                            char_end=span.char_end,
-                            text=span.text,
-                        ),
-                        span.text,
-                    )
-                )
+        version = db.get(DocumentVersion, doc.current_version_id)
+        versions.append(version)
+        existing = set(
+            db.scalars(select(Chunk.id).where(Chunk.document_version_id == version.id)).all()
+        )
+        previous_ids |= existing
+        desired.extend(materialize_version_chunks(db, version))
+    desired_ids = {row.id for row in desired}
 
-    doc_ids = [d.id for d in docs]
-    previous_ids = set(
-        db.scalars(select(Chunk.id).where(Chunk.document_id.in_(doc_ids))).all()
-    ) if doc_ids else set()
-    desired_ids = {row.id for row, _ in desired}
+    # Recoverable activation candidates: their lock-free-indexed points must
+    # not be reaped by a concurrent reconciliation (they are unreachable by
+    # search anyway — the snapshot filter is current-ids-only).
+    candidate_ids = set(
+        db.scalars(
+            select(Chunk.id)
+            .join(DocumentVersion, Chunk.document_version_id == DocumentVersion.id)
+            .where(
+                DocumentVersion.organization_id == org_id,
+                DocumentVersion.state.in_(("PENDING_INDEX", "INDEX_FAILED")),
+            )
+        ).all()
+    )
+    keep_ids = desired_ids | candidate_ids
+
     # Reconciliation must also see points that exist ONLY in Qdrant (orphans
     # from crashes or manual writes): scroll this org's policy points. Points
     # are keyed by their ACTUAL point id — an orphan's id is arbitrary and
@@ -131,48 +173,20 @@ def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
 
     # 1) embed + upsert desired points (wait=True) BEFORE touching PG
     if desired:
-        vectors = embed_texts([text for _, text in desired])
-        points = [
-            qm.PointStruct(
-                id=qdrant.point_id(row.id),
-                vector=vec,
-                payload={
-                    "source_type": "policy",
-                    "result_id": row.id,
-                    "org_id": org_id,
-                    "document_id": row.document_id,
-                    "page_number": row.page_number,
-                    "char_start": row.char_start,
-                    "char_end": row.char_end,
-                },
-            )
-            for (row, _), vec in zip(desired, vectors)
-        ]
-        qdrant.upsert_points(points)
+        vectors = embed_texts([row.text for row in desired])
+        qdrant.upsert_points(
+            [_chunk_point(row, org_id, vec) for row, vec in zip(desired, vectors)]
+        )
 
-    # 2) stage authoritative rows in the caller's transaction (no commit here)
-    for stale_id in previous_ids - desired_ids:
-        db.delete(db.get(Chunk, stale_id))
-    for row, _ in desired:
-        if row.id not in previous_ids:
-            db.add(row)
-
-    # 3) compute stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
+    # 2) compute stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
     # for deletion: deleting "42" does not delete point 42). Stale =
-    #   - result_id missing or not desired, or
-    #   - a NON-CANONICAL point claiming a desired result_id (its actual id
+    #   - result_id missing or outside the keep-set, or
+    #   - a NON-CANONICAL point claiming a kept result_id (its actual id
     #     differs from UUID5(result_id)) — otherwise it duplicates candidates.
-    # Plus PG leftovers, whose canonical ids we can recompute.
     stale_point_ids: list = [
         raw_id
         for raw_id, (canonical_key, rid) in org_points.items()
-        if rid is None or rid not in desired_ids or canonical_key != qdrant.point_id(rid)
-    ]
-    seen_keys = {canonical_key for canonical_key, _ in org_points.values()}
-    stale_point_ids += [
-        qdrant.point_id(cid)
-        for cid in previous_ids - desired_ids
-        if qdrant.point_id(cid) not in seen_keys
+        if rid is None or rid not in keep_ids or canonical_key != qdrant.point_id(rid)
     ]
 
     report = {
@@ -180,13 +194,30 @@ def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
         "chunks": len(desired),
         "added": len(desired_ids - previous_ids),
         "removed": len(stale_point_ids),
-        # Docs parsed by an older extractor: indexed as-is, but flagged so the
-        # caller knows the parse (and thus the chunks) may be stale.
+        # Versions parsed by an older extractor: indexed as-is, but flagged so
+        # the caller knows the parse (and thus the chunks) may be stale.
         "stale_parser": sorted(
-            d.filename for d in docs if d.parser_version != PARSER_VERSION
+            v.filename for v in versions if v.parser_version != PARSER_VERSION
         ),
     }
     return report, stale_point_ids
+
+
+def _chunk_point(row: Chunk, org_id: str, vector: list[float]) -> qm.PointStruct:
+    return qm.PointStruct(
+        id=qdrant.point_id(row.id),
+        vector=vector,
+        payload={
+            "source_type": "policy",
+            "result_id": row.id,
+            "org_id": org_id,
+            "document_id": row.document_id,
+            "document_version_id": row.document_version_id,
+            "page_number": row.page_number,
+            "char_start": row.char_start,
+            "char_end": row.char_end,
+        },
+    )
 
 
 def _scroll_points(conditions: list) -> dict:

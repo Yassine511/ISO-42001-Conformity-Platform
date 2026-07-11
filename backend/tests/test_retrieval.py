@@ -398,11 +398,14 @@ def test_index_report_flags_stale_parser(client):
     from app.models import Document as Doc
 
     org_id, docs = _setup_org(client)
-    # age one document's parser_version through the overridden test session
+    # age the CURRENT VERSION's parser_version (M7b: the version row is the
+    # provenance authority; the document column is a projection)
+    from app.models import DocumentVersion
+
     override = fastapi_app.dependency_overrides[get_db]
     db = next(override())
     row = db.get(Doc, docs["data.txt"])
-    row.parser_version = "0"
+    db.get(DocumentVersion, row.current_version_id).parser_version = "0"
     db.commit()
 
     report = client.post(f"/api/organizations/{org_id}/index").json()

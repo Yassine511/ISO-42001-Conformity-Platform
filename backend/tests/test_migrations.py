@@ -469,6 +469,180 @@ def test_0013_creates_remediation_tables(scratch_db):
         con.close()
 
 
+def test_0014_backfills_document_versions(scratch_db):
+    """0014: the four legacy document shapes migrate correctly — parsed docs
+    get an ACTIVE version 1 with scheme document_id_v2 and a computed
+    text_checksum; FAILED docs get no version and their mirror checksum is
+    CLEARED; pages/chunks are re-parented; the circular current-version FK and
+    the one-ACTIVE partial unique are real; downgrade refuses with history."""
+    from app.services.checksums import text_checksum
+
+    _alembic(scratch_db, "upgrade", "0013")
+    con = _connect(scratch_db)
+    org_id = str(uuid.uuid4())
+    parsed_id, legacy_id, failed_zero_id, failed_ck_id = (
+        str(uuid.uuid4()) for _ in range(4)
+    )
+    chunk_id = "chunk-legacy-1"
+    try:
+        con.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (%s, 'Lumen AI', now())",
+            (org_id,),
+        )
+
+        def _doc(doc_id, filename, status, checksum, page_count):
+            con.execute(
+                "INSERT INTO documents (id, organization_id, filename, content_type, "
+                "status, page_count, checksum, parser_version, created_at) "
+                "VALUES (%s, %s, %s, 'text/plain', %s, %s, %s, '2', now())",
+                (doc_id, org_id, filename, status, page_count, checksum),
+            )
+
+        _doc(parsed_id, "politique.md", "parsed", "aa11", 2)
+        _doc(legacy_id, "ancien.txt", "parsed", None, 1)  # legacy NULL checksum
+        _doc(failed_zero_id, "casse.pdf", "failed", None, 0)
+        _doc(failed_ck_id, "casse2.pdf", "failed", "ff22", 0)
+        for doc_id, number, page_text in (
+            (parsed_id, 1, "Page un."),
+            (parsed_id, 2, "Page deux."),
+            (legacy_id, 1, "Texte historique."),
+        ):
+            con.execute(
+                "INSERT INTO document_pages (id, document_id, page_number, text) "
+                "VALUES (%s, %s, %s, %s)",
+                (str(uuid.uuid4()), doc_id, number, page_text),
+            )
+        con.execute(
+            "INSERT INTO chunks (id, document_id, page_number, char_start, char_end, text) "
+            "VALUES (%s, %s, 1, 0, 8, 'Page un.')",
+            (chunk_id, parsed_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    _alembic(scratch_db, "upgrade", "head")
+
+    con = _connect(scratch_db)
+    try:
+        rows = con.execute(
+            "SELECT d.id, d.checksum, d.current_version_id, v.state, v.version_number, "
+            "v.chunk_id_scheme, v.chunker_version, v.source_checksum, v.text_checksum "
+            "FROM documents d LEFT JOIN document_versions v ON v.id = d.current_version_id"
+        ).fetchall()
+        by_id = {r[0]: r for r in rows}
+        # parsed doc: ACTIVE v1, legacy scheme, checksums correct
+        p = by_id[parsed_id]
+        assert p[3] == "ACTIVE" and p[4] == 1
+        assert p[5] == "document_id_v2" and p[6] == "2"
+        assert p[7] == "aa11" == p[1]
+        assert p[8] == text_checksum(["Page un.", "Page deux."])
+        # legacy NULL-checksum doc: version exists, source_checksum NULL,
+        # text_checksum computed
+        l = by_id[legacy_id]
+        assert l[3] == "ACTIVE" and l[7] is None
+        assert l[8] == text_checksum(["Texte historique."])
+        # failed docs: no version, mirror checksum cleared
+        for fid in (failed_zero_id, failed_ck_id):
+            assert by_id[fid][2] is None and by_id[fid][1] is None
+        # pages/chunks re-parented; the pre-M7b chunk id is untouched
+        (n_orphan_pages,) = con.execute(
+            "SELECT COUNT(*) FROM document_pages WHERE document_version_id IS NULL"
+        ).fetchone()
+        assert n_orphan_pages == 0
+        (cid, cvid) = con.execute(
+            "SELECT id, document_version_id FROM chunks"
+        ).fetchone()
+        assert cid == chunk_id and cvid == p[2]
+
+        import psycopg
+
+        # circular FK: current_version_id must reference a version of the SAME doc
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            con.execute(
+                "UPDATE documents SET current_version_id = %s WHERE id = %s",
+                (by_id[legacy_id][2], parsed_id),
+            )
+        con.rollback()
+        # one-ACTIVE partial unique
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            con.execute(
+                "INSERT INTO document_versions (id, document_id, organization_id, "
+                "version_number, state, text_checksum, parser_version, chunker_version, "
+                "chunk_id_scheme, page_count, origin, canonical_format, filename, "
+                "supersedes_version_id, created_at) "
+                "VALUES (%s, %s, %s, 2, 'ACTIVE', 'zz', '2', '3', 'version_id_v3', "
+                "1, 'upload', 'md', 'politique.md', %s, now())",
+                (str(uuid.uuid4()), parsed_id, org_id, by_id[parsed_id][2]),
+            )
+        con.rollback()
+        # ABANDONED does not reserve content: same text_checksum acceptable
+        abandoned_id = str(uuid.uuid4())
+        con.execute(
+            "INSERT INTO document_versions (id, document_id, organization_id, "
+            "version_number, state, text_checksum, parser_version, chunker_version, "
+            "chunk_id_scheme, page_count, origin, canonical_format, filename, "
+            "supersedes_version_id, abandoned_reason, created_at) "
+            "VALUES (%s, %s, %s, 2, 'ABANDONED', 'shared', '2', '3', 'version_id_v3', "
+            "1, 'upload', 'md', 'politique.md', %s, 'stale_base', now())",
+            (abandoned_id, parsed_id, org_id, by_id[parsed_id][2]),
+        )
+        con.execute(
+            "INSERT INTO document_versions (id, document_id, organization_id, "
+            "version_number, state, text_checksum, parser_version, chunker_version, "
+            "chunk_id_scheme, page_count, origin, canonical_format, filename, "
+            "supersedes_version_id, activation_token, activation_started_at, "
+            "activation_heartbeat_at, created_at) "
+            "VALUES (%s, %s, %s, 3, 'PENDING_INDEX', 'shared', '2', '3', "
+            "'version_id_v3', 1, 'upload', 'md', 'politique.md', %s, %s, now(), now(), now())",
+            (str(uuid.uuid4()), parsed_id, org_id, by_id[parsed_id][2], str(uuid.uuid4())),
+        )
+        con.commit()
+        # …but a second NON-abandoned twin of the same content conflicts
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            con.execute(
+                "INSERT INTO document_versions (id, document_id, organization_id, "
+                "version_number, state, text_checksum, parser_version, chunker_version, "
+                "chunk_id_scheme, page_count, origin, canonical_format, filename, "
+                "supersedes_version_id, activation_token, activation_started_at, "
+                "activation_heartbeat_at, created_at) "
+                "VALUES (%s, %s, %s, 4, 'PENDING_INDEX', 'shared', '2', '3', "
+                "'version_id_v3', 1, 'upload', 'md', 'politique.md', %s, %s, now(), now(), now())",
+                (str(uuid.uuid4()), parsed_id, org_id, by_id[parsed_id][2], str(uuid.uuid4())),
+            )
+        con.rollback()
+    finally:
+        con.close()
+
+    # downgrade refuses while version history exists
+    url = "postgresql+psycopg://int102:int102@localhost:5433/" + scratch_db
+    env = {**os.environ, "DATABASE_URL": url}
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", "0013"],
+        cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode != 0 and "downgrade 0014 refused" in result.stderr
+
+    # after pruning history down to the migration-created versions, downgrade works
+    con = _connect(scratch_db)
+    con.execute(
+        "DELETE FROM document_versions WHERE version_number > 1"
+    )
+    con.commit()
+    con.close()
+    _alembic(scratch_db, "downgrade", "0013")
+    con = _connect(scratch_db)
+    try:
+        assert "current_version_id" not in _columns(con, "documents")
+        assert not _columns(con, "document_versions")
+        assert "document_version_id" not in _columns(con, "chunks")
+        # data survives the round-trip
+        (n_pages,) = con.execute("SELECT COUNT(*) FROM document_pages").fetchone()
+        assert n_pages == 3
+    finally:
+        con.close()
+
+
 def test_0011_preflight_demotes_duplicate_running_rows(scratch_db):
     """0011 must be applicable to a database that already violates the new
     single-RUNNING-per-org invariant: all but the newest RUNNING row per org

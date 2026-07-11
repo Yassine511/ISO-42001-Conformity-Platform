@@ -16,10 +16,16 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+# "3" (M7b): chunk ids became version-scoped (make_chunk_id_v3) — two versions
+# of one document with identical text must not collide on the content-addressed
+# PK. The cutting ALGORITHM is unchanged since "2". Chunking is write-once per
+# DocumentVersion: existing rows (including legacy document_id_v2 ids) are
+# reused verbatim, never recomputed — a version records its own chunker_version
+# and chunk_id_scheme, and the assessment manifest reports them per version.
 # "2": the forward-only cut cursor (last_cut) changed cut-point selection for
 # long paragraphs; that change shipped without a bump, so "1" ambiguously
 # covers both behaviours. Reindex after deploying.
-CHUNKER_VERSION = "2"
+CHUNKER_VERSION = "3"
 TARGET_CHARS = 1000
 HARD_MAX_CHARS = 1200
 FORCED_SPLIT_OVERLAP = 100
@@ -35,7 +41,19 @@ class ChunkSpan:
 
 
 def make_chunk_id(document_id: str, parser_version: str, page_number: int, char_start: int, char_end: int) -> str:
-    key = f"{document_id}:{parser_version}:{CHUNKER_VERSION}:{page_number}:{char_start}:{char_end}"
+    """Legacy document-scoped id (scheme 'document_id_v2'). Kept ONLY so tests
+    and the migration can reproduce ids of pre-M7b rows; hardcodes chunker
+    version "2" — the version that actually generated every such row."""
+    key = f"{document_id}:{parser_version}:2:{page_number}:{char_start}:{char_end}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def make_chunk_id_v3(
+    document_version_id: str, parser_version: str, page_number: int, char_start: int, char_end: int
+) -> str:
+    """Version-scoped content-addressed id (scheme 'version_id_v3'): identical
+    text in two versions of one document can never collide on the chunk PK."""
+    key = f"v3:{document_version_id}:{parser_version}:{CHUNKER_VERSION}:{page_number}:{char_start}:{char_end}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 

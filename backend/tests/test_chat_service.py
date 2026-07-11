@@ -126,19 +126,9 @@ def env():
     org = Organization(name="Chat Test")
     db.add(org)
     db.commit()
-    doc = Document(
-        organization_id=org.id,
-        filename="politique_ia.txt",
-        content_type="text/plain",
-        status="parsed",
-        page_count=1,
-        checksum="deadbeef",
-        parser_version=PARSER_VERSION,
-    )
-    db.add(doc)
-    db.commit()
-    db.add(DocumentPage(document_id=doc.id, page_number=1, text=DOC_TEXT))
-    db.commit()
+    from tests.conftest import seed_parsed_document
+
+    seed_parsed_document(db, org.id, "politique_ia.txt", [DOC_TEXT], checksum="deadbeef")
     index_organization(db, org.id)
     org_id = org.id
     db.close()

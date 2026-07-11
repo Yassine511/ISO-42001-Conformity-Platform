@@ -48,19 +48,9 @@ def pg_env():
     org = Organization(name="Concurrence SA")
     db.add(org)
     db.commit()
-    doc = Document(
-        organization_id=org.id,
-        filename="politique.txt",
-        content_type="text/plain",
-        status="parsed",
-        page_count=1,
-        checksum="cafe",
-        parser_version=PARSER_VERSION,
-    )
-    db.add(doc)
-    db.commit()
-    db.add(DocumentPage(document_id=doc.id, page_number=1, text="Politique IA de test."))
-    db.commit()
+    from tests.conftest import seed_parsed_document
+
+    seed_parsed_document(db, org.id, "politique.txt", ["Politique IA de test."], checksum="cafe")
     org_id = org.id
     db.close()
 

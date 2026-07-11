@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
@@ -6,8 +7,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Chunk, Document, DocumentPage, DocumentStatus, Finding, Organization
+from app.models import (
+    Chunk,
+    Document,
+    DocumentPage,
+    DocumentStatus,
+    DocumentVersion,
+    DocumentVersionEvent,
+    Finding,
+    Organization,
+)
 from app.schemas import DocumentOut, DocumentPageOut
+from app.services.checksums import text_checksum
+from app.services.chunking import CHUNKER_VERSION
 from app.services import qdrant
 from app.services.run_guard import RUNNING_CONFLICT_FR, lock_organization, running_assessment_id
 from app.services.parsing import (
@@ -30,6 +42,14 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB — exact FILE limit, enforced by _rea
 # exact file size.
 UPLOAD_REQUEST_MARGIN = 1 * 1024 * 1024  # 1 MB (request limit = MAX_FILE_SIZE + this)
 _READ_CHUNK = 1024 * 1024  # 1 MB
+
+
+def _canonical_format(filename: str) -> str:
+    """Server-derived format from the (already validated) extension — the
+    client-controlled multipart content_type is NEVER trusted for routing.
+    txt and md are one parse/patch family but keep their own labels."""
+    ext = filename.lower().rsplit(".", 1)[-1]
+    return {"pdf": "pdf", "docx": "docx", "txt": "txt", "md": "md"}[ext]
 
 
 async def _read_capped(file: UploadFile, cap: int) -> bytes:
@@ -76,18 +96,17 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
             409, f"Document au contenu identique déjà téléversé : {duplicate.filename}"
         )
 
+    # Mirror columns (checksum/parser_version/page_count) are written only on
+    # successful parse: a FAILED document has no version, no mirrors, and no
+    # longer blocks re-upload of the same bytes (M7b behavior change).
     doc = Document(
+        id=str(uuid.uuid4()),
         organization_id=org_id,
         filename=filename,
         content_type=file.content_type or "application/octet-stream",
-        checksum=checksum,
-        parser_version=PARSER_VERSION,
     )
     try:
         pages = parse_document(filename, data)
-        doc.status = DocumentStatus.PARSED.value
-        doc.page_count = len(pages)
-        doc.pages = [DocumentPage(page_number=i + 1, text=text) for i, text in enumerate(pages)]
     except UnsupportedFileType as exc:
         raise HTTPException(415, str(exc))
     except DocumentTooLarge as exc:
@@ -97,6 +116,51 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
     except Exception as exc:
         doc.status = DocumentStatus.FAILED.value
         doc.error = f"Échec de l'analyse : {exc}"
+    else:
+        doc.status = DocumentStatus.PARSED.value
+        doc.page_count = len(pages)
+        doc.checksum = checksum
+        doc.parser_version = PARSER_VERSION
+        version = DocumentVersion(
+            id=str(uuid.uuid4()),
+            document_id=doc.id,
+            organization_id=org_id,
+            version_number=1,
+            state="ACTIVE",  # authoritative content; Qdrant reconciled at /index
+            source_checksum=checksum,
+            text_checksum=text_checksum(pages),
+            parser_version=PARSER_VERSION,
+            chunker_version=CHUNKER_VERSION,
+            chunk_id_scheme="version_id_v3",
+            page_count=len(pages),
+            origin="upload",
+            canonical_format=_canonical_format(filename),
+            filename=filename,
+            reported_mime=file.content_type,
+            byte_size=len(data),
+        )
+        version.pages = [
+            DocumentPage(document_id=doc.id, page_number=i + 1, text=text)
+            for i, text in enumerate(pages)
+        ]
+        doc.versions = [version]
+        doc.current_version_id = version.id
+        db.add(
+            DocumentVersionEvent(
+                document_id=doc.id,
+                sequence=1,
+                event_type="version_created",
+                payload={
+                    "version": 1,
+                    "document_version_id": version.id,
+                    "version_number": 1,
+                    "origin": "upload",
+                    "canonical_format": version.canonical_format,
+                    "source_checksum": checksum,
+                    "text_checksum": version.text_checksum,
+                },
+            )
+        )
 
     db.add(doc)
     try:
@@ -120,10 +184,18 @@ def list_documents(org_id: str, db: Session = Depends(get_db)):
 
 @router.get("/documents/{document_id}/pages", response_model=list[DocumentPageOut])
 def get_document_pages(document_id: str, db: Session = Depends(get_db)):
+    """Pages of the CURRENT version (a failed document has none). Historical
+    versions get their own endpoint in M7b commit 3."""
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(404, "Document introuvable.")
-    return doc.pages
+    if doc.current_version_id is None:
+        return []
+    return db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_version_id == doc.current_version_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
 
 
 @router.delete("/documents/{document_id}", status_code=204)

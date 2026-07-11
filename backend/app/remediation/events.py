@@ -193,6 +193,75 @@ class CaseReopened(_Payload):
     restored_status: str
 
 
+# ------------------------------------------------------------------ M7b patch
+# Case-scoped view of the patch/artifact flow. The generic version lifecycle
+# additionally lands in document_version_events; these payloads reference the
+# version ids so both streams correlate.
+
+
+class PatchProposed(_Payload):
+    proposal_id: str
+    action_id: str
+    document_id: str
+    document_version_id: str
+    operation: str
+    anchor_page: int
+    attempts: int
+
+
+class PatchAbstained(_Payload):
+    proposal_id: str
+    action_id: str
+    abstain_reason: str
+    attempts: int
+
+
+class PatchApproved(_Payload):
+    proposal_id: str
+    decision_id: str
+    decision: str  # 'approve' | 'edit'
+    document_id: str
+    base_version_id: str
+    result_version_id: str
+
+
+class PatchRejected(_Payload):
+    proposal_id: str
+    decision_id: str
+
+
+class PatchActivationAbandoned(_Payload):
+    document_id: str
+    version_id: str
+    abandoned_reason: str
+    proposal_id: str | None = None
+    artifact_id: str | None = None
+
+
+class ArtifactCreated(_Payload):
+    artifact_id: str
+    action_id: str
+    document_id: str
+    document_version_id: str
+    filename: str
+    attempts: int
+
+
+class ArtifactAbstained(_Payload):
+    artifact_id: str
+    action_id: str
+    abstain_reason: str
+    attempts: int
+
+
+class VersionSupersededByUpload(_Payload):
+    artifact_id: str
+    document_id: str
+    superseded_version_id: str
+    new_version_id: str
+    document_version_event_id: str
+
+
 PAYLOAD_SCHEMAS: dict[str, type[_Payload]] = {
     "case_created": CaseCreated,
     "finding_linked": FindingLinked,
@@ -212,6 +281,14 @@ PAYLOAD_SCHEMAS: dict[str, type[_Payload]] = {
     "effectiveness_recorded": EffectivenessRecorded,
     "case_closed": CaseClosed,
     "case_reopened": CaseReopened,
+    "patch_proposed": PatchProposed,
+    "patch_abstained": PatchAbstained,
+    "patch_approved": PatchApproved,
+    "patch_rejected": PatchRejected,
+    "patch_activation_abandoned": PatchActivationAbandoned,
+    "artifact_created": ArtifactCreated,
+    "artifact_abstained": ArtifactAbstained,
+    "version_superseded_by_upload": VersionSupersededByUpload,
 }
 
 

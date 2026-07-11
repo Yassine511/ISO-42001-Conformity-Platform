@@ -139,28 +139,19 @@ def test_valid_upload_near_limit_not_rejected_for_overhead(client, monkeypatch):
 def test_cited_document_cannot_be_deleted(client):
     """Audit-trail guard: a document cited by a finding must not be deletable —
     its removal would leave the citation dangling."""
-    from app.models import Assessment, Chunk, Document, DocumentPage, Finding, Organization
+    from app.models import Assessment, Chunk, Finding, Organization
+    from tests.conftest import seed_parsed_document
 
     db = client.session_factory()
     org = Organization(name="Cite SA")
     db.add(org)
     db.commit()
-    doc = Document(
-        organization_id=org.id,
-        filename="p.txt",
-        content_type="text/plain",
-        status="parsed",
-        page_count=1,
-        checksum="c1",
-        parser_version="2",
-    )
-    db.add(doc)
-    db.commit()
-    db.add(DocumentPage(document_id=doc.id, page_number=1, text="x" * 50))
+    doc = seed_parsed_document(db, org.id, "p.txt", ["x" * 50], checksum="c1")
     db.add(
         Chunk(
             id="chunk-cite-1",
             document_id=doc.id,
+            document_version_id=doc.current_version_id,
             page_number=1,
             char_start=0,
             char_end=10,

@@ -35,7 +35,6 @@ from app.pipeline.state import (
     GovernanceState,
     QuoteMatch,
 )
-from app.services.chunking import CHUNKER_VERSION
 from app.services.retrieval import drop_stale_points, load_kb, sync_index
 
 
@@ -182,6 +181,9 @@ def create_assessment(
             requirement_ids=requirement_ids,
             retrieval_k=k,
             document_manifest={
+                # Per-VERSION provenance (M7b): a mixed corpus of legacy
+                # document_id_v2 chunks and new version_id_v3 chunks cannot be
+                # honestly described by one global chunker_version claim.
                 "documents": [
                     {
                         "document_id": d.id,
@@ -189,10 +191,15 @@ def create_assessment(
                         "checksum": d.checksum,
                         "parser_version": d.parser_version,
                         "page_count": d.page_count,
+                        "document_version_id": d.current_version_id,
+                        "version_number": (v := d.current_version) and v.version_number,
+                        "source_checksum": v and v.source_checksum,
+                        "text_checksum": v and v.text_checksum,
+                        "chunker_version": v and v.chunker_version,
+                        "chunk_id_scheme": v and v.chunk_id_scheme,
                     }
                     for d in docs
                 ],
-                "chunker_version": CHUNKER_VERSION,
                 "chunk_count": report["chunks"],
                 "indexed_at": _now().isoformat(),
             },
