@@ -695,6 +695,20 @@ def test_0014_backfills_document_versions(scratch_db):
                 (parsed_id, legacy_vid),
             )
         con.rollback()
+        # supersession self-FK: a version of doc A cannot supersede a version
+        # of doc B ((document_id, supersedes_version_id) must resolve within
+        # the SAME logical document).
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            con.execute(
+                "INSERT INTO document_versions (id, document_id, organization_id, "
+                "version_number, state, text_checksum, parser_version, chunker_version, "
+                "chunk_id_scheme, page_count, origin, canonical_format, filename, "
+                "supersedes_version_id, created_at) "
+                "VALUES (%s, %s, %s, 5, 'PENDING_INDEX', 'cross-doc', '2', '3', "
+                "'version_id_v3', 1, 'upload', 'md', 'politique.md', %s, now())",
+                (str(uuid.uuid4()), parsed_id, org_id, legacy_vid),
+            )
+        con.rollback()
 
         # The two POST-HOC circular FKs are added by the migration only (they
         # are plain columns in the ORM, so create_all-based test DBs — pg_env,
