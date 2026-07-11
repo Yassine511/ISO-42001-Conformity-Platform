@@ -1,12 +1,15 @@
 import hashlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Response, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.remediation import patcher
 from app.models import (
     Chunk,
     Document,
@@ -16,6 +19,8 @@ from app.models import (
     DocumentVersionEvent,
     Finding,
     Organization,
+    PatchProposal,
+    RemediationArtifact,
 )
 from app.schemas import DocumentOut, DocumentPageOut, DocumentVersionOut
 from app.services.checksums import text_checksum
@@ -44,6 +49,57 @@ UPLOAD_REQUEST_MARGIN = 1 * 1024 * 1024  # 1 MB (request limit = MAX_FILE_SIZE +
 _READ_CHUNK = 1024 * 1024  # 1 MB
 
 
+def _run_versioning(fn, *args, **kwargs):
+    """Map remediation-service exceptions from the versioning layer."""
+    from app.remediation.service import (
+        RemediationConflictError,
+        RemediationInvalidError,
+        RemediationNotFoundError,
+    )
+
+    try:
+        return fn(*args, **kwargs)
+    except RemediationNotFoundError as exc:
+        raise HTTPException(404, str(exc))
+    except RemediationConflictError as exc:
+        raise HTTPException(409, str(exc))
+    except RemediationInvalidError as exc:
+        raise HTTPException(422, str(exc))
+
+
+def _activation_json(result: dict):
+    """Deterministic outcome -> HTTP mapping (same contract as the patch
+    decision endpoint)."""
+    outcome = result["outcome"]
+    if outcome in ("activated", "already_active"):
+        return JSONResponse(status_code=201, content=result)
+    if outcome == "pending":
+        return JSONResponse(status_code=202, content=result)
+    if outcome == "assessment_conflict":
+        return JSONResponse(
+            status_code=409,
+            content={**result, "detail": RUNNING_CONFLICT_FR},
+        )
+    if outcome == "index_failed":
+        return JSONResponse(
+            status_code=503,
+            content={
+                **result,
+                "detail": "Indexation vectorielle échouée ; la version est "
+                "conservée en INDEX_FAILED et peut être reprise.",
+            },
+        )
+    if outcome.startswith("abandoned:"):
+        return JSONResponse(
+            status_code=409,
+            content={
+                **result,
+                "detail": "Activation abandonnée : " + outcome.split(":", 1)[1] + ".",
+            },
+        )
+    return JSONResponse(status_code=200, content=result)
+
+
 def _canonical_format(filename: str) -> str:
     """Server-derived format from the (already validated) extension — the
     client-controlled multipart content_type is NEVER trusted for routing.
@@ -69,8 +125,21 @@ async def _read_capped(file: UploadFile, cap: int) -> bytes:
     return b"".join(chunks)
 
 
-@router.post("/organizations/{org_id}/documents", response_model=DocumentOut, status_code=201)
-async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(get_db)):
+@router.post("/organizations/{org_id}/documents", response_model=None, status_code=201)
+async def upload_document(
+    org_id: str,
+    file: UploadFile,
+    supersedes_version_id: str | None = Form(default=None),
+    remediation_artifact_id: str | None = Form(default=None),
+    actor_label: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    """Plain upload creates a new logical document (version 1 ACTIVE).
+    With `supersedes_version_id` this is an explicit human superseding
+    re-upload: a new version of the SAME document through the
+    PENDING_INDEX -> ACTIVE protocol — the only way a PDF/DOCX gets a new
+    version. `remediation_artifact_id` optionally records the
+    corrective-action lineage (validated, never assumed)."""
     # Org row lock + RUNNING check: a document added mid-run would change what
     # later requirements retrieve, silently invalidating the assessment's
     # frozen document manifest.
@@ -84,6 +153,33 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
         raise HTTPException(415, f"Type de fichier non supporté. Formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
 
     data = await _read_capped(file, MAX_FILE_SIZE)
+
+    if supersedes_version_id is not None:
+        try:
+            pages = parse_document(filename, data)
+        except UnsupportedFileType as exc:
+            raise HTTPException(415, str(exc))
+        except DocumentTooLarge as exc:
+            raise HTTPException(413, str(exc))
+        except (EmptyDocument, InvalidEncoding) as exc:
+            raise HTTPException(422, str(exc))
+        except Exception as exc:
+            # a failed superseding parse persists NOTHING — no version row
+            raise HTTPException(422, f"Échec de l'analyse : {exc}")
+        result = _run_versioning(
+            patcher.supersede_upload,
+            db,
+            org_id,
+            supersedes_version_id=supersedes_version_id,
+            remediation_artifact_id=remediation_artifact_id,
+            filename=filename,
+            data=data,
+            content_type=file.content_type,
+            pages=pages,
+            canonical_format=_canonical_format(filename),
+            actor_label=actor_label,
+        )
+        return _activation_json(result)
 
     checksum = hashlib.sha256(data).hexdigest()
     duplicate = db.scalar(
@@ -170,7 +266,11 @@ async def upload_document(org_id: str, file: UploadFile, db: Session = Depends(g
         # constraint (organization_id, checksum) is the atomic gate.
         db.rollback()
         raise HTTPException(409, "Document au contenu identique déjà téléversé.")
-    return doc
+    # Explicit serialization (response_model is None so the superseding-upload
+    # path can return a JSONResponse instead of a DocumentOut).
+    return JSONResponse(
+        status_code=201, content=jsonable_encoder(DocumentOut.model_validate(doc))
+    )
 
 
 @router.get("/organizations/{org_id}/documents", response_model=list[DocumentOut])
@@ -264,6 +364,23 @@ def download_version(document_id: str, version_id: str, db: Session = Depends(ge
     )
 
 
+@router.post("/documents/{document_id}/versions/{version_id}/recover")
+def recover_version(
+    document_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+):
+    """Re-drive a stranded superseding-upload activation (crash, timeout,
+    assessment conflict). Idempotent: an already-ACTIVE result returns 200."""
+    peek = db.get(Document, document_id)
+    if peek is None:
+        raise HTTPException(404, "Document introuvable.")
+    result = _run_versioning(
+        patcher.recover_upload_activation, db, peek.organization_id, document_id, version_id
+    )
+    return _activation_json(result)
+
+
 @router.delete("/documents/{document_id}", status_code=204)
 def delete_document(document_id: str, db: Session = Depends(get_db)):
     # Lock the ORGANIZATION row first (consistent lock order with upload/index/
@@ -299,6 +416,35 @@ def delete_document(document_id: str, db: Session = Depends(get_db)):
             409,
             "Suppression refusée : ce document est cité comme preuve par au moins "
             "un constat ; la supprimer romprait la traçabilité de la citation.",
+        )
+    # M7b provenance guards: remediation lineage and version history are durable.
+    # A CASCADE delete would drop patch proposals/decisions/artifacts and every
+    # superseded version — exactly the audit trail M7b establishes.
+    version_ids = db.scalars(
+        select(DocumentVersion.id).where(DocumentVersion.document_id == document_id)
+    ).all()
+    if len(version_ids) > 1:
+        raise HTTPException(
+            409,
+            "Suppression refusée : ce document possède un historique de versions "
+            "(correctifs appliqués ou téléversements de remplacement) qui doit "
+            "être conservé pour la traçabilité.",
+        )
+    remediation_ref = db.scalar(
+        select(PatchProposal.id).where(
+            PatchProposal.document_id == document_id
+        ).limit(1)
+    ) or db.scalar(
+        select(RemediationArtifact.id).where(
+            RemediationArtifact.document_id == document_id
+        ).limit(1)
+    )
+    if remediation_ref:
+        raise HTTPException(
+            409,
+            "Suppression refusée : ce document est référencé par une proposition "
+            "de correctif ou un artefact de remédiation ; sa lignée corrective "
+            "doit être conservée.",
         )
     # Qdrant first: if it is unreachable we abort rather than leave orphan
     # vectors searchable. /index reconciliation is the recovery path.

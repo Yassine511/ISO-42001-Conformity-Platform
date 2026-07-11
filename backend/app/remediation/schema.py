@@ -103,6 +103,17 @@ class PatchDraft(BaseModel):
     rationale: str = Field(min_length=1, max_length=2000)
 
 
+class ArtifactDraft(BaseModel):
+    """AI Markdown revision proposal for a PDF/DOCX target (M7b). Never a
+    document version — a clearly labelled draft a human may use when
+    preparing the real revised file for a superseding upload."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    content_md: str = Field(min_length=1, max_length=20000)
+    rationale: str = Field(min_length=1, max_length=2000)
+
+
 class PlanDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

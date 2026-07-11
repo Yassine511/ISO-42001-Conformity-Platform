@@ -1115,3 +1115,735 @@ def recover_patch_activation(
         db, org_id, case_id, proposal, decision.id, candidate.id, worker_token,
         actor_label=actor_label,
     )
+
+
+# --------------------------------------------------------------- artifacts
+
+ARTIFACT_TARGET_FORMATS = ("pdf", "docx")
+
+
+def _sanitize_filename(name: str) -> str:
+    return "".join(c for c in name if c.isalnum() or c in "._- ").strip() or "proposition.md"
+
+
+def draft_artifact(
+    db: Session,
+    session_factory,
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    document_id: str,
+    *,
+    actor_label: str | None = None,
+    lease_seconds: int = DRAFTING_LEASE_SECONDS,
+):
+    """Draft a Markdown revision proposal for a PDF/DOCX target. Same guard
+    rails, staleness pins and DRAFTING lease as the patch drafter; the output
+    is ONLY a RemediationArtifact — the patch/artifact flow can never create
+    a PDF/DOCX version (only an explicit human superseding upload can)."""
+    from app.models import RemediationArtifact
+    from app.remediation.prompts import build_artifact_messages
+    from app.remediation.schema import ArtifactDraft
+
+    case = lock_case(db, org_id, case_id)
+    action = _operable_action(db, case, action_id)
+    if action.lifecycle != "APPROVED":
+        db.rollback()
+        raise RemediationConflictError(
+            "Un artefact ne peut être proposé que pour une action APPROVED "
+            f"(statut actuel : {action.lifecycle})."
+        )
+    if action.action_type != "document_amendment":
+        db.rollback()
+        raise RemediationInvalidError(
+            "La proposition de rédaction ne s'applique qu'aux actions de type "
+            "« document_amendment »."
+        )
+    doc = db.get(Document, document_id)
+    if doc is None or doc.organization_id != org_id:
+        db.rollback()
+        raise RemediationNotFoundError("Document introuvable pour cette organisation.")
+    if doc.current_version_id is None:
+        db.rollback()
+        raise RemediationInvalidError("Ce document n'a pas de version analysée exploitable.")
+    version = db.get(DocumentVersion, doc.current_version_id)
+    if version.canonical_format not in ARTIFACT_TARGET_FORMATS:
+        db.rollback()
+        raise RemediationInvalidError(
+            "La proposition de rédaction (artefact) est réservée aux documents "
+            "PDF/DOCX ; pour un TXT/Markdown, utilisez le correctif ancré."
+        )
+
+    for stale in db.scalars(
+        select(RemediationArtifact).where(
+            RemediationArtifact.action_id == action_id,
+            RemediationArtifact.status == "DRAFTING",
+        )
+    ).all():
+        heartbeat = _aware(stale.drafting_heartbeat_at)
+        if heartbeat is not None and _now() - heartbeat < timedelta(seconds=lease_seconds):
+            db.rollback()
+            raise RemediationConflictError(DRAFT_IN_PROGRESS_FR)
+        stale.status = "ABSTAINED"
+        stale.abstain_reason = "draft_interrupted"
+        stale.drafting_token = None
+        stale.drafting_started_at = None
+        stale.drafting_heartbeat_at = None
+        append_event(
+            db, case_id, "artifact_abstained",
+            {
+                "artifact_id": stale.id,
+                "action_id": action_id,
+                "abstain_reason": "draft_interrupted",
+                "attempts": stale.attempts,
+            },
+            actor_label,
+        )
+
+    context = action_context(db, case, action)
+    pages = [{"page": p.page_number, "texte": p.text} for p in version.pages]
+    token = str(uuid.uuid4())
+    artifact = RemediationArtifact(
+        case_id=case_id,
+        action_id=action_id,
+        document_id=doc.id,
+        document_version_id=version.id,
+        base_text_checksum=version.text_checksum,
+        canonical_format=version.canonical_format,
+        requirement_ids=[r["id"] for r in context["requirements"]],
+        requirements_snapshot=context["requirements"],
+        status="DRAFTING",
+        drafting_token=token,
+        drafting_started_at=_now(),
+        drafting_heartbeat_at=_now(),
+        prompt_version=PATCH_PROMPT_VERSION,
+        **context["pins"],
+    )
+    db.add(artifact)
+    db.commit()
+    artifact_id = artifact.id
+
+    lease_lost = False
+
+    def _heartbeat() -> None:
+        nonlocal lease_lost
+        if lease_lost:
+            return
+        hb = None
+        try:
+            hb = session_factory()
+            result = hb.execute(
+                update(RemediationArtifact)
+                .where(
+                    RemediationArtifact.id == artifact_id,
+                    RemediationArtifact.drafting_token == token,
+                )
+                .values(drafting_heartbeat_at=_now())
+            )
+            hb.commit()
+            if result.rowcount != 1:
+                lease_lost = True
+        except Exception:
+            lease_lost = True
+        finally:
+            if hb is not None:
+                hb.close()
+
+    base_messages = build_artifact_messages(
+        context["action_snapshot"],
+        context["requirements"],
+        {"document": doc.filename, "format": version.canonical_format, "pages": pages},
+    )
+    schema = ArtifactDraft.model_json_schema()
+    messages = base_messages
+    verified = None
+    abstain_reason: str | None = None
+    attempts_meta: list[dict] = []
+    calls: list[tuple[int, llm_service.LLMCall]] = []
+
+    from app.remediation.prompts import build_repair_messages as _repair
+
+    for attempt_number in range(1, MAX_DRAFT_ATTEMPTS + 1):
+        outcome = llm_service.complete_json(
+            messages,
+            json_schema=schema,
+            schema_name="artifact_draft",
+            on_call_finished=_heartbeat,
+        )
+        calls.extend((attempt_number, c) for c in outcome.calls)
+        if outcome.content is None:
+            abstain_reason = llm_service.classify_failure(outcome.calls)
+            attempts_meta.append(
+                {
+                    "attempt_number": attempt_number,
+                    "parsed_ok": False,
+                    "validation_errors": [outcome.error or "tous les fournisseurs ont échoué"],
+                }
+            )
+            break
+        raw_draft = outcome.content
+        try:
+            payload = json.loads(raw_draft)
+        except json.JSONDecodeError as exc:
+            parsed, errors = None, [f"JSON invalide : {exc}."]
+        else:
+            try:
+                parsed = ArtifactDraft.model_validate(payload)
+                errors = []
+            except ValidationError as exc:
+                parsed = None
+                details = "; ".join(
+                    f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
+                    for e in exc.errors()
+                )
+                errors = [f"schéma invalide : {details}."]
+        attempts_meta.append(
+            {
+                "attempt_number": attempt_number,
+                "parsed_ok": parsed is not None,
+                "validation_errors": errors,
+            }
+        )
+        if not errors:
+            verified = parsed
+            break
+        messages = _repair(base_messages, raw_draft, errors)
+
+    if verified is None and abstain_reason is None:
+        abstain_reason = "schema_invalid"
+
+    case = lock_case(db, org_id, case_id)
+    artifact = db.get(RemediationArtifact, artifact_id)
+    if artifact is None or artifact.drafting_token != token or lease_lost:
+        db.rollback()
+        raise RemediationConflictError(LEASE_LOST_FR)
+    artifact.attempts = len(attempts_meta)
+    artifact.drafting_token = None
+    artifact.drafting_started_at = None
+    artifact.drafting_heartbeat_at = None
+    all_errors = [e for m in attempts_meta for e in m["validation_errors"]]
+    artifact.verifier_errors = all_errors or None
+    if verified is not None:
+        stem = doc.filename.rsplit(".", 1)[0]
+        artifact.status = "VERIFIED"
+        artifact.filename = _sanitize_filename(
+            f"proposition_{stem}_{_now().date().isoformat()}.md"
+        )
+        artifact.content_md = verified.content_md
+        artifact.rationale = verified.rationale
+        append_event(
+            db, case_id, "artifact_created",
+            {
+                "artifact_id": artifact.id,
+                "action_id": action_id,
+                "document_id": doc.id,
+                "document_version_id": version.id,
+                "filename": artifact.filename,
+                "attempts": artifact.attempts,
+            },
+            actor_label,
+        )
+    else:
+        artifact.status = "ABSTAINED"
+        artifact.abstain_reason = abstain_reason
+        append_event(
+            db, case_id, "artifact_abstained",
+            {
+                "artifact_id": artifact.id,
+                "action_id": action_id,
+                "abstain_reason": abstain_reason,
+                "attempts": artifact.attempts,
+            },
+            actor_label,
+        )
+
+    call_number = 0
+    for meta in attempts_meta:
+        attempt = RemediationAttempt(
+            case_id=case_id,
+            stage="artifact",
+            remediation_artifact_id=artifact.id,
+            attempt_number=meta["attempt_number"],
+            prompt_version=PATCH_PROMPT_VERSION,
+            parsed_ok=meta["parsed_ok"],
+            verifier_errors=meta["validation_errors"] or None,
+            finished_at=_now(),
+        )
+        db.add(attempt)
+        db.flush()
+        for attempt_number, call in calls:
+            if attempt_number != meta["attempt_number"]:
+                continue
+            call_number += 1
+            db.add(
+                RemediationLlmCall(
+                    remediation_attempt_id=attempt.id,
+                    call_number=call_number,
+                    prompt_version=PATCH_PROMPT_VERSION,
+                    provider=call.provider,
+                    requested_model=call.requested_model,
+                    status=call.status,
+                    reported_model=call.reported_model,
+                    http_status=call.http_status,
+                    error=call.error,
+                    raw_response=call.raw_response,
+                    request_messages=call.request_messages,
+                    response_format=call.response_format,
+                    temperature=call.temperature,
+                    started_at=_parse_ts(call.started_at) or _now(),
+                    finished_at=_parse_ts(call.finished_at),
+                )
+            )
+    db.commit()
+    return artifact
+
+
+# ------------------------------------------------------ superseding uploads
+
+FORMAT_FAMILIES = {"pdf": "pdf", "docx": "docx", "txt": "textuel", "md": "textuel"}
+
+
+def _artifact_authority_errors(db: Session, artifact, base: DocumentVersion) -> str | None:
+    """Round-4 artifact authority recheck (shared by upload Tx A, Tx B and
+    recovery): None when the corrective-action lineage still holds, else the
+    typed abandoned_reason."""
+    action = db.get(RemediationAction, artifact.action_id)
+    case = db.get(RemediationCase, artifact.case_id)
+    if (
+        artifact.status != "VERIFIED"
+        or artifact.document_id != base.document_id
+        or artifact.document_version_id != base.id
+    ):
+        return "authority_lost"
+    if (
+        action is None
+        or action.lifecycle != "APPROVED"
+        or action.action_type != "document_amendment"
+        or action.review_count != artifact.input_action_review_count
+    ):
+        return "stale_action"
+    if (
+        case.status == "CLOSED"
+        or case.active_plan_id != artifact.input_plan_id
+        or case.evidence_revision != artifact.input_case_evidence_revision
+    ):
+        return "authority_lost"
+    return None
+
+
+def supersede_upload(
+    db: Session,
+    org_id: str,
+    *,
+    supersedes_version_id: str,
+    remediation_artifact_id: str | None,
+    filename: str,
+    data: bytes,
+    content_type: str | None,
+    pages: list[str],
+    canonical_format: str,
+    actor_label: str | None = None,
+) -> dict:
+    """Explicit human superseding re-upload: the ONLY way a PDF/DOCX gets a
+    new version. Caller (api/documents.py) already holds the org lock and
+    checked no assessment is RUNNING, and has parsed the bytes. Returns the
+    activation outcome dict (same contract as decide_patch)."""
+    from app.models import RemediationArtifact
+    from app.services.parsing import PARSER_VERSION
+
+    base = db.get(DocumentVersion, supersedes_version_id, with_for_update=True)
+    if base is None or base.organization_id != org_id:
+        db.rollback()
+        raise RemediationNotFoundError("Version à remplacer introuvable.")
+    artifact = None
+    if remediation_artifact_id is not None:
+        artifact = db.get(RemediationArtifact, remediation_artifact_id)
+        if artifact is None:
+            db.rollback()
+            raise RemediationNotFoundError("Artefact de remédiation introuvable.")
+        # lock order org -> case -> document -> versions
+        lock_case(db, org_id, artifact.case_id)
+    doc = db.get(Document, base.document_id, with_for_update=True)
+    if doc.current_version_id != base.id or base.state != "ACTIVE":
+        db.rollback()
+        raise RemediationConflictError(
+            "supersedes_version_id ne désigne pas la version ACTIVE actuelle "
+            "du document ; rechargez et réessayez."
+        )
+    if FORMAT_FAMILIES[canonical_format] != FORMAT_FAMILIES[base.canonical_format]:
+        db.rollback()
+        raise RemediationInvalidError(
+            f"Famille de format incompatible : la version actuelle est "
+            f"{base.canonical_format}, le fichier téléversé est {canonical_format}."
+        )
+    if artifact is not None:
+        reason = _artifact_authority_errors(db, artifact, base)
+        if reason is not None:
+            db.rollback()
+            raise RemediationConflictError(
+                "La proposition (artefact) ne fait plus autorité "
+                f"({reason}) : l'action, le plan ou la version cible a changé."
+            )
+
+    new_text_ck = text_checksum(pages)
+    twin = db.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == doc.id,
+            DocumentVersion.text_checksum == new_text_ck,
+            DocumentVersion.state != "ABANDONED",
+        )
+    )
+    if twin is not None:
+        # retry idempotency: the SAME supersession attempt resumes its
+        # candidate; anything else is a per-document content conflict
+        if (
+            twin.state in ("PENDING_INDEX", "INDEX_FAILED")
+            and twin.supersedes_version_id == supersedes_version_id
+            and twin.canonical_format == canonical_format
+            and twin.source_artifact_id == remediation_artifact_id
+        ):
+            db.rollback()
+            return {"outcome": "pending", "decision_id": None, "version_id": twin.id}
+        db.rollback()
+        raise RemediationConflictError(
+            f"Contenu identique à la version {twin.version_number} "
+            f"({twin.state}) de ce document."
+        )
+
+    worker_token = str(uuid.uuid4())
+    max_number = db.scalar(
+        select(DocumentVersion.version_number)
+        .where(DocumentVersion.document_id == doc.id)
+        .order_by(DocumentVersion.version_number.desc())
+        .limit(1)
+    )
+    candidate = DocumentVersion(
+        id=str(uuid.uuid4()),
+        document_id=doc.id,
+        organization_id=org_id,
+        version_number=(max_number or 0) + 1,
+        state="PENDING_INDEX",
+        source_checksum=hashlib.sha256(data).hexdigest(),
+        text_checksum=new_text_ck,
+        parser_version=PARSER_VERSION,
+        chunker_version=CHUNKER_VERSION,
+        chunk_id_scheme="version_id_v3",
+        page_count=len(pages),
+        origin="upload",
+        supersedes_version_id=base.id,
+        source_artifact_id=remediation_artifact_id,
+        canonical_format=canonical_format,
+        filename=filename,
+        reported_mime=content_type,
+        byte_size=len(data),
+        activation_token=worker_token,
+        activation_started_at=_now(),
+        activation_heartbeat_at=_now(),
+    )
+    candidate.pages = [
+        DocumentPage(document_id=doc.id, page_number=i + 1, text=text)
+        for i, text in enumerate(pages)
+    ]
+    db.add(candidate)
+    db.flush()
+    materialize_version_chunks(db, candidate)
+    append_version_event(
+        db, doc.id, "version_created",
+        {
+            "document_version_id": candidate.id,
+            "version_number": candidate.version_number,
+            "origin": "upload",
+            "supersedes_version_id": base.id,
+            "source_artifact_id": remediation_artifact_id,
+            "activation_token": worker_token,
+            "source_checksum": candidate.source_checksum,
+            "text_checksum": candidate.text_checksum,
+        },
+        actor_label,
+    )
+    db.commit()
+
+    return _index_and_activate_upload(
+        db, org_id, candidate.id, worker_token, actor_label=actor_label
+    )
+
+
+def _index_and_activate_upload(
+    db: Session, org_id: str, candidate_id: str, worker_token: str, *, actor_label
+) -> dict:
+    indexed_at = None
+    try:
+        _index_candidate_points(db, org_id, candidate_id, worker_token)
+        indexed_at = _now()
+    except Exception as exc:
+        db.rollback()
+        candidate = db.get(DocumentVersion, candidate_id)
+        db.get(Document, candidate.document_id, with_for_update=True)
+        if _fenced(
+            db, candidate_id, worker_token,
+            state="INDEX_FAILED",
+            activation_error=f"indexation échouée : {exc}",
+            activation_token=None,
+            activation_started_at=None,
+            activation_heartbeat_at=None,
+        ):
+            append_version_event(
+                db, candidate.document_id, "version_index_failed",
+                {
+                    "document_version_id": candidate_id,
+                    "error": str(exc),
+                    "activation_token": worker_token,
+                },
+                actor_label,
+            )
+            db.commit()
+        else:
+            db.rollback()
+        return {"outcome": "index_failed", "decision_id": None, "version_id": candidate_id}
+    return _activate_upload_candidate(
+        db, org_id, candidate_id, worker_token, indexed_at=indexed_at,
+        actor_label=actor_label,
+    )
+
+
+def _activate_upload_candidate(
+    db: Session,
+    org_id: str,
+    candidate_id: str,
+    worker_token: str,
+    *,
+    indexed_at: datetime | None,
+    actor_label: str | None,
+) -> dict:
+    """Tx B, upload variant. Twin of _activate_candidate minus the patch
+    gates, plus the artifact authority recheck when lineage is present —
+    keep the two in step when the protocol evolves."""
+    from app.models import RemediationArtifact
+
+    org = lock_organization(db, org_id)
+    if org is None:
+        db.rollback()
+        raise RemediationNotFoundError("Organisation introuvable.")
+    peek = db.get(DocumentVersion, candidate_id)
+    artifact = (
+        db.get(RemediationArtifact, peek.source_artifact_id)
+        if peek.source_artifact_id
+        else None
+    )
+    if artifact is not None:
+        lock_case(db, org_id, artifact.case_id)
+    doc = db.get(Document, peek.document_id, with_for_update=True)
+    candidate = db.get(DocumentVersion, candidate_id, with_for_update=True)
+
+    if candidate.activation_token != worker_token:
+        db.rollback()
+        candidate = db.get(DocumentVersion, candidate_id)
+        if candidate.state == "ACTIVE":
+            return {"outcome": "already_active", "decision_id": None, "version_id": candidate_id}
+        if candidate.state == "ABANDONED":
+            return {
+                "outcome": f"abandoned:{candidate.abandoned_reason}",
+                "decision_id": None,
+                "version_id": candidate_id,
+            }
+        return {"outcome": "pending", "decision_id": None, "version_id": candidate_id}
+
+    if running_assessment_id(db, org_id):
+        _fenced(
+            db, candidate_id, worker_token,
+            activation_token=None,
+            activation_started_at=None,
+            activation_heartbeat_at=None,
+            activation_error="assessment_conflict",
+        )
+        db.commit()
+        return {"outcome": "assessment_conflict", "decision_id": None, "version_id": candidate_id}
+
+    def _abandon_upload(reason: str) -> dict:
+        if not _fenced(
+            db, candidate_id, worker_token,
+            state="ABANDONED",
+            abandoned_reason=reason,
+            activation_token=None,
+            activation_started_at=None,
+            activation_heartbeat_at=None,
+            activation_error=None,
+        ):
+            db.rollback()
+            raise RemediationConflictError(LEASE_LOST_FR)
+        append_version_event(
+            db, doc.id, "version_activation_abandoned",
+            {
+                "document_version_id": candidate_id,
+                "abandoned_reason": reason,
+                "activation_token": worker_token,
+            },
+            actor_label,
+        )
+        if artifact is not None:
+            append_event(
+                db, artifact.case_id, "patch_activation_abandoned",
+                {
+                    "document_id": doc.id,
+                    "version_id": candidate_id,
+                    "abandoned_reason": reason,
+                    "artifact_id": artifact.id,
+                },
+                actor_label,
+            )
+        db.commit()
+        return {
+            "outcome": f"abandoned:{reason}",
+            "decision_id": None,
+            "version_id": candidate_id,
+        }
+
+    if artifact is not None:
+        base_for_check = db.get(DocumentVersion, candidate.supersedes_version_id)
+        reason = _artifact_authority_errors(db, artifact, base_for_check)
+        if reason is not None:
+            return _abandon_upload(reason)
+
+    base = db.get(DocumentVersion, candidate.supersedes_version_id, with_for_update=True)
+    if (
+        doc.current_version_id != base.id
+        or base.state != "ACTIVE"
+        or candidate.state not in ("PENDING_INDEX", "INDEX_FAILED")
+    ):
+        return _abandon_upload("stale_base")
+
+    conflict = db.scalar(
+        select(Document.id).where(
+            Document.organization_id == org_id,
+            Document.checksum == candidate.source_checksum,
+            Document.id != doc.id,
+        )
+    )
+    if conflict is not None:
+        return _abandon_upload("checksum_conflict")
+
+    base.state = "SUPERSEDED"
+    db.flush()
+    if not _fenced(
+        db, candidate_id, worker_token,
+        state="ACTIVE",
+        activation_token=None,
+        activation_started_at=None,
+        activation_heartbeat_at=None,
+        activation_error=None,
+    ):
+        db.rollback()
+        raise RemediationConflictError(LEASE_LOST_FR)
+    doc.current_version_id = candidate_id
+    doc.checksum = candidate.source_checksum
+    doc.page_count = candidate.page_count
+    doc.parser_version = candidate.parser_version
+    doc.filename = candidate.filename
+    doc.content_type = candidate.reported_mime or doc.content_type
+    payload_common = {
+        "document_version_id": candidate_id,
+        "base_version_id": base.id,
+        "activation_token": worker_token,
+        "source_artifact_id": candidate.source_artifact_id,
+        "indexed_at": indexed_at.isoformat() if indexed_at else None,
+    }
+    append_version_event(db, doc.id, "version_indexed", payload_common, actor_label)
+    append_version_event(db, doc.id, "version_activated", payload_common, actor_label)
+    if artifact is not None:
+        superseded_event = append_version_event(
+            db, doc.id, "version_superseded_by_upload",
+            {
+                "document_version_id": candidate_id,
+                "superseded_version_id": base.id,
+                "source_artifact_id": artifact.id,
+            },
+            actor_label,
+        )
+        append_event(
+            db, artifact.case_id, "version_superseded_by_upload",
+            {
+                "artifact_id": artifact.id,
+                "document_id": doc.id,
+                "superseded_version_id": base.id,
+                "new_version_id": candidate_id,
+                "document_version_event_id": superseded_event.id,
+            },
+            actor_label,
+        )
+    base_chunk_ids = db.scalars(
+        select(Chunk.id).where(Chunk.document_version_id == base.id)
+    ).all()
+    db.commit()
+    try:
+        qdrant.delete_points_by_ids([qdrant.point_id(cid) for cid in base_chunk_ids])
+    except Exception:
+        pass
+    return {"outcome": "activated", "decision_id": None, "version_id": candidate_id}
+
+
+def recover_upload_activation(
+    db: Session,
+    org_id: str,
+    document_id: str,
+    version_id: str,
+    *,
+    actor_label: str | None = None,
+    lease_seconds: int = ACTIVATION_LEASE_SECONDS,
+) -> dict:
+    """Re-drive a stranded superseding-upload activation (twin of
+    recover_patch_activation)."""
+    org = lock_organization(db, org_id)
+    if org is None:
+        db.rollback()
+        raise RemediationNotFoundError("Organisation introuvable.")
+    candidate = db.get(DocumentVersion, version_id, with_for_update=True)
+    if (
+        candidate is None
+        or candidate.document_id != document_id
+        or candidate.organization_id != org_id
+    ):
+        db.rollback()
+        raise RemediationNotFoundError("Version de document introuvable.")
+    doc = db.get(Document, document_id, with_for_update=True)
+    if candidate.state == "ACTIVE":
+        db.rollback()
+        return {"outcome": "already_active", "decision_id": None, "version_id": version_id}
+    if candidate.state == "ABANDONED":
+        db.rollback()
+        return {
+            "outcome": f"abandoned:{candidate.abandoned_reason}",
+            "decision_id": None,
+            "version_id": version_id,
+        }
+    if candidate.state not in ("PENDING_INDEX", "INDEX_FAILED"):
+        db.rollback()
+        raise RemediationConflictError(
+            "Cette version n'est pas une activation à reprendre "
+            f"(état : {candidate.state})."
+        )
+    heartbeat = _aware(candidate.activation_heartbeat_at)
+    if (
+        candidate.activation_token is not None
+        and heartbeat is not None
+        and _now() - heartbeat < timedelta(seconds=lease_seconds)
+    ):
+        db.rollback()
+        raise RemediationConflictError(
+            "Une activation est encore en cours pour cette version ; "
+            "réessayez lorsque son verrou aura expiré."
+        )
+    worker_token = str(uuid.uuid4())
+    candidate.state = "PENDING_INDEX"
+    candidate.activation_token = worker_token
+    candidate.activation_started_at = _now()
+    candidate.activation_heartbeat_at = _now()
+    candidate.activation_error = None
+    append_version_event(
+        db, doc.id, "version_recovered",
+        {"document_version_id": version_id, "activation_token": worker_token},
+        actor_label,
+    )
+    db.commit()
+    return _index_and_activate_upload(
+        db, org_id, version_id, worker_token, actor_label=actor_label
+    )

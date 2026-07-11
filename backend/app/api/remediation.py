@@ -6,13 +6,18 @@ Org scoping is structural (assessments.py pattern): every route nests under
 Service exceptions map: NotFound -> 404, Conflict -> 409, Invalid -> 422.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import Organization, PatchProposal, RemediationCase
+from app.models import (
+    Organization,
+    PatchProposal,
+    RemediationArtifact,
+    RemediationCase,
+)
 from app.remediation import actions, patcher, planner, reassessment, service, triage
 from app.services.run_guard import RUNNING_CONFLICT_FR
 from app.remediation.service import (
@@ -409,6 +414,100 @@ def recover_patch_proposal(
         actor_label=body.actor_label,
     )
     return _activation_response(result)
+
+
+def _artifact_payload(artifact) -> dict:
+    return {
+        "id": artifact.id,
+        "case_id": artifact.case_id,
+        "action_id": artifact.action_id,
+        "document_id": artifact.document_id,
+        "document_version_id": artifact.document_version_id,
+        "canonical_format": artifact.canonical_format,
+        "status": artifact.status,
+        "abstain_reason": artifact.abstain_reason,
+        "verifier_errors": artifact.verifier_errors,
+        "filename": artifact.filename,
+        "content_md": artifact.content_md,
+        "rationale": artifact.rationale,
+        "attempts": artifact.attempts,
+        "requirement_ids": artifact.requirement_ids,
+        "created_at": artifact.created_at.isoformat(),
+    }
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/artifacts",
+    status_code=201,
+)
+def create_artifact(
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    body: PatchProposalCreate,
+    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
+):
+    """Markdown revision proposal for a PDF/DOCX target — never a document
+    version; the human uploads the real revised file themselves (superseding
+    upload, which may cite this artifact as lineage)."""
+    _get_org(db, org_id)
+    artifact = _run(
+        patcher.draft_artifact,
+        db,
+        session_factory,
+        org_id,
+        case_id,
+        action_id,
+        body.document_id,
+        actor_label=body.actor_label,
+    )
+    return _artifact_payload(artifact)
+
+
+@router.get(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/artifacts",
+)
+def list_artifacts(
+    org_id: str, case_id: str, action_id: str, db: Session = Depends(get_db)
+):
+    _get_org(db, org_id)
+    rows = db.scalars(
+        select(RemediationArtifact)
+        .where(
+            RemediationArtifact.case_id == case_id,
+            RemediationArtifact.action_id == action_id,
+        )
+        .order_by(RemediationArtifact.created_at)
+    ).all()
+    return [_artifact_payload(a) for a in rows]
+
+
+ARTIFACT_HEADER_FR = (
+    "> **Proposition de rédaction — brouillon IA, document original inchangé.**\n"
+    "> Ce fichier n'est PAS une version du document : seule une personne peut\n"
+    "> téléverser la révision réelle (PDF/DOCX), qui créera la nouvelle version.\n\n"
+)
+
+
+@router.get(
+    "/organizations/{org_id}/remediation-cases/{case_id}/artifacts/{artifact_id}/download",
+)
+def download_artifact(
+    org_id: str, case_id: str, artifact_id: str, db: Session = Depends(get_db)
+):
+    _get_org(db, org_id)
+    artifact = db.get(RemediationArtifact, artifact_id)
+    if artifact is None or artifact.case_id != case_id:
+        raise HTTPException(404, "Artefact introuvable.")
+    if artifact.status != "VERIFIED":
+        raise HTTPException(409, "Seul un artefact VÉRIFIÉ peut être téléchargé.")
+    content = ARTIFACT_HEADER_FR + artifact.content_md
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+    )
 
 
 @router.post(
