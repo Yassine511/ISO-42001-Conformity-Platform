@@ -457,6 +457,89 @@ export interface Reassessment {
   created_at: string;
 }
 
+// M7b document versions + anchored patch flow
+export interface DocumentVersionSummary {
+  id: string;
+  document_id: string;
+  version_number: number;
+  state: "PENDING_INDEX" | "ACTIVE" | "SUPERSEDED" | "INDEX_FAILED" | "ABANDONED";
+  origin: "upload" | "patch";
+  canonical_format: "pdf" | "docx" | "txt" | "md";
+  filename: string;
+  page_count: number;
+  source_checksum: string | null;
+  text_checksum: string;
+  parser_version: string;
+  chunker_version: string;
+  chunk_id_scheme: string;
+  supersedes_version_id: string | null;
+  source_artifact_id: string | null;
+  abandoned_reason: string | null;
+  activation_error: string | null;
+  created_at: string;
+}
+
+export interface PatchProposalView {
+  id: string;
+  case_id: string;
+  action_id: string;
+  document_id: string;
+  document_version_id: string;
+  base_text_checksum: string;
+  status: "DRAFTING" | "VERIFIED" | "ABSTAINED";
+  abstain_reason: string | null;
+  verifier_errors: string[] | null;
+  operation: "insert_after" | "replace" | null;
+  anchor_page: number | null;
+  new_text_fr: string | null;
+  rationale: string | null;
+  attempts: number;
+  requirement_ids: string[];
+  created_at: string;
+  anchor_char_start: number | null;
+  anchor_char_end: number | null;
+  anchor_slice: string | null;
+  context_before: string | null;
+  context_after: string | null;
+  decision: {
+    id: string;
+    decision: "approve" | "edit" | "reject";
+    final_text_fr: string | null;
+    result_version_id: string | null;
+    actor_label: string | null;
+    created_at: string;
+    result_state?: string;
+    result_abandoned_reason?: string | null;
+    result_activation_error?: string | null;
+  } | null;
+}
+
+export interface RemediationArtifactView {
+  id: string;
+  case_id: string;
+  action_id: string;
+  document_id: string;
+  document_version_id: string;
+  canonical_format: "pdf" | "docx" | "txt" | "md";
+  status: "DRAFTING" | "VERIFIED" | "ABSTAINED";
+  abstain_reason: string | null;
+  verifier_errors: string[] | null;
+  filename: string | null;
+  content_md: string | null;
+  rationale: string | null;
+  attempts: number;
+  requirement_ids: string[];
+  created_at: string;
+}
+
+// Outcome of a patch decision / superseding-upload activation.
+export interface ActivationResult {
+  outcome: string; // "activated" | "already_active" | "rejected" | "pending" | "assessment_conflict" | "index_failed" | "abandoned:<reason>"
+  decision_id: string | null;
+  version_id: string | null;
+  detail?: string;
+}
+
 // Abstentions caused by provider infrastructure — rendered as neutral
 // service failures, never as amber "needs your judgment".
 export const INFRA_ABSTAIN_REASONS = ["llm_error", "rate_limited"] as const;
@@ -469,6 +552,16 @@ async function json<T>(res: Response): Promise<T> {
     throw new Error(body?.detail ?? `Erreur ${res.status}`);
   }
   return res.status === 204 ? (undefined as T) : res.json();
+}
+
+// Activation endpoints convey their outcome IN the body across several status
+// codes (200 activated, 202 pending, 409 assessment_conflict/abandoned, 503
+// index_failed). Any body carrying `outcome` is a result to surface, not an
+// error; a genuine failure (404/422, or a 409 with only `detail`) still throws.
+async function activation(res: Response): Promise<ActivationResult> {
+  const body = await res.json().catch(() => null);
+  if (body && typeof body.outcome === "string") return body as ActivationResult;
+  throw new Error(body?.detail ?? `Erreur ${res.status}`);
 }
 
 const post = (url: string, body?: unknown) =>
@@ -653,6 +746,51 @@ export const api = {
     post(`/api/organizations/${orgId}/remediation-cases/${caseId}/reopen`, {}).then((r) =>
       json<RemediationCaseDetail>(r),
     ),
+
+  // M7b document versions + patch flow
+  listDocumentVersions: (docId: string) =>
+    fetch(`/api/documents/${docId}/versions`).then((r) => json<DocumentVersionSummary[]>(r)),
+  versionDownloadUrl: (docId: string, versionId: string) =>
+    `/api/documents/${docId}/versions/${versionId}/download`,
+  createPatchProposal: (orgId: string, caseId: string, actionId: string, documentId: string) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/patch-proposals`,
+      { document_id: documentId },
+    ).then((r) => json<PatchProposalView>(r)),
+  listPatchProposals: (orgId: string, caseId: string, actionId: string) =>
+    fetch(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/patch-proposals`,
+    ).then((r) => json<PatchProposalView[]>(r)),
+  getPatchProposal: (orgId: string, caseId: string, proposalId: string) =>
+    fetch(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/patch-proposals/${proposalId}`,
+    ).then((r) => json<PatchProposalView>(r)),
+  decidePatch: (
+    orgId: string,
+    caseId: string,
+    proposalId: string,
+    body: { decision: "approve" | "edit" | "reject"; final_text_fr?: string; actor_label?: string },
+  ) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/patch-proposals/${proposalId}/decision`,
+      body,
+    ).then((r) => activation(r)),
+  recoverPatch: (orgId: string, caseId: string, proposalId: string) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/patch-proposals/${proposalId}/recover`,
+      {},
+    ).then((r) => activation(r)),
+  createArtifact: (orgId: string, caseId: string, actionId: string, documentId: string) =>
+    post(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/artifacts`,
+      { document_id: documentId },
+    ).then((r) => json<RemediationArtifactView>(r)),
+  listArtifacts: (orgId: string, caseId: string, actionId: string) =>
+    fetch(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/actions/${actionId}/artifacts`,
+    ).then((r) => json<RemediationArtifactView[]>(r)),
+  artifactDownloadUrl: (orgId: string, caseId: string, artifactId: string) =>
+    `/api/organizations/${orgId}/remediation-cases/${caseId}/artifacts/${artifactId}/download`,
 
   // chat
   listConversations: (orgId: string) =>

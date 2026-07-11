@@ -28,6 +28,15 @@ vi.mock("../api", async (importOriginal) => {
       listReassessments: vi.fn(),
       closeCase: vi.fn(),
       reopenCase: vi.fn(),
+      listDocuments: vi.fn(),
+      listDocumentVersions: vi.fn(),
+      listPatchProposals: vi.fn(),
+      listArtifacts: vi.fn(),
+      getPatchProposal: vi.fn(),
+      createPatchProposal: vi.fn(),
+      decidePatch: vi.fn(),
+      recoverPatch: vi.fn(),
+      createArtifact: vi.fn(),
     },
   };
 });
@@ -177,6 +186,135 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocked.listReassessments.mockResolvedValue([]);
   mocked.linkSuggestions.mockResolvedValue([]);
+  mocked.listDocuments?.mockResolvedValue([]);
+  mocked.listDocumentVersions?.mockResolvedValue([]);
+  mocked.listPatchProposals?.mockResolvedValue([]);
+  mocked.listArtifacts?.mockResolvedValue([]);
+});
+
+const APPROVED_AMENDMENT = {
+  ...ACTION,
+  review_status: "CONFIRMED" as const,
+  review_action: "approve" as const,
+  description: ACTION.ai_description,
+  rationale: ACTION.ai_rationale,
+  owner_role: ACTION.ai_owner_role,
+  success_criterion: ACTION.ai_success_criterion,
+  priority: "haute" as const,
+  lifecycle: "APPROVED" as const,
+  review_count: 1,
+  effective_requirement_ids: ["A.9.2"],
+};
+
+function inProgressCaseWithApprovedAction() {
+  return makeCase({
+    status: "IN_PROGRESS",
+    classification: "evidence_gap",
+    scope: "local",
+    scope_rationale: "r",
+    triage_approved_at: "2026-07-10T09:00:30Z",
+    approved_triage_draft_id: "td-1",
+    active_plan_id: "plan-1",
+    plans: [{ ...PLAN, actions: [APPROVED_AMENDMENT] }],
+  });
+}
+
+const VERIFIED_PROPOSAL = {
+  id: "prop-1",
+  case_id: "case-1",
+  action_id: "act-1",
+  document_id: "doc-1",
+  document_version_id: "ver-1",
+  base_text_checksum: "abc",
+  status: "VERIFIED" as const,
+  abstain_reason: null,
+  verifier_errors: null,
+  operation: "insert_after" as const,
+  anchor_page: 1,
+  new_text_fr: "Nouveau paragraphe de politique.",
+  rationale: "Couvre l'action.",
+  attempts: 1,
+  requirement_ids: ["A.9.2"],
+  created_at: "2026-07-11T09:00:00Z",
+  anchor_char_start: 10,
+  anchor_char_end: 30,
+  anchor_slice: "Texte d'ancrage exact",
+  context_before: "…avant ",
+  context_after: " après…",
+  decision: null,
+};
+
+describe("patch flow", () => {
+  it("proposes a patch on a TXT target and renders the server-derived diff", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([
+      { id: "doc-1", organization_id: "org-1", filename: "politique.txt", content_type: "text/plain", status: "parsed", error: null, page_count: 1, checksum: "c", parser_version: "2", current_version_id: "ver-1", created_at: "2026-07-10T09:00:00Z" },
+    ]);
+    mocked.createPatchProposal.mockResolvedValue(VERIFIED_PROPOSAL);
+    mocked.listPatchProposals
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([VERIFIED_PROPOSAL]);
+    mocked.getPatchProposal.mockResolvedValue(VERIFIED_PROPOSAL);
+
+    renderCase();
+    // wait for the documents query to populate the select before choosing
+    await screen.findByRole("option", { name: "politique.txt" });
+    await userEvent.selectOptions(screen.getByLabelText("Document cible"), "doc-1");
+    await userEvent.click(screen.getByRole("button", { name: "Proposer un correctif" }));
+    await waitFor(() =>
+      expect(mocked.createPatchProposal).toHaveBeenCalledWith("org-1", "case-1", "act-1", "doc-1"),
+    );
+    // the diff renders the server slice (anchor) + the proposed insertion
+    expect(await screen.findByText("Texte d'ancrage exact")).toBeInTheDocument();
+    expect(screen.getByText(/Nouveau paragraphe de politique\./)).toBeInTheDocument();
+  });
+
+  it("approves a verified proposal", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([]);
+    mocked.listPatchProposals.mockResolvedValue([VERIFIED_PROPOSAL]);
+    mocked.getPatchProposal.mockResolvedValue(VERIFIED_PROPOSAL);
+    mocked.decidePatch.mockResolvedValue({
+      outcome: "activated",
+      decision_id: "dec-1",
+      version_id: "ver-2",
+    });
+
+    renderCase();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Approuver le correctif" }),
+    );
+    await waitFor(() =>
+      expect(mocked.decidePatch).toHaveBeenCalledWith("org-1", "case-1", "prop-1", {
+        decision: "approve",
+      }),
+    );
+  });
+
+  it("renders an abstained proposal without decision controls", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([]);
+    const abstained = {
+      ...VERIFIED_PROPOSAL,
+      status: "ABSTAINED" as const,
+      abstain_reason: "anchor_ambiguous",
+      anchor_char_start: null,
+      anchor_char_end: null,
+      anchor_slice: null,
+    };
+    mocked.listPatchProposals.mockResolvedValue([abstained]);
+    mocked.getPatchProposal.mockResolvedValue(abstained);
+
+    renderCase();
+    expect(
+      await screen.findByText(/Correctif en abstention \(anchor_ambiguous\)/),
+    ).toBeInTheDocument();
+    // no diff and no patch-decision controls for an abstained proposal
+    expect(screen.queryByText("Diff proposé")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approuver le correctif" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("RemediationListPage", () => {

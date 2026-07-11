@@ -5,6 +5,7 @@ import {
   api,
   OPERATIONAL_ABORT_REASONS,
   type Classification,
+  type DocumentVersionSummary,
   type RemediationAction,
   type RemediationCaseDetail,
   type RemediationPlan,
@@ -828,8 +829,308 @@ function ActionCard({
           </div>
         </div>
       )}
+      {a.action_type === "document_amendment" &&
+        a.lifecycle === "APPROVED" &&
+        c.status !== "CLOSED" && <PatchPanel orgId={orgId} c={c} a={a} onChanged={onChanged} />}
       <ErrorText error={review.error || lifecycle.error || effectiveness.error} />
     </li>
+  );
+}
+
+// ------------------------------------------------------------ M7b patches
+
+const VERSION_STATE_LABELS: Record<DocumentVersionSummary["state"], string> = {
+  PENDING_INDEX: "Indexation en cours",
+  ACTIVE: "Active",
+  SUPERSEDED: "Remplacée",
+  INDEX_FAILED: "Échec d'indexation",
+  ABANDONED: "Abandonnée",
+};
+
+function PatchPanel({
+  orgId,
+  c,
+  a,
+  onChanged,
+}: {
+  orgId: string;
+  c: RemediationCaseDetail;
+  a: RemediationAction;
+  onChanged: () => void;
+}) {
+  const [docId, setDocId] = useState("");
+  const documents = useQuery({
+    queryKey: ["documents", orgId],
+    queryFn: () => api.listDocuments(orgId),
+  });
+  const proposals = useQuery({
+    queryKey: ["patch-proposals", orgId, c.id, a.id],
+    queryFn: () => api.listPatchProposals(orgId, c.id, a.id),
+  });
+  const artifacts = useQuery({
+    queryKey: ["artifacts", orgId, c.id, a.id],
+    queryFn: () => api.listArtifacts(orgId, c.id, a.id),
+  });
+  const parsed = (documents.data ?? []).filter((d) => d.status === "parsed");
+  const selected = parsed.find((d) => d.id === docId);
+  // Route by the CURRENT version format (server-derived); fall back to the
+  // filename extension until a version pointer exists.
+  const format = selected
+    ? (selected.filename.toLowerCase().split(".").pop() ?? "")
+    : "";
+  const isTextual = format === "txt" || format === "md";
+
+  const propose = useMutation({
+    mutationFn: () => api.createPatchProposal(orgId, c.id, a.id, docId),
+    onSuccess: () => {
+      proposals.refetch();
+      onChanged();
+    },
+  });
+  const proposeArtifact = useMutation({
+    mutationFn: () => api.createArtifact(orgId, c.id, a.id, docId),
+    onSuccess: () => {
+      artifacts.refetch();
+      onChanged();
+    },
+  });
+
+  return (
+    <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+      <p className="text-xs font-semibold text-indigo-700">Correctif documentaire</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={docId}
+          onChange={(e) => setDocId(e.target.value)}
+          aria-label="Document cible"
+          className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+        >
+          <option value="">Choisir le document cible…</option>
+          {parsed.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.filename}
+            </option>
+          ))}
+        </select>
+        {selected &&
+          (isTextual ? (
+            <button
+              onClick={() => propose.mutate()}
+              disabled={propose.isPending}
+              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Proposer un correctif
+            </button>
+          ) : (
+            <button
+              onClick={() => proposeArtifact.mutate()}
+              disabled={proposeArtifact.isPending}
+              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Proposer une rédaction (PDF/DOCX)
+            </button>
+          ))}
+      </div>
+      {selected && !isTextual && (
+        <p className="text-xs text-slate-500">
+          PDF/DOCX : l'agent produit une proposition Markdown ; le document original reste
+          inchangé et seul un téléversement humain crée une nouvelle version.
+        </p>
+      )}
+      <ErrorText error={propose.error || proposeArtifact.error} />
+
+      {(proposals.data ?? []).map((p) => (
+        <PatchProposalCard key={p.id} orgId={orgId} c={c} proposalId={p.id} onChanged={onChanged} />
+      ))}
+      {(artifacts.data ?? [])
+        .filter((art) => art.status === "VERIFIED")
+        .map((art) => (
+          <div key={art.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+            <p className="font-medium text-slate-700">
+              Proposition de rédaction ({art.canonical_format.toUpperCase()})
+            </p>
+            <a
+              href={api.artifactDownloadUrl(orgId, c.id, art.id)}
+              className="text-indigo-600 underline"
+            >
+              Télécharger le brouillon Markdown
+            </a>
+            <p className="mt-1 text-slate-400">
+              Brouillon IA — téléversez ensuite le fichier révisé pour créer la version.
+            </p>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function PatchProposalCard({
+  orgId,
+  c,
+  proposalId,
+  onChanged,
+}: {
+  orgId: string;
+  c: RemediationCaseDetail;
+  proposalId: string;
+  onChanged: () => void;
+}) {
+  const proposal = useQuery({
+    queryKey: ["patch-proposal", orgId, c.id, proposalId],
+    queryFn: () => api.getPatchProposal(orgId, c.id, proposalId),
+  });
+  const versions = useQuery({
+    queryKey: ["document-versions", proposal.data?.document_id],
+    queryFn: () => api.listDocumentVersions(proposal.data!.document_id),
+    enabled: !!proposal.data,
+  });
+  const [editing, setEditing] = useState(false);
+  const [finalText, setFinalText] = useState("");
+  const refresh = () => {
+    proposal.refetch();
+    versions.refetch();
+    onChanged();
+  };
+  const decide = useMutation({
+    mutationFn: (body: { decision: "approve" | "edit" | "reject"; final_text_fr?: string }) =>
+      api.decidePatch(orgId, c.id, proposalId, body),
+    onSuccess: () => {
+      setEditing(false);
+      refresh();
+    },
+  });
+  const recover = useMutation({
+    mutationFn: () => api.recoverPatch(orgId, c.id, proposalId),
+    onSuccess: refresh,
+  });
+
+  const p = proposal.data;
+  if (!p) return null;
+
+  if (p.status === "ABSTAINED") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <p className="font-medium">Correctif en abstention ({p.abstain_reason})</p>
+        <p className="mt-1">
+          L'agent n'a pas pu ancrer un correctif fiable ; rédigez la modification manuellement.
+        </p>
+      </div>
+    );
+  }
+  if (p.status === "DRAFTING") {
+    return <p className="text-xs text-slate-500">Rédaction du correctif en cours…</p>;
+  }
+
+  const resultVersion = (versions.data ?? []).find((v) => v.id === p.decision?.result_version_id);
+  const stranded =
+    resultVersion &&
+    (resultVersion.state === "INDEX_FAILED" || resultVersion.state === "PENDING_INDEX");
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+      <p className="font-medium text-slate-700">
+        Diff proposé ({p.operation === "replace" ? "remplacement" : "insertion"})
+      </p>
+      {/* Server-derived source slice at the resolved anchor — never the model quote */}
+      <div className="rounded bg-slate-50 p-2 font-mono text-[11px] leading-relaxed">
+        <span className="text-slate-400">{p.context_before}</span>
+        <mark className="bg-amber-200">{p.anchor_slice}</mark>
+        {p.operation === "insert_after" && (
+          <ins className="bg-emerald-100 text-emerald-800 no-underline">
+            {"\n\n"}
+            {editing ? finalText || p.new_text_fr : p.new_text_fr}
+          </ins>
+        )}
+        {p.operation === "replace" && (
+          <span className="text-slate-400 line-through">{/* replaced */}</span>
+        )}
+        <span className="text-slate-400">{p.context_after}</span>
+      </div>
+      {p.operation === "replace" && (
+        <div className="rounded bg-emerald-50 p-2 font-mono text-[11px] text-emerald-800">
+          → {editing ? finalText || p.new_text_fr : p.new_text_fr}
+        </div>
+      )}
+      <p className="text-slate-500">Justification IA : {p.rationale}</p>
+
+      {p.decision ? (
+        <div className="rounded bg-slate-50 p-2">
+          <p className="font-medium text-slate-600">
+            Décision : {p.decision.decision}
+            {resultVersion && ` → version ${resultVersion.version_number} (${
+              VERSION_STATE_LABELS[resultVersion.state]
+            })`}
+          </p>
+          {resultVersion?.state === "ACTIVE" &&
+            (resultVersion.canonical_format === "txt" ||
+              resultVersion.canonical_format === "md") && (
+              <a
+                href={api.versionDownloadUrl(p.document_id, resultVersion.id)}
+                className="text-indigo-600 underline"
+              >
+                Télécharger la nouvelle version
+              </a>
+            )}
+          {stranded && (
+            <button
+              onClick={() => recover.mutate()}
+              disabled={recover.isPending}
+              className="mt-1 rounded-lg border border-indigo-300 px-2 py-0.5 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              Reprendre l'activation
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {editing && (
+            <textarea
+              value={finalText}
+              onChange={(e) => setFinalText(e.target.value)}
+              rows={3}
+              placeholder="Texte final (votre rédaction sera appliquée telle quelle)"
+              className="w-full rounded-lg border border-slate-300 px-2 py-1"
+            />
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => decide.mutate({ decision: "approve" })}
+              disabled={decide.isPending}
+              className="rounded-lg bg-emerald-600 px-3 py-1 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Approuver le correctif
+            </button>
+            {editing ? (
+              <button
+                onClick={() => decide.mutate({ decision: "edit", final_text_fr: finalText })}
+                disabled={decide.isPending || !finalText.trim()}
+                className="rounded-lg bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Appliquer ma rédaction
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setFinalText(p.new_text_fr ?? "");
+                  setEditing(true);
+                }}
+                className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50"
+              >
+                Modifier le texte
+              </button>
+            )}
+            <button
+              onClick={() => decide.mutate({ decision: "reject" })}
+              disabled={decide.isPending}
+              className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50"
+            >
+              Rejeter le correctif
+            </button>
+          </div>
+        </div>
+      )}
+      <ErrorText error={decide.error || recover.error} />
+    </div>
   );
 }
 
