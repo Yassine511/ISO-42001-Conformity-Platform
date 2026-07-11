@@ -675,6 +675,23 @@ class RemediationEffectivenessBody(BaseModel):
     ] | None = None
 
 
+class PatchProposalCreate(BaseModel):
+    document_id: str
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class PatchDecisionBody(BaseModel):
+    decision: Literal["approve", "edit", "reject"]
+    final_text_fr: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
+    ] | None = None
+    actor_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
 class RemediationReassessmentCreate(BaseModel):
     selected_action_ids: list[str]
     actor_label: Annotated[

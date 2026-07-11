@@ -376,3 +376,106 @@ def test_close_new_case_reopen_race(pg_env):
     ).all()
     db.close()
     assert len(active) == 1
+
+
+def _approved_action_pg(session_factory, org_id, case_id):
+    """VERIFIED plan + human-approved action, PG flavour. Returns
+    (action_id, document_id)."""
+    from tests.test_remediation_planner import DynamicFake as _DF, _plan_json as _pj
+
+    llm_service.set_provider(_DF([_pj()]))
+    db = session_factory()
+    plan = planner_module.draft_plan(db, session_factory, org_id, case_id)
+    assert plan.status == "VERIFIED"
+    action_id = plan.actions[0].id
+    actions_module.review_action(
+        db, org_id, case_id, action_id, action="approve", priority="haute"
+    )
+    doc_id = db.scalar(select(Document.id).where(Document.organization_id == org_id))
+    db.close()
+    return action_id, doc_id
+
+
+def test_concurrent_patch_approvals_share_one_base(pg_env):
+    """Two VERIFIED proposals over the same base version, decided
+    concurrently under real row locks: exactly ONE version activates; the
+    loser is a typed conflict or a terminal ABANDONED(stale_base) — never a
+    second ACTIVE version (one-ACTIVE partial unique is the backstop)."""
+    import json as _json
+
+    from app.models import DocumentVersion, PatchProposal
+    from app.remediation import patcher as patcher_module
+    from tests.test_remediation_planner import DynamicFake as _DF
+
+    session_factory, org_id, finding_id = pg_env
+    case_id = _approved_case(session_factory, org_id, finding_id)
+    action_id, doc_id = _approved_action_pg(session_factory, org_id, case_id)
+
+    anchor = "Politique IA de test."
+
+    def _patch_json(new_text: str) -> str:
+        return _json.dumps(
+            {
+                "anchor_quote": anchor,
+                "anchor_page": 1,
+                "operation": "insert_after",
+                "new_text_fr": new_text,
+                "rationale": "Compléter la politique.",
+            },
+            ensure_ascii=False,
+        )
+
+    proposals = []
+    for text in (
+        "Les incidents sont consignés dans un registre revu chaque mois.",
+        "Un plan de contrôle des fournisseurs est ajouté à la politique.",
+    ):
+        llm_service.set_provider(_DF([_patch_json(text)]))
+        db = session_factory()
+        proposal = patcher_module.draft_patch_proposal(
+            db, session_factory, org_id, case_id, action_id, doc_id
+        )
+        assert proposal.status == "VERIFIED"
+        proposals.append(proposal.id)
+        db.close()
+
+    barrier = threading.Barrier(2, timeout=10)
+    results: list = [None, None]
+
+    def worker(slot: int, proposal_id: str) -> None:
+        db = session_factory()
+        try:
+            barrier.wait()
+            out = patcher_module.decide_patch(
+                db, org_id, case_id, proposal_id, decision="approve"
+            )
+            results[slot] = ("ok", out["outcome"])
+        except RemediationConflictError as exc:
+            results[slot] = ("conflict", str(exc))
+        finally:
+            db.close()
+
+    threads = [
+        threading.Thread(target=worker, args=(i, pid))
+        for i, pid in enumerate(proposals)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    outcomes = sorted(str(r) for r in results)
+    winners = [r for r in results if r == ("ok", "activated")]
+    assert len(winners) == 1, results
+    loser = next(r for r in results if r != ("ok", "activated"))
+    assert loser[0] == "conflict" or loser[1].startswith("abandoned:"), results
+
+    db = session_factory()
+    active = db.scalars(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == doc_id,
+            DocumentVersion.state == "ACTIVE",
+        )
+    ).all()
+    assert len(active) == 1 and active[0].origin == "patch"
+    db.close()

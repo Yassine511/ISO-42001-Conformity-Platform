@@ -87,6 +87,22 @@ class ActionDraft(BaseModel):
         return self
 
 
+class PatchDraft(BaseModel):
+    """AI anchored-patch proposal (M7b). The anchor must be copied VERBATIM
+    from the served page text: location verification is raw literal equality
+    (services/anchors.py) requiring exactly one occurrence — checked
+    contextually in patcher.py, never here. TXT/MD parse to a single page, so
+    anchor_page must be 1 (also enforced in the verifier for a typed error)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    anchor_quote: str = Field(min_length=20, max_length=500)
+    anchor_page: int = Field(ge=1)
+    operation: Literal["insert_after", "replace"]
+    new_text_fr: str = Field(min_length=1, max_length=8000)
+    rationale: str = Field(min_length=1, max_length=2000)
+
+
 class PlanDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

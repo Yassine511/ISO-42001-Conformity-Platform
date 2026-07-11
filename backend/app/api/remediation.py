@@ -7,12 +7,14 @@ Service exceptions map: NotFound -> 404, Conflict -> 409, Invalid -> 422.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import Organization, RemediationCase
-from app.remediation import actions, planner, reassessment, service, triage
+from app.models import Organization, PatchProposal, RemediationCase
+from app.remediation import actions, patcher, planner, reassessment, service, triage
+from app.services.run_guard import RUNNING_CONFLICT_FR
 from app.remediation.service import (
     RemediationConflictError,
     RemediationInvalidError,
@@ -20,6 +22,8 @@ from app.remediation.service import (
 )
 from app.services.provenance import source_slice
 from app.schemas import (
+    PatchDecisionBody,
+    PatchProposalCreate,
     RemediationActorBody,
     RemediationCaseCreate,
     RemediationCaseFindingOut,
@@ -259,6 +263,152 @@ def draft_plan(
         actor_label=body.actor_label,
     )
     return _plan_payload(plan)
+
+
+# ------------------------------------------------------------- M7b patches
+
+
+def _activation_response(result: dict):
+    """Deterministic outcome -> HTTP mapping. Duplicate/racing requests get
+    the candidate's REAL state (200 done / 202 in flight / 409 typed), never
+    an opaque conflict."""
+    outcome = result["outcome"]
+    if outcome in ("activated", "already_active", "rejected"):
+        return result
+    if outcome == "pending":
+        return JSONResponse(status_code=202, content=result)
+    if outcome == "assessment_conflict":
+        return JSONResponse(
+            status_code=409,
+            content={**result, "detail": RUNNING_CONFLICT_FR + " La version en attente pourra être reprise ensuite."},
+        )
+    if outcome == "index_failed":
+        return JSONResponse(
+            status_code=503,
+            content={
+                **result,
+                "detail": "Indexation vectorielle échouée ; la version est "
+                "conservée en INDEX_FAILED et peut être reprise.",
+            },
+        )
+    if outcome.startswith("abandoned:"):
+        return JSONResponse(
+            status_code=409,
+            content={
+                **result,
+                "detail": "Activation abandonnée : " + outcome.split(":", 1)[1]
+                + ". Redemandez un correctif sur l'état actuel.",
+            },
+        )
+    return result
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/patch-proposals",
+    status_code=201,
+)
+def create_patch_proposal(
+    org_id: str,
+    case_id: str,
+    action_id: str,
+    body: PatchProposalCreate,
+    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
+):
+    """Synchronous anchored-patch draft against the human-confirmed TXT/MD
+    target. Always returns the persisted proposal (VERIFIED or ABSTAINED)."""
+    _get_org(db, org_id)
+    proposal = _run(
+        patcher.draft_patch_proposal,
+        db,
+        session_factory,
+        org_id,
+        case_id,
+        action_id,
+        body.document_id,
+        actor_label=body.actor_label,
+    )
+    return _run(patcher.proposal_view, db, org_id, case_id, proposal.id)
+
+
+@router.get(
+    "/organizations/{org_id}/remediation-cases/{case_id}/actions/{action_id}/patch-proposals",
+)
+def list_patch_proposals(
+    org_id: str, case_id: str, action_id: str, db: Session = Depends(get_db)
+):
+    _get_org(db, org_id)
+    ids = db.scalars(
+        select(PatchProposal.id)
+        .where(
+            PatchProposal.case_id == case_id,
+            PatchProposal.action_id == action_id,
+        )
+        .order_by(PatchProposal.created_at)
+    ).all()
+    return [_run(patcher.proposal_view, db, org_id, case_id, pid) for pid in ids]
+
+
+@router.get(
+    "/organizations/{org_id}/remediation-cases/{case_id}/patch-proposals/{proposal_id}",
+)
+def get_patch_proposal(
+    org_id: str, case_id: str, proposal_id: str, db: Session = Depends(get_db)
+):
+    """Diff review data: server-derived source slice at the RESOLVED anchor
+    span + context — never the model quote as evidence."""
+    _get_org(db, org_id)
+    return _run(patcher.proposal_view, db, org_id, case_id, proposal_id)
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/patch-proposals/{proposal_id}/decision",
+)
+def decide_patch_proposal(
+    org_id: str,
+    case_id: str,
+    proposal_id: str,
+    body: PatchDecisionBody,
+    db: Session = Depends(get_db),
+):
+    """approve/edit apply the FINAL HUMAN text through the token-fenced
+    two-phase activation; reject records the decision only."""
+    _get_org(db, org_id)
+    result = _run(
+        patcher.decide_patch,
+        db,
+        org_id,
+        case_id,
+        proposal_id,
+        decision=body.decision,
+        final_text_fr=body.final_text_fr,
+        actor_label=body.actor_label,
+    )
+    return _activation_response(result)
+
+
+@router.post(
+    "/organizations/{org_id}/remediation-cases/{case_id}/patch-proposals/{proposal_id}/recover",
+)
+def recover_patch_proposal(
+    org_id: str,
+    case_id: str,
+    proposal_id: str,
+    body: RemediationActorBody,
+    db: Session = Depends(get_db),
+):
+    """Re-drive a stranded activation (crash / timeout / assessment
+    conflict). Idempotent: an already-ACTIVE result returns 200."""
+    _get_org(db, org_id)
+    result = _run(
+        patcher.recover_patch_activation,
+        db,
+        org_id,
+        case_id,
+        proposal_id,
+        actor_label=body.actor_label,
+    )
+    return _activation_response(result)
 
 
 @router.post(
