@@ -85,11 +85,72 @@ scopes cannot cite a reassessment. Everything audits into append-only `remediati
 (validated versioned payloads) + the `remediation_attempts`/`remediation_llm_calls` pair.
 Injection posture: JSON-escaped evidence blocks + server-owned identifier lists; the
 adversarial suite proves the deterministic contracts hold, never that a live model is
-unsteerable. Core continues with **M7b** (document-editing tool, spec §8: anchored patch
-with raw-equality unique anchors via `find_all_exact_anchors`; **original uploads are
-immutable** — agent output is always a separate artifact or an explicitly activated
-`DocumentVersion`); the former M7/M8 stretch milestones are now **M8/M9** — old milestone
-numbers in commit history predate this renumbering. M3 semantics: `VERIFIED`
+unsteerable.
+**M7b (document-editing tool, spec §8) is done** — `backend/app/remediation/patcher.py` +
+`services/anchors.py` + `services/checksums.py` + `services/version_events.py` +
+frontend patch panels, migration `0014`. The founding invariant holds in every path:
+**original uploads are immutable**; agent output is a separate `RemediationArtifact` or an
+explicitly activated new `DocumentVersion`, never a change to the company's file. A genuine
+restructuring migration puts `Document → DocumentVersion → pages/chunks`: pages/chunks are
+re-parented under a version (composite ownership FKs prove `document_id` and
+`document_version_id` name the same logical document), `documents.checksum/parser_version/
+page_count` become projections of the current version (`checksum == current_version.
+source_checksum`, raw bytes) written only on successful parse, and `Document.current_version_id`
+(post-hoc circular FK, 0013 pattern) is the single authority for which version serves
+retrieval. Two checksums, never interchangeable: `source_checksum` (raw uploaded/generated
+bytes; org-level dedup + the M6 corpus baseline) and `text_checksum` (canonical
+length-prefixed page-sequence hash, `services/checksums.py`; always computable, basis of
+patch anchoring and the per-document reversion rule). Chunking is **write-once per version**:
+`CHUNKER_VERSION` "3" with version-scoped ids (`make_chunk_id_v3`); pre-M7b `document_id_v2`
+rows are reused verbatim, never recomputed, so `findings.matched_chunk_id` survives; the
+assessment manifest records `chunker_version`/`chunk_id_scheme` **per document version** (a
+mixed v2/v3 corpus is never described by one global claim). **Anchor primitive**
+`find_all_exact_anchors(text, anchor_quote) -> list[Span]` is raw literal equality — no NFC,
+no casefold, no whitespace folding (the deliberate opposite of the read-side
+`pipeline/verifier.py`) — returning every occurrence including overlapping; the write gate
+accepts an anchor only when it returns **exactly one** span on page 1 within bounds
+(`MIN_ANCHOR_LEN=20`), else `ABSTAINED` (taxonomy `anchor_not_found|anchor_ambiguous|
+schema_invalid|llm_error|rate_limited|draft_interrupted`; an ABSTAINED proposal persists NO
+resolved span). TXT/MD get the patch flow (server-owned `RemediationContext` + staleness pins
+`input_action_review_count/input_plan_id/input_case_evidence_revision`; a DRAFTING lease on
+the proposal row itself — the case PLANNING lease is structurally unusable on IN_PROGRESS
+cases; ≤2 attempts with one repair); PDF/DOCX get a labelled Markdown `RemediationArtifact`
+only — the patch/artifact flow **can never create a PDF/DOCX version**; only an explicit
+human superseding re-upload can, which may cite `document_versions.source_artifact_id` to
+close the corrective-action loop. **Retrieval is version-aware with PostgreSQL as the sole
+current-state authority** (no mutable Qdrant payload projection): one `{document:
+current_version_id}` snapshot per hybrid-search attempt feeds the vector filter
+(`document_version_id` MatchAny), the BM25 corpus AND hydration, so RRF never fuses two
+corpus states; a mid-search activation retries the whole attempt once, a second flip raises
+`CorpusChangedError` (search/chat → retryable 409 with nothing persisted; triage/planner →
+`ABSTAINED(retrieval_error)`; assessments shielded by the run guard). The **human-edited
+final text is the only text applied**, inside a token-fenced two-phase activation: Tx A
+(lock order org[run_guard]→case→document→versions) validates the staleness pins + base
+checksum, applies the op at the resolved span, serializes exact UTF-8, and creates a
+`PENDING_INDEX` candidate + pages + chunks + `patch_decisions` (UNIQUE proposal_id) +
+activation lease; indexing is lock-free with token-fenced heartbeats; Tx B (every candidate
+mutation fenced by `activation_token`) rechecks no-assessment-RUNNING (temporary conflict:
+keep PENDING_INDEX, clear token), authority (`ABANDONED(stale_action|authority_lost)`), a CAS
+on `current_version_id`/base-ACTIVE (`ABANDONED(stale_base)`) and org-wide current
+source_checksum (`ABANDONED(checksum_conflict)`), then flips base→SUPERSEDED (flushed first
+vs the one-ACTIVE partial unique)→candidate→ACTIVE + mirrors + `version_indexed`/
+`version_activated` document events. Duplicate decisions are idempotent status reads
+(200 active / 202 pending / typed 409), never opaque conflicts; recovery takes over the token
+(fencing a stale worker) and re-drives idempotently; **ABANDONED is terminal and does NOT
+reserve its `text_checksum`** (partial unique `WHERE state <> 'ABANDONED'`) so a fresh
+authorized proposal reproducing the same correct content can still activate. Superseded
+versions/pages/chunks are **never deleted** (findings keep citing their exact text; the
+delete guard refuses on any version history or patch/artifact lineage). Two audit streams:
+case-scoped `remediation_events` (patch_*/artifact_*/version_superseded_by_upload) and the
+new append-only `document_version_events` (generic lifecycle, sequence under the document
+lock — `version_indexed` recorded only in the locked activation/recovery tx after Qdrant
+success). LLM provenance stays in `remediation_attempts` (stages `patch`/`artifact`) +
+`remediation_llm_calls`. **Post-deploy after 0014: run `/index` per organization** — points
+must gain the `document_version_id` payload (a point lacking it fails closed until
+re-upserted). Anchor contract corpus: `eval/m7b/anchor_cases.json` +
+`scripts/eval_patch.py` (deterministic, 100%-or-unsafe, run under pytest). The former
+M7/M8 stretch milestones are now **M8/M9** — old milestone numbers in commit history predate
+this renumbering. M3 semantics: `VERIFIED`
 means **citation/schema-verified via an EXACT match after normalization** (quote exists in source,
 clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
 repair retry then `ABSTAINED(fuzzy_citation)` for human review; verdict accuracy is measured in M6,
