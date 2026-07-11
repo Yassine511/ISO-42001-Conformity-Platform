@@ -240,6 +240,13 @@ async def upload_document(
             for i, text in enumerate(pages)
         ]
         doc.versions = [version]
+        # Circular FK discipline (0013 pattern): the composite FK
+        # (documents.id, current_version_id) -> document_versions is enforced
+        # at statement time on Postgres, so the version row must exist BEFORE
+        # the pointer is set — flush first (NULL pointer skips the FK), then
+        # assign. Setting it up front only worked on SQLite (FKs off).
+        db.add(doc)
+        db.flush()
         doc.current_version_id = version.id
         db.add(
             DocumentVersionEvent(

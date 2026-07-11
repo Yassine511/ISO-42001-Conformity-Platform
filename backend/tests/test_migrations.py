@@ -328,6 +328,69 @@ def test_0010_backfills_legacy_claim_key(scratch_db):
         con.close()
 
 
+def test_0014_current_version_circular_fk_needs_flush_first(scratch_db):
+    """The composite FK (documents.id, current_version_id) ->
+    document_versions is enforced at STATEMENT time on Postgres: an upload
+    that sets current_version_id before the version row exists violates it.
+    SQLite (unit tests) has FKs off, so only this PG test catches the
+    ordering bug — the upload path must flush the version first."""
+    import uuid as _uuid
+
+    import psycopg
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db import Base
+    from app.models import Document, DocumentPage, DocumentVersion, Organization
+
+    _alembic(scratch_db, "upgrade", "head")
+    url = "postgresql+psycopg://int102:int102@localhost:5433/" + scratch_db
+    engine = create_engine(url)
+    Session = sessionmaker(bind=engine)
+
+    def _doc_and_version(org_id):
+        doc = Document(
+            id=str(_uuid.uuid4()), organization_id=org_id, filename="p.txt",
+            content_type="text/plain", status="parsed", page_count=1,
+            checksum=_uuid.uuid4().hex, parser_version="2",
+        )
+        version = DocumentVersion(
+            id=str(_uuid.uuid4()), document_id=doc.id, organization_id=org_id,
+            version_number=1, state="ACTIVE", source_checksum=doc.checksum,
+            text_checksum=_uuid.uuid4().hex, parser_version="2", chunker_version="3",
+            chunk_id_scheme="version_id_v3", page_count=1, origin="upload",
+            canonical_format="txt", filename="p.txt",
+        )
+        version.pages = [DocumentPage(document_id=doc.id, page_number=1, text="x")]
+        doc.versions = [version]
+        return doc, version
+
+    db = Session()
+    org = Organization(id=str(_uuid.uuid4()), name="Circular FK SA")
+    db.add(org)
+    db.commit()
+
+    # WRONG order: pointer set before the version row is inserted -> FK violation
+    doc, version = _doc_and_version(org.id)
+    doc.current_version_id = version.id
+    db.add(doc)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+    # RIGHT order (the upload path): flush the version first, THEN the pointer
+    doc, version = _doc_and_version(org.id)
+    db.add(doc)
+    db.flush()
+    doc.current_version_id = version.id
+    db.commit()
+    assert db.get(Document, doc.id).current_version_id == version.id
+    db.close()
+    engine.dispose()
+
+
 def test_head_accepts_long_provider_model_names(scratch_db):
     """0008: reported_model/requested_model/final_model are Text at head, so a
     provider returning a >100-char model name no longer DataErrors the write
