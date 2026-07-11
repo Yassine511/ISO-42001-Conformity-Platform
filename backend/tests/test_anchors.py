@@ -70,3 +70,15 @@ def test_anchor_longer_than_text():
 def test_anchor_at_exact_end_of_text():
     spans = find_all_exact_anchors("début et fin", "et fin")
     assert spans == [Span(6, 12)]
+
+
+def test_m7b_anchor_contract_corpus_passes():
+    """The eval/m7b anchor contract suite is a deterministic gate: it must be
+    100% correct or the write path is unsafe. Runs it in-process so CI fails
+    on any regression (scripts/eval_patch.py is the standalone runner)."""
+    import runpy
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "eval_patch.py"
+    module = runpy.run_path(str(script))
+    assert module["main"]() == 0

@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "milestone": "M7b",
+    "description": "Deterministic contract corpus for the raw-equality anchor primitive (services/anchors.py). Each case pins how find_all_exact_anchors must behave against a fixed document text. The write gate accepts an anchor ONLY when exactly one span is returned; every other outcome (zero, many, normalization-level miss) is an abstention. This suite proves the deterministic primitive, not any live model.",
+    "expected_spans meaning": "the list of [start, end) offsets find_all_exact_anchors must return; the gate 'accept' iff its length == 1"
+  },
+  "document": "Politique d'utilisation responsable des systèmes d'intelligence artificielle.\n\nSeuls les systèmes approuvés par le Comité IA peuvent être utilisés.\n\nLes collaborateurs doivent signaler tout incident dans un délai de 48 heures.\n\nToute exception doit être documentée et validée par la direction.\n\nLes collaborateurs doivent signaler tout incident dans un délai de 48 heures.\n",
+  "cases": [
+    {
+      "id": "verbatim-unique",
+      "anchor": "Toute exception doit être documentée et validée par la direction.",
+      "expect": "accept",
+      "note": "verbatim, single occurrence -> exactly one span"
+    },
+    {
+      "id": "verbatim-duplicate",
+      "anchor": "Les collaborateurs doivent signaler tout incident dans un délai de 48 heures.",
+      "expect": "reject_ambiguous",
+      "note": "verbatim but occurs twice -> two spans, gate rejects as ambiguous"
+    },
+    {
+      "id": "fabricated",
+      "anchor": "Cette clause n'apparaît nulle part dans le document cible.",
+      "expect": "reject_not_found",
+      "note": "no occurrence -> empty span list"
+    },
+    {
+      "id": "near-casefold",
+      "anchor": "toute exception doit être documentée et validée par la direction.",
+      "expect": "reject_not_found",
+      "note": "differs only by case: the read verifier would fold it, the write gate must not"
+    },
+    {
+      "id": "near-accents",
+      "anchor": "Toute exception doit etre documentee et validee par la direction.",
+      "expect": "reject_not_found",
+      "note": "accents stripped -> not raw-equal"
+    },
+    {
+      "id": "near-whitespace",
+      "anchor": "Toute exception doit être documentée  et validée par la direction.",
+      "expect": "reject_not_found",
+      "note": "doubled space -> not raw-equal"
+    },
+    {
+      "id": "near-nfd",
+      "anchor_nfd_of": "Seuls les systèmes approuvés par le Comité IA peuvent être utilisés.",
+      "expect": "reject_not_found",
+      "note": "same rendered text in NFD composition -> not raw-equal to the NFC document"
+    },
+    {
+      "id": "leading-heading-unique",
+      "anchor": "Politique d'utilisation responsable des systèmes d'intelligence artificielle.",
+      "expect": "accept",
+      "note": "anchor at the very start of the page"
+    },
+    {
+      "id": "trailing-substring-unique",
+      "anchor": "validée par la direction.",
+      "expect": "accept",
+      "note": "shorter unique substring still resolves to one span"
+    },
+    {
+      "id": "overlapping-self",
+      "document_override": "abababababababababababababab",
+      "anchor": "abababababababababab",
+      "expect": "reject_ambiguous",
+      "note": "overlapping occurrences are ALL reported (scan advances by 1, not by anchor length): the 20-char anchor recurs at offsets 0, 2, 4... -> many spans -> ambiguous (and >= MIN_ANCHOR_LEN, so it reaches the span check)"
+    },
+    {
+      "id": "empty-anchor",
+      "anchor": "",
+      "expect": "error",
+      "note": "an empty anchor raises ValueError -- it must never be treated as a match"
+    },
+    {
+      "id": "too-short",
+      "anchor": "Comité IA",
+      "expect": "reject_too_short",
+      "note": "raw-unique but under MIN_ANCHOR_LEN=20 -> the patch layer rejects it before the one-span check"
+    }
+  ]
+}
