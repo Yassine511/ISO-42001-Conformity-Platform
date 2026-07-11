@@ -46,10 +46,17 @@ from app.remediation.service import (
     finding_snapshot,
     lock_case,
 )
-from app.services.retrieval import hybrid_search, load_kb
+from app.services.retrieval import CorpusChangedError, hybrid_search, load_kb
 
 MAX_DRAFT_ATTEMPTS = 2
-QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
+# CorpusChangedError joins the tuple: same operational-abort class as Qdrant
+# being down — an ABSTAINED(retrieval_error) draft, never a crash.
+QDRANT_ERRORS = (
+    ResponseHandlingException,
+    UnexpectedResponse,
+    ConnectionError,
+    CorpusChangedError,
+)
 
 STALE_TRIAGE_FR = (
     "Résultat de triage périmé : les constats liés ou le statut du cas ont "

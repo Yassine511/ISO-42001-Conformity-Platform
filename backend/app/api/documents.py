@@ -1,7 +1,7 @@
 import hashlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ from app.models import (
     Finding,
     Organization,
 )
-from app.schemas import DocumentOut, DocumentPageOut
+from app.schemas import DocumentOut, DocumentPageOut, DocumentVersionOut
 from app.services.checksums import text_checksum
 from app.services.chunking import CHUNKER_VERSION
 from app.services import qdrant
@@ -196,6 +196,72 @@ def get_document_pages(document_id: str, db: Session = Depends(get_db)):
         .where(DocumentPage.document_version_id == doc.current_version_id)
         .order_by(DocumentPage.page_number)
     ).all()
+
+
+@router.get("/documents/{document_id}/versions", response_model=list[DocumentVersionOut])
+def list_document_versions(document_id: str, db: Session = Depends(get_db)):
+    if not db.get(Document, document_id):
+        raise HTTPException(404, "Document introuvable.")
+    return db.scalars(
+        select(DocumentVersion)
+        .where(DocumentVersion.document_id == document_id)
+        .order_by(DocumentVersion.version_number, DocumentVersion.created_at)
+    ).all()
+
+
+def _get_version(db: Session, document_id: str, version_id: str) -> DocumentVersion:
+    version = db.get(DocumentVersion, version_id)
+    if not version or version.document_id != document_id:
+        raise HTTPException(404, "Version de document introuvable.")
+    return version
+
+
+@router.get(
+    "/documents/{document_id}/versions/{version_id}/pages",
+    response_model=list[DocumentPageOut],
+)
+def get_version_pages(document_id: str, version_id: str, db: Session = Depends(get_db)):
+    """Historical source inspection: the exact text a finding was made
+    against, whatever the document's current version is."""
+    _get_version(db, document_id, version_id)
+    return db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_version_id == version_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
+
+
+@router.get("/documents/{document_id}/versions/{version_id}/download")
+def download_version(document_id: str, version_id: str, db: Session = Depends(get_db)):
+    """TXT/MD only (PDF/DOCX bytes are never stored — only parsed text; a
+    reconstructed file would be a lie). Patch-born versions are byte-faithful
+    to their generated UTF-8 bytes; upload-born TXT/MD downloads are the
+    parsed text re-encoded as UTF-8, which may differ byte-wise from a
+    cp1252-encoded original."""
+    version = _get_version(db, document_id, version_id)
+    if version.canonical_format not in ("txt", "md"):
+        raise HTTPException(
+            409,
+            "Téléchargement disponible uniquement pour les versions TXT/Markdown ; "
+            "les originaux PDF/DOCX ne sont pas conservés sous forme de fichier.",
+        )
+    pages = db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_version_id == version_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
+    content = "".join(p.text for p in pages)  # TXT/MD parse to a single page
+    media = "text/markdown" if version.canonical_format == "md" else "text/plain"
+    safe_name = "".join(
+        c for c in version.filename if c.isalnum() or c in "._- "
+    ).strip() or f"version_{version.version_number}.{version.canonical_format}"
+    return Response(
+        content=content.encode("utf-8"),
+        media_type=f"{media}; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+        },
+    )
 
 
 @router.delete("/documents/{document_id}", status_code=204)

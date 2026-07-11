@@ -68,11 +68,19 @@ from app.remediation.service import (
     finding_snapshot,
     lock_case,
 )
-from app.services.retrieval import hybrid_search, load_kb
+from app.services.retrieval import CorpusChangedError, hybrid_search, load_kb
 
 MAX_DRAFT_ATTEMPTS = 2
 PLANNING_LEASE_SECONDS = 300  # conservative vs the ≤ ~90s inter-heartbeat gap
-QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
+# CorpusChangedError joins the tuple: a version activation racing the evidence
+# search is the same operational-abort class as Qdrant being down — an
+# ABSTAINED(retrieval_error) audit row, never a crash.
+QDRANT_ERRORS = (
+    ResponseHandlingException,
+    UnexpectedResponse,
+    ConnectionError,
+    CorpusChangedError,
+)
 
 COMPLETED_ABSTAIN_REASONS = (
     "schema_invalid",

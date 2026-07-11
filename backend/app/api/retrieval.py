@@ -45,6 +45,8 @@ def search(org_id: str, body: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(404, "Organisation introuvable.")
     try:
         items = retrieval.hybrid_search(db, org_id, body.query, body.k, body.scope)
+    except retrieval.CorpusChangedError as exc:
+        raise HTTPException(409, str(exc))  # retryable: a version activation raced us
     except QDRANT_ERRORS as exc:
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
     return [SearchResult(**item.__dict__) for item in items]

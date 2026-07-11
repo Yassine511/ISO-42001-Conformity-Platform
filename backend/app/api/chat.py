@@ -17,6 +17,7 @@ from app.db import get_db
 from app.models import ChatMessage, Conversation, Organization
 from app.pipeline.state import is_infrastructure_failure
 from app.schemas import ChatAsk, ChatMessageOut, ConversationOut
+from app.services.retrieval import CorpusChangedError
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -135,6 +136,10 @@ def post_message(org_id: str, body: ChatAsk, db: Session = Depends(get_db)):
         raise HTTPException(404, "Organisation introuvable.")
     except service.ConversationNotFoundError:
         raise HTTPException(404, "Conversation introuvable.")
+    except CorpusChangedError as exc:
+        # Retryable, nothing persisted: retrieval happens before any
+        # ChatMessage row exists (same doctrine as the Qdrant 503 below).
+        raise HTTPException(409, str(exc))
     except QDRANT_ERRORS as exc:
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
     return message_to_out(message)

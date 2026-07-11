@@ -36,7 +36,13 @@ def point_id(result_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, result_id))
 
 
-PAYLOAD_INDEX_FIELDS = ("source_type", "org_id", "document_id", "corpus_version")
+PAYLOAD_INDEX_FIELDS = (
+    "source_type",
+    "org_id",
+    "document_id",
+    "document_version_id",  # M7b: snapshot filter of the policy vector arm
+    "corpus_version",
+)
 
 
 def ensure_collection() -> None:

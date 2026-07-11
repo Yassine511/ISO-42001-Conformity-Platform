@@ -289,15 +289,55 @@ def index_kb() -> dict:
 # ---------------------------------------------------------------- search
 
 
+class CorpusChangedError(RuntimeError):
+    """The org's current-version snapshot changed during BOTH attempts of one
+    hybrid search (a version activation raced the query twice). Retryable —
+    callers map it per flow: search/chat -> HTTP 409 (nothing persisted),
+    triage/planner -> ABSTAINED(retrieval_error) audit row, assessments ->
+    loud run failure (the run guard makes this unreachable there)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "le corpus documentaire vient d'être modifié pendant la recherche ; "
+            "réessayez."
+        )
+
+
+def _current_snapshot(db: Session, org_id: str) -> dict[str, str]:
+    """{document_id: current_version_id} for the org's parsed documents — the
+    ONE authoritative version set of a hybrid-search attempt. Both arms and
+    hydration consume the same snapshot so RRF never fuses two states."""
+    return dict(
+        db.execute(
+            select(Document.id, Document.current_version_id).where(
+                Document.organization_id == org_id,
+                Document.status == DocumentStatus.PARSED.value,
+                Document.current_version_id.is_not(None),
+            )
+        ).all()
+    )
+
+
 def _vector_arm(
-    query_vec: list[float], scope: str, org_id: str, corpus_version: str, arm_top: int
+    query_vec: list[float],
+    scope: str,
+    org_id: str,
+    corpus_version: str,
+    arm_top: int,
+    current_version_ids: list[str],
 ) -> list[str]:
-    """result_ids ranked by cosine similarity, best first."""
+    """result_ids ranked by cosine similarity, best first. The policy filter
+    is snapshot-scoped (document_version_id IN current versions) so stale or
+    pending points can never consume candidate slots; an empty snapshot asks
+    Qdrant nothing (never an empty MatchAny)."""
     conditions_by_scope = {
         "policy": qm.Filter(
             must=[
                 qm.FieldCondition(key="source_type", match=qm.MatchValue(value="policy")),
                 qm.FieldCondition(key="org_id", match=qm.MatchValue(value=org_id)),
+                qm.FieldCondition(
+                    key="document_version_id", match=qm.MatchAny(any=current_version_ids)
+                ),
             ]
         ),
         "kb": qm.Filter(
@@ -310,6 +350,8 @@ def _vector_arm(
     scopes = ["policy", "kb"] if scope == "both" else [scope]
     scored: list[tuple[float, str]] = []
     for s in scopes:
+        if s == "policy" and not current_version_ids:
+            continue
         hits = qdrant.get_client().query_points(
             collection_name=settings.qdrant_collection,
             query=query_vec,
@@ -327,13 +369,17 @@ def _vector_arm(
     return [rid for _, rid in scored[:arm_top]]
 
 
-def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict | None) -> list[tuple[str, str]]:
+def _bm25_entries(
+    db: Session, scope: str, kb: dict | None, current_version_ids: list[str]
+) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
-    if scope in ("policy", "both"):
+    if scope in ("policy", "both") and current_version_ids:
+        # Same snapshot as the vector arm — never a fresh live join, so both
+        # arms rank the exact same version set.
         rows = db.execute(
-            select(Chunk.id, Chunk.text)
-            .join(Document, Chunk.document_id == Document.id)
-            .where(Document.organization_id == org_id)
+            select(Chunk.id, Chunk.text).where(
+                Chunk.document_version_id.in_(current_version_ids)
+            )
         ).all()
         entries.extend((cid, text) for cid, text in rows)
     if scope in ("kb", "both") and kb is not None:
@@ -344,14 +390,43 @@ def _bm25_entries(db: Session, scope: str, org_id: str, kb: dict | None) -> list
 
 
 def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "policy") -> list[RetrievedItem]:
+    """Snapshot-consistent hybrid retrieval. One {document: current version}
+    snapshot per attempt feeds the vector filter, the BM25 corpus AND
+    hydration; if the mapping changed by the end of the attempt (a version
+    activation raced us) the WHOLE attempt is retried once with a fresh
+    snapshot, and a second change raises CorpusChangedError — results mixing
+    two corpus states are never returned. Assessments never hit the retry
+    (the run guard freezes the corpus while they run)."""
     # KB is only loaded when the scope needs it: policy search must not
     # depend on the corpus files being present.
     kb = load_kb() if scope in ("kb", "both") else None
     query_vec = embed_texts([query])[0]
+    needs_policy = scope in ("policy", "both")
 
+    for _ in range(2):
+        snapshot = _current_snapshot(db, org_id) if needs_policy else {}
+        results = _hybrid_attempt(db, org_id, query, k, scope, kb, query_vec, snapshot)
+        if not needs_policy or _current_snapshot(db, org_id) == snapshot:
+            return results
+    raise CorpusChangedError()
+
+
+def _hybrid_attempt(
+    db: Session,
+    org_id: str,
+    query: str,
+    k: int,
+    scope: str,
+    kb: dict | None,
+    query_vec: list[float],
+    snapshot: dict[str, str],
+) -> list[RetrievedItem]:
+    current_ids = sorted(snapshot.values())
     arm_top = max(ARM_TOP, k)  # each arm must supply at least k candidates
-    vector_ids = _vector_arm(query_vec, scope, org_id, kb["corpus_version"] if kb else "", arm_top)
-    bm25_hits = Bm25Index(_bm25_entries(db, scope, org_id, kb)).search(query, arm_top)
+    vector_ids = _vector_arm(
+        query_vec, scope, org_id, kb["corpus_version"] if kb else "", arm_top, current_ids
+    )
+    bm25_hits = Bm25Index(_bm25_entries(db, scope, kb, current_ids)).search(query, arm_top)
 
     vector_rank = {rid: i + 1 for i, rid in enumerate(vector_ids)}
     bm25_rank = {rid: i + 1 for i, (rid, _) in enumerate(bm25_hits)}
@@ -366,14 +441,23 @@ def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "po
     for rid, score in ranked:
         if len(results) >= k:
             break
-        item = _hydrate(db, org_id, rid, score, vector_rank.get(rid), bm25_rank.get(rid), kb)
+        item = _hydrate(
+            db, org_id, rid, score, vector_rank.get(rid), bm25_rank.get(rid), kb, snapshot
+        )
         if item is not None:
             results.append(item)
     return results
 
 
 def _hydrate(
-    db: Session, org_id: str, rid: str, score: float, vrank: int | None, brank: int | None, kb: dict | None
+    db: Session,
+    org_id: str,
+    rid: str,
+    score: float,
+    vrank: int | None,
+    brank: int | None,
+    kb: dict | None,
+    snapshot: dict[str, str],
 ) -> RetrievedItem | None:
     if rid.startswith("kb:"):
         if kb is None:
@@ -397,6 +481,11 @@ def _hydrate(
         return None
     if chunk.document.organization_id != org_id:
         return None  # authoritative isolation check — never trust point payloads
+    # Final fail-closed membership check against THE attempt's snapshot: a
+    # chunk of a superseded/pending version can never surface, whatever the
+    # arms produced.
+    if snapshot.get(chunk.document_id) != chunk.document_version_id:
+        return None
     return RetrievedItem(
         result_id=rid,
         source_type="policy",

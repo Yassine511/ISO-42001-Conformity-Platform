@@ -28,6 +28,30 @@ class DocumentOut(BaseModel):
     page_count: int
     checksum: str | None
     parser_version: str
+    current_version_id: str | None = None
+    created_at: datetime
+
+
+class DocumentVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    version_number: int
+    state: str
+    origin: str
+    canonical_format: str
+    filename: str
+    page_count: int
+    source_checksum: str | None
+    text_checksum: str
+    parser_version: str
+    chunker_version: str
+    chunk_id_scheme: str
+    supersedes_version_id: str | None
+    source_artifact_id: str | None
+    abandoned_reason: str | None
+    activation_error: str | None
     created_at: datetime
 
 
