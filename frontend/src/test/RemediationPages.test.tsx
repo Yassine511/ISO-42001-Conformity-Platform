@@ -37,6 +37,8 @@ vi.mock("../api", async (importOriginal) => {
       decidePatch: vi.fn(),
       recoverPatch: vi.fn(),
       createArtifact: vi.fn(),
+      supersedeUpload: vi.fn(),
+      artifactDownloadUrl: mod.api.artifactDownloadUrl,
     },
   };
 });
@@ -314,6 +316,53 @@ describe("patch flow", () => {
     expect(
       screen.queryByRole("button", { name: "Approuver le correctif" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers a superseding upload on a verified PDF/DOCX artifact", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.listDocuments.mockResolvedValue([]);
+    mocked.listArtifacts.mockResolvedValue([
+      {
+        id: "art-1",
+        case_id: "case-1",
+        action_id: "act-1",
+        document_id: "doc-9",
+        document_version_id: "ver-9",
+        canonical_format: "docx" as const,
+        status: "VERIFIED" as const,
+        abstain_reason: null,
+        verifier_errors: null,
+        filename: "proposition.md",
+        content_md: "## Révision",
+        rationale: "r",
+        attempts: 1,
+        requirement_ids: ["A.9.2"],
+        created_at: "2026-07-11T09:00:00Z",
+      },
+    ]);
+    mocked.supersedeUpload.mockResolvedValue({
+      outcome: "activated",
+      decision_id: null,
+      version_id: "ver-10",
+    });
+
+    renderCase();
+    // the artifact card exposes both the draft download and the upload affordance
+    expect(await screen.findByText("Télécharger le brouillon Markdown")).toBeInTheDocument();
+    const input = screen.getByLabelText("Fichier révisé à téléverser");
+    const file = new File([new Uint8Array([1, 2, 3])], "revise.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    await userEvent.upload(input, file);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Téléverser la version révisée" }),
+    );
+    await waitFor(() =>
+      expect(mocked.supersedeUpload).toHaveBeenCalledWith("org-1", file, "ver-9", "art-1"),
+    );
+    expect(
+      await screen.findByText(/Nouvelle version créée et activée/),
+    ).toBeInTheDocument();
   });
 });
 

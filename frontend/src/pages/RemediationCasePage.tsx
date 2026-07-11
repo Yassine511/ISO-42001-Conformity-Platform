@@ -6,6 +6,7 @@ import {
   OPERATIONAL_ABORT_REASONS,
   type Classification,
   type DocumentVersionSummary,
+  type RemediationArtifactView,
   type RemediationAction,
   type RemediationCaseDetail,
   type RemediationPlan,
@@ -945,21 +946,73 @@ function PatchPanel({
       {(artifacts.data ?? [])
         .filter((art) => art.status === "VERIFIED")
         .map((art) => (
-          <div key={art.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-            <p className="font-medium text-slate-700">
-              Proposition de rédaction ({art.canonical_format.toUpperCase()})
-            </p>
-            <a
-              href={api.artifactDownloadUrl(orgId, c.id, art.id)}
-              className="text-indigo-600 underline"
-            >
-              Télécharger le brouillon Markdown
-            </a>
-            <p className="mt-1 text-slate-400">
-              Brouillon IA — téléversez ensuite le fichier révisé pour créer la version.
-            </p>
-          </div>
+          <ArtifactCard key={art.id} orgId={orgId} c={c} art={art} onChanged={onChanged} />
         ))}
+    </div>
+  );
+}
+
+function ArtifactCard({
+  orgId,
+  c,
+  art,
+  onChanged,
+}: {
+  orgId: string;
+  c: RemediationCaseDetail;
+  art: RemediationArtifactView;
+  onChanged: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  // The superseding upload replaces the version the artifact was drafted
+  // against and records the artifact as lineage (action -> artifact -> file ->
+  // version).
+  const supersede = useMutation({
+    mutationFn: (f: File) =>
+      api.supersedeUpload(orgId, f, art.document_version_id, art.id),
+    onSuccess: () => {
+      setFile(null);
+      onChanged();
+    },
+  });
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+      <p className="font-medium text-slate-700">
+        Proposition de rédaction ({art.canonical_format.toUpperCase()})
+      </p>
+      <a
+        href={api.artifactDownloadUrl(orgId, c.id, art.id)}
+        className="text-indigo-600 underline"
+      >
+        Télécharger le brouillon Markdown
+      </a>
+      <p className="text-slate-400">
+        Brouillon IA — préparez le fichier {art.canonical_format.toUpperCase()} révisé,
+        puis téléversez-le ici pour créer la nouvelle version (le document original reste
+        inchangé).
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="file"
+          aria-label="Fichier révisé à téléverser"
+          accept={art.canonical_format === "pdf" ? ".pdf" : ".docx"}
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="text-xs"
+        />
+        <button
+          onClick={() => file && supersede.mutate(file)}
+          disabled={!file || supersede.isPending}
+          className="rounded-lg bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          Téléverser la version révisée
+        </button>
+      </div>
+      {supersede.data?.outcome === "activated" && (
+        <p className="text-emerald-700">
+          Nouvelle version créée et activée à partir de votre fichier révisé.
+        </p>
+      )}
+      <ErrorText error={supersede.error} />
     </div>
   );
 }

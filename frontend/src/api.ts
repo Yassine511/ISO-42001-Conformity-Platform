@@ -584,6 +584,22 @@ export const api = {
       (r) => json<Doc>(r),
     );
   },
+  // Explicit human superseding re-upload — the only way a PDF/DOCX gets a new
+  // version; optionally carries the artifact lineage to close the loop.
+  supersedeUpload: (
+    orgId: string,
+    file: File,
+    supersedesVersionId: string,
+    remediationArtifactId?: string,
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("supersedes_version_id", supersedesVersionId);
+    if (remediationArtifactId) form.append("remediation_artifact_id", remediationArtifactId);
+    return fetch(`/api/organizations/${orgId}/documents`, { method: "POST", body: form }).then(
+      (r) => activation(r),
+    );
+  },
   deleteDocument: (docId: string) =>
     fetch(`/api/documents/${docId}`, { method: "DELETE" }).then((r) => json<void>(r)),
   indexOrganization: (orgId: string) =>
