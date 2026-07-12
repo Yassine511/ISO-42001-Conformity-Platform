@@ -540,6 +540,127 @@ export interface ActivationResult {
   detail?: string;
 }
 
+// ------------------------------------------------------------ reporting (M8)
+
+export interface ReportingScopeMeta {
+  mode: "organization" | "assessment";
+  assessment_id: string | null;
+  assessment_status: AssessmentStatus | null;
+  scoring_policy_version: string;
+  corpus_versions: string[];
+  generated_at: string;
+  included_assessment_ids: string[];
+  excluded_preliminary_assessment_ids: string[];
+  legacy_manifest_missing_ids: string[];
+  scope_complete: boolean;
+  is_preliminary: boolean;
+  is_official: boolean;
+  official_blockers: string[];
+  kb_total_requirements: number;
+}
+
+export interface ConformityDomain {
+  domain: string;
+  domain_title_fr: string;
+  total_in_scope: number;
+  scored: number;
+  pending_review: number;
+  not_assessed: number;
+  verdict_counts: Record<Verdict, number>;
+  pct: number | null;
+}
+
+export interface ConformityReport {
+  scope: ReportingScopeMeta;
+  global_pct: number | null;
+  scored: number;
+  total_in_scope: number;
+  coverage_pct: number | null;
+  verdict_counts: Record<Verdict, number>;
+  domains: ConformityDomain[];
+}
+
+export interface TrustPanel {
+  scope: ReportingScopeMeta;
+  gate: {
+    drafts_total: number;
+    drafts_parsed: number;
+    drafts_schema_invalid: number;
+    drafts_provider_failure: number;
+    legacy_unclassified: number;
+    drafts_with_unsupported_citation: number;
+    unsupported_draft_rate_pct: number | null;
+    verifier_error_code_counts: Record<string, number>;
+    findings_verified: number;
+    findings_abstained: number;
+    findings_abstained_by_verifier: number;
+    abstentions_by_reason: Record<string, number>;
+    unsupported_citations_displayed: 0;
+  };
+  review: {
+    review_events: number;
+    approve_events: number;
+    edit_or_override_events: number;
+    override_events: number;
+    intervention_rate_pct: number | null;
+    verdict_override_rate_pct: number | null;
+  };
+  chat: {
+    metric_scope: "organization";
+    messages: number;
+    answered: number;
+    abstained: number;
+    stripped_citation_count: number;
+  };
+  m6_benchmark: Record<string, string | number>;
+}
+
+export type Severity = "low" | "medium" | "high";
+
+export interface RiskRow {
+  requirement_id: string;
+  domain: string;
+  domain_title_fr: string;
+  requirement_fr: string | null;
+  human_verdict: Verdict;
+  gap_factor: number;
+  weight: number | null;
+  weight_source: "policy" | "unscored_weight";
+  severity_score: number | null;
+  severity: Severity | null;
+  risk_statement_fr: string;
+  finding_id: string;
+  assessment_id: string;
+  reviewed_at: string | null;
+  treatment: {
+    active_case_id: string | null;
+    active_case_status: string | null;
+    approved_action_count: number;
+    closed_case_ids: string[];
+  } | null;
+}
+
+export interface RiskRegister {
+  scope: ReportingScopeMeta;
+  rows: RiskRow[];
+  counts: { high: number; medium: number; low: number; unscored: number };
+}
+
+export interface ReportingParams {
+  assessmentId?: string;
+  scoringPolicyVersion?: string;
+  includePreliminary?: boolean;
+}
+
+function reportingQuery(params?: ReportingParams): string {
+  const q = new URLSearchParams();
+  if (params?.assessmentId) q.set("assessment_id", params.assessmentId);
+  if (params?.scoringPolicyVersion) q.set("scoring_policy_version", params.scoringPolicyVersion);
+  if (params?.includePreliminary) q.set("include_preliminary", "true");
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 // Abstentions caused by provider infrastructure — rendered as neutral
 // service failures, never as amber "needs your judgment".
 export const INFRA_ABSTAIN_REASONS = ["llm_error", "rate_limited"] as const;
@@ -811,6 +932,20 @@ export const api = {
     ).then((r) => json<RemediationArtifactView[]>(r)),
   artifactDownloadUrl: (orgId: string, caseId: string, artifactId: string) =>
     `/api/organizations/${orgId}/remediation-cases/${caseId}/artifacts/${artifactId}/download`,
+
+  // reporting (M8)
+  getConformity: (orgId: string, params?: ReportingParams) =>
+    fetch(`/api/organizations/${orgId}/reporting/conformity${reportingQuery(params)}`).then(
+      (r) => json<ConformityReport>(r),
+    ),
+  getTrustPanel: (orgId: string, params?: ReportingParams) =>
+    fetch(`/api/organizations/${orgId}/reporting/trust${reportingQuery(params)}`).then((r) =>
+      json<TrustPanel>(r),
+    ),
+  getRiskRegister: (orgId: string, params?: ReportingParams) =>
+    fetch(`/api/organizations/${orgId}/reporting/risk-register${reportingQuery(params)}`).then(
+      (r) => json<RiskRegister>(r),
+    ),
 
   // chat
   listConversations: (orgId: string) =>

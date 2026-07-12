@@ -5,6 +5,7 @@ import ReviewWorkspacePage from "./pages/ReviewWorkspacePage";
 import ChatPage from "./pages/ChatPage";
 import RemediationListPage from "./pages/RemediationListPage";
 import RemediationCasePage from "./pages/RemediationCasePage";
+import DashboardPage from "./pages/DashboardPage";
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
             element={<ReviewWorkspacePage />}
           />
           <Route path="/organizations/:orgId/chat/:conversationId?" element={<ChatPage />} />
+          <Route path="/organizations/:orgId/dashboard" element={<DashboardPage />} />
           <Route path="/organizations/:orgId/remediation" element={<RemediationListPage />} />
           <Route
             path="/organizations/:orgId/remediation/:caseId"
