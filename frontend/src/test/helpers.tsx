@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
+import { ThemeProvider } from "../components/theme-provider";
 import type { Assessment, FindingDetail, FindingSummary, ReportingScopeMeta } from "../api";
 
 export function renderWithProviders(ui: ReactElement, { route = "/", path = "*" } = {}) {
@@ -10,11 +11,13 @@ export function renderWithProviders(ui: ReactElement, { route = "/", path = "*" 
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[route]}>
-        <Routes>
-          <Route path={path} element={ui} />
-        </Routes>
-      </MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Routes>
+            <Route path={path} element={ui} />
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>,
   );
 }

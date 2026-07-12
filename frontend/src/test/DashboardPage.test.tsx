@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardPage from "../pages/DashboardPage";
 import { renderWithProviders, makeAssessment, makeScope } from "./helpers";
@@ -14,6 +14,8 @@ vi.mock("../api", async (importOriginal) => {
       listAssessments: vi.fn(),
       getConformity: vi.fn(),
       getTrustPanel: vi.fn(),
+      getRiskRegister: vi.fn(),
+      listCases: vi.fn(),
     },
   };
 });
@@ -23,6 +25,8 @@ const mocked = api as unknown as {
   listAssessments: ReturnType<typeof vi.fn>;
   getConformity: ReturnType<typeof vi.fn>;
   getTrustPanel: ReturnType<typeof vi.fn>;
+  getRiskRegister: ReturnType<typeof vi.fn>;
+  listCases: ReturnType<typeof vi.fn>;
 };
 
 function makeConformity(over: Partial<ConformityReport> = {}): ConformityReport {
@@ -108,17 +112,47 @@ beforeEach(() => {
   mocked.listAssessments.mockResolvedValue([makeAssessment({ status: "COMPLETED" })]);
   mocked.getConformity.mockResolvedValue(makeConformity());
   mocked.getTrustPanel.mockResolvedValue(makeTrust());
+  // KPI sources: risk register rows ARE the open gaps (treatment only
+  // annotates); cases are org-wide, active = not CLOSED
+  mocked.getRiskRegister.mockResolvedValue({ scope: makeScope(), rows: [{}, {}, {}] });
+  mocked.listCases.mockResolvedValue([
+    { id: "c1", status: "IN_PROGRESS" },
+    { id: "c2", status: "CLOSED" },
+  ]);
 });
 
 describe("DashboardPage", () => {
   it("renders global conformity, the coverage caption and domain rows", async () => {
     renderPage();
-    expect(await screen.findByText("75%")).toBeTruthy();
+    expect((await screen.findAllByText("75%")).length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Conformité calculée sur/).textContent,
     ).toContain("exigence(s) confirmée(s)");
     expect(screen.getByText(/4 · Contexte de l'organisation/)).toBeTruthy();
     expect(screen.getByText(/75% — 2\/4 confirmées/)).toBeTruthy();
+  });
+
+  it("renders the KPI row from its four distinct sources", async () => {
+    renderPage();
+    expect((await screen.findAllByText("75%")).length).toBeGreaterThan(0);
+    // constats confirmés = scored/total_in_scope from the conformity report
+    expect(screen.getByText("2/4")).toBeTruthy();
+    // écarts ouverts = risk register row count, unfiltered by treatment
+    const gaps = screen.getByText("Écarts ouverts");
+    expect(within(gaps.parentElement!.parentElement as HTMLElement).getByText("3")).toBeTruthy();
+    // cas actifs = non-CLOSED cases only (org-wide endpoint)
+    const activeCases = screen.getByText("Cas de remédiation actifs");
+    expect(
+      within(activeCases.parentElement!.parentElement as HTMLElement).getByText("1"),
+    ).toBeTruthy();
+  });
+
+  it("KPI cards degrade to an unavailable label on source failure", async () => {
+    mocked.getRiskRegister.mockRejectedValue(new Error("Erreur 503"));
+    mocked.listCases.mockRejectedValue(new Error("Erreur 503"));
+    renderPage();
+    await screen.findAllByText("75%");
+    await waitFor(() => expect(screen.getAllByText("Indisponible").length).toBe(2));
   });
 
   it("renders the trust panel with the structural-invariant label and the M6 card", async () => {
@@ -140,7 +174,7 @@ describe("DashboardPage", () => {
       }),
     );
     const { container } = renderPage();
-    await screen.findByText("75%");
+    await screen.findAllByText("75%");
     expect(container.textContent).toContain("Résultat préliminaire");
     expect(container.textContent).toContain("Périmètre incomplet");
     expect(container.textContent).toContain("ne peut pas être qualifié d'officiel");
@@ -148,7 +182,7 @@ describe("DashboardPage", () => {
 
   it("shows provider failures as their own typed line", async () => {
     renderPage();
-    await screen.findByText("75%");
+    await screen.findAllByText("75%");
     expect(screen.getByText("Échec fournisseur LLM")).toBeInTheDocument();
     expect(screen.getByText("Schéma invalide")).toBeInTheDocument();
   });
@@ -158,7 +192,7 @@ describe("DashboardPage", () => {
       makeAssessment({ id: "aid-run", status: "RUNNING" }),
     ]);
     renderPage();
-    await screen.findByText("75%");
+    await screen.findAllByText("75%");
     await userEvent.selectOptions(screen.getByLabelText("Périmètre"), "aid-run");
     const checkbox = await screen.findByLabelText(/autoriser un aperçu préliminaire/);
     await userEvent.click(checkbox);
@@ -172,7 +206,7 @@ describe("DashboardPage", () => {
       makeAssessment({ id: "aid-done", status: "COMPLETED" }),
     ]);
     renderPage();
-    await screen.findByText("75%");
+    await screen.findAllByText("75%");
     // enable the opt-in in org mode…
     await userEvent.click(screen.getByLabelText(/inclure les évaluations préliminaires/));
     await waitFor(() =>
@@ -197,7 +231,7 @@ describe("DashboardPage", () => {
 
   it("refetches with assessment_id when the scope selector changes", async () => {
     renderPage();
-    await screen.findByText("75%");
+    await screen.findAllByText("75%");
     const select = screen.getByLabelText("Périmètre");
     await userEvent.selectOptions(select, "aid-1");
     await waitFor(() =>
