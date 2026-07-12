@@ -2,8 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardPage from "../pages/DashboardPage";
-import { renderWithProviders, makeAssessment } from "./helpers";
-import type { ConformityReport, ReportingScopeMeta, TrustPanel } from "../api";
+import { renderWithProviders, makeAssessment, makeScope } from "./helpers";
+import type { ConformityReport, TrustPanel } from "../api";
 
 vi.mock("../api", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api")>();
@@ -24,26 +24,6 @@ const mocked = api as unknown as {
   getConformity: ReturnType<typeof vi.fn>;
   getTrustPanel: ReturnType<typeof vi.fn>;
 };
-
-export function makeScope(over: Partial<ReportingScopeMeta> = {}): ReportingScopeMeta {
-  return {
-    mode: "organization",
-    assessment_id: null,
-    assessment_status: null,
-    scoring_policy_version: "m8-1",
-    corpus_versions: ["1.3.0"],
-    generated_at: "2026-07-12T12:00:00Z",
-    included_assessment_ids: ["aid-1"],
-    excluded_preliminary_assessment_ids: [],
-    legacy_manifest_missing_ids: [],
-    scope_complete: true,
-    is_preliminary: false,
-    is_official: true,
-    official_blockers: [],
-    kb_total_requirements: 65,
-    ...over,
-  };
-}
 
 function makeConformity(over: Partial<ConformityReport> = {}): ConformityReport {
   return {

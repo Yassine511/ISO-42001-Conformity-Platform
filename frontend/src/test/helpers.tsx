@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import type { Assessment, FindingDetail, FindingSummary } from "../api";
+import type { Assessment, FindingDetail, FindingSummary, ReportingScopeMeta } from "../api";
 
 export function renderWithProviders(ui: ReactElement, { route = "/", path = "*" } = {}) {
   const queryClient = new QueryClient({
@@ -17,6 +17,26 @@ export function renderWithProviders(ui: ReactElement, { route = "/", path = "*" 
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+export function makeScope(over: Partial<ReportingScopeMeta> = {}): ReportingScopeMeta {
+  return {
+    mode: "organization",
+    assessment_id: null,
+    assessment_status: null,
+    scoring_policy_version: "m8-1",
+    corpus_versions: ["1.3.0"],
+    generated_at: "2026-07-12T12:00:00Z",
+    included_assessment_ids: ["aid-1"],
+    excluded_preliminary_assessment_ids: [],
+    legacy_manifest_missing_ids: [],
+    scope_complete: true,
+    is_preliminary: false,
+    is_official: true,
+    official_blockers: [],
+    kb_total_requirements: 65,
+    ...over,
+  };
 }
 
 export function makeAssessment(over: Partial<Assessment> = {}): Assessment {

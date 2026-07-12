@@ -39,6 +39,12 @@ export default function OrganizationPage() {
           📊 Tableau de bord
         </Link>
         <Link
+          to={`/organizations/${orgId}/risk-register`}
+          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+        >
+          ⚠️ Registre des risques
+        </Link>
+        <Link
           to={`/organizations/${orgId}/remediation`}
           className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
         >

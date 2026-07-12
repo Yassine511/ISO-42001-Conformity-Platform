@@ -117,6 +117,9 @@ const ACTION = {
   effective_requirement_ids: [] as string[],
   source_quote: null,
   source_quote_error: null,
+  suggested_priority: null as "haute" | "normale" | "basse" | null,
+  suggested_priority_reason: null,
+  suggested_priority_policy_version: "m8-1",
 };
 
 const PLAN = {
@@ -507,6 +510,43 @@ describe("plan panel", () => {
       expect(mocked.reviewAction).toHaveBeenCalledWith("org-1", "case-1", "act-1", {
         action: "approve",
         priority: "normale",
+      }),
+    );
+  });
+
+  it("pre-selects the severity-derived priority but submits the human's choice", async () => {
+    mocked.getCase.mockResolvedValue(
+      makeCase({
+        status: "PLAN_READY",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "Écart isolé.",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        active_plan_id: "plan-1",
+        plans: [
+          {
+            ...PLAN,
+            actions: [{ ...ACTION, suggested_priority: "haute" as const }],
+          },
+        ],
+      }),
+    );
+    mocked.reviewAction.mockResolvedValue({ ...ACTION, lifecycle: "APPROVED" });
+    renderCase();
+    await screen.findByText(/Brouillon IA n°1/);
+    await userEvent.click(screen.getByRole("button", { name: "Approuver" }));
+    const select = screen.getByLabelText(/Priorité \(requise\)/) as HTMLSelectElement;
+    expect(select.value).toBe("haute"); // pre-filled from the suggestion
+    expect(screen.getByText(/dérivée de la sévérité/)).toBeInTheDocument();
+    expect(screen.getByText(/décision humaine requise/)).toBeInTheDocument();
+    // the human overrides the suggestion — their choice is what is submitted
+    await userEvent.selectOptions(select, "basse");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la décision" }));
+    await waitFor(() =>
+      expect(mocked.reviewAction).toHaveBeenCalledWith("org-1", "case-1", "act-1", {
+        action: "approve",
+        priority: "basse",
       }),
     );
   });

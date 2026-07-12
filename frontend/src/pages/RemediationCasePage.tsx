@@ -571,7 +571,13 @@ function ActionCard({
   onChanged: () => void;
 }) {
   const [reviewAction, setReviewAction] = useState<"approve" | "edit" | "reject" | null>(null);
-  const [priority, setPriority] = useState<"haute" | "normale" | "basse">("normale");
+  // Pre-selected once at mount from the severity-derived suggestion (an
+  // already-recorded human priority wins over it); useState's initializer
+  // never re-runs, so a background refetch cannot overwrite a value the
+  // human already changed. The decision itself stays mandatory and human.
+  const [priority, setPriority] = useState<"haute" | "normale" | "basse">(
+    a.priority ?? a.suggested_priority ?? "normale",
+  );
   const [description, setDescription] = useState("");
   // prefilled with the CURRENT effective scope: an untouched field re-submits
   // the human decision, never silently reverts to the AI proposal
@@ -712,6 +718,12 @@ function ActionCard({
                   <option value="normale">Normale</option>
                   <option value="basse">Basse</option>
                 </select>
+                {a.suggested_priority && !a.priority && (
+                  <span className="mt-1 block text-xs text-slate-400">
+                    Suggestion « {a.suggested_priority} » dérivée de la sévérité (politique{" "}
+                    {a.suggested_priority_policy_version}) — décision humaine requise.
+                  </span>
+                )}
               </label>
               {reviewAction === "edit" && (
                 <>

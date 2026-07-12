@@ -371,6 +371,14 @@ export interface RemediationAction {
   // offsets, fail-closed (render THIS, never policy_quote)
   source_quote: string | null;
   source_quote_error: string | null;
+  // M8 read-only severity-derived suggestion (pre-fill only — the human
+  // priority decision stays mandatory); pinned to a scoring-policy version
+  suggested_priority: "haute" | "normale" | "basse" | null;
+  suggested_priority_reason:
+    | "no_linked_gap_in_action_scope"
+    | "all_matching_weights_unscored"
+    | null;
+  suggested_priority_policy_version: string;
 }
 
 export interface RemediationPlan {
