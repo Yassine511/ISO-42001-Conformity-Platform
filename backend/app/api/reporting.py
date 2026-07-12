@@ -13,12 +13,13 @@ versions); the chosen version is echoed in every response so a future policy
 bump can never silently rescore an old report.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
 from app.models import Organization
 from app.schemas import SoaDecisionBody
+from app.services import report_pdf as report_pdf_service
 from app.services import scoring
 from app.services import soa as soa_service
 from app.services.scoring_policy import SCORING_POLICIES
@@ -160,6 +161,50 @@ def soa_history(org_id: str, control_id: str, db: Session = Depends(get_db)):
         }
         for d in decisions
     ]
+
+
+@router.get("/organizations/{org_id}/reporting/report.pdf")
+def report_pdf(
+    org_id: str,
+    assessment_id: str | None = None,
+    scoring_policy_version: str | None = None,
+    include_preliminary: bool = False,
+    db: Session = Depends(get_reporting_db),
+):
+    """Deterministic PDF report over ONE ReportingScope snapshot.
+
+    Official assessment reports require COMPLETED (typed 409 otherwise);
+    include_preliminary=true explicitly allows a preview PDF carrying the
+    «préliminaire» banner. Only a recognized WeasyPrint import/native-load
+    failure maps to 503 — template/render defects stay 500."""
+    scope = _build_scope(
+        db, org_id, assessment_id, scoring_policy_version, include_preliminary
+    )
+    if (
+        scope.mode == "assessment"
+        and scope.assessment_status != "COMPLETED"
+        and not include_preliminary
+    ):
+        raise HTTPException(
+            409,
+            "Évaluation non terminée : un rapport officiel exige le statut COMPLETED. "
+            "Utilisez include_preliminary=true pour un aperçu explicitement préliminaire.",
+        )
+    context = report_pdf_service.build_report_context(db, scope)
+    try:
+        pdf_bytes = report_pdf_service.render_report_pdf(context)
+    except report_pdf_service.PdfUnavailableError:
+        raise HTTPException(
+            503,
+            "Export PDF indisponible sur cet environnement (bibliothèques natives "
+            "WeasyPrint manquantes — utilisez le déploiement Docker).",
+        )
+    filename = f"rapport_iso42001_{assessment_id or org_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/organizations/{org_id}/reporting/trust")

@@ -157,7 +157,39 @@ must gain the `document_version_id` payload (a point lacking it fails closed unt
 re-upserted). Anchor contract corpus: `eval/m7b/anchor_cases.json` +
 `scripts/eval_patch.py` (deterministic, 100%-or-unsafe, run under pytest). The former
 M7/M8 stretch milestones are now **M8/M9** — old milestone numbers in commit history predate
-this renumbering. M3 semantics: `VERIFIED`
+this renumbering.
+**M8 (scoring & artifacts, Node ⑤) is done** — corpus v1.3.0 adds per-requirement control
+`weight` (1|2|3) but reporting resolves weights ONLY through the immutable policy registry
+`services/scoring_policy.py` (`m8-1` archives the full map; callers may pin
+`?scoring_policy_version=`; unknown ids ⇒ explicit `unscored_weight`, never a default).
+Migration `0015` adds typed attempt telemetry (`attempt_outcome`
+`parsed|schema_invalid|provider_failure|legacy_unclassified` + `verifier_error_codes`,
+written at the source — legacy rows are NEVER reclassified by string matching). Reporting
+(`services/scoring.py` + `api/reporting.py`): one materialized `ReportingScope` per request
+(**REPEATABLE READ / READ ONLY on PG, opened before any query**, eager detached data — a
+review mid-assembly can never mix states, PG-tested); every CONFIRMED finding scores via
+`human_verdict` (incl. overridden AI abstentions); denominators are scored-only with
+coverage always disclosed; org scope = union of COMPLETED-with-manifest assessments with
+legacy/preliminary exclusions surfaced (`scope_complete`/`is_official`/`official_blockers`).
+Severity = gap_factor(1|2|3) × weight → {1,2,3,4,6,9} → low ≤2 / medium ≤4 / high ≥6; risk
+register rows are deterministic French templates with treatment respecting active-plan
+action authority; actions expose a read-only `suggested_priority` (from immutable case-link
+snapshots, policy-versioned — priority stays human-mandatory). Trust panel: typed gate
+counts, immutable `FindingReview` event rates, org-labelled chat metrics, the
+0-unsupported-displayed line labelled «invariant structurel», and a checksum-bound static
+M6 card. Chat drill-down (`0016`): `ChatAsk.finding_id` ⇒ non-citable JSON-escaped context
+block + finding-anchored retrieval query; immutable `finding_context_snapshot` on the
+message (survives deletion/re-review); finding text is never citable, an independently
+retrieved KB id still is. SoA (`0017`): per Annex A CONTROL (38 rows generated from KB
+metadata), append-only `soa_decisions` + `soa_controls` projection (sequence under the org
+row lock), applicability **annotates, never filters** scores. PDF export: WeasyPrint over
+ONE scope snapshot (`services/report_pdf.py` + `app/templates/report.html.j2`); Dockerfile
+installs Pango/Cairo (CI job `backend-docker-pdf` renders inside the image — the
+authoritative native-lib check); on the Windows host venv the lazy import fails (OSError)
+and the endpoint returns a clean 503 «Export PDF indisponible» — render defects stay 500;
+non-COMPLETED assessment PDFs are 409 unless `include_preliminary=true` (banner-marked).
+**Post-deploy after 0014**: also `POST /api/kb/index` after the 1.3.0 corpus bump (KB point
+namespace embeds corpus_version). M3 semantics: `VERIFIED`
 means **citation/schema-verified via an EXACT match after normalization** (quote exists in source,
 clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
 repair retry then `ABSTAINED(fuzzy_citation)` for human review; verdict accuracy is measured in M6,

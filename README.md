@@ -103,7 +103,12 @@ M7a remediation planning agent (this state: LLM-suggested/human-approved triage 
 schema-and-binding-verified corrective-action plan → per-action human review →
 lifecycle/effectiveness tracking with scoped reassessments as evidence) →
 M7b document-editing tool (anchored patches, versioning; originals immutable) →
-M8 scoring & artifacts → M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
+M8 scoring & artifacts (this state: deterministic Node ⑤ scoring over human-confirmed
+findings, conformity dashboard + trust panel, derived risk register with versioned severity
+policy, per-control SoA, WeasyPrint PDF report, chat finding drill-down) →
+M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
+Note: the PDF export needs WeasyPrint's native Pango/Cairo libraries — available in the
+Docker image (CI-validated); on a bare Windows host venv the endpoint returns a clean 503.
 
 ## Evaluation (M6)
 

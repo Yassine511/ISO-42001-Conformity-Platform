@@ -1047,6 +1047,9 @@ export const api = {
         decision_count: number;
       }>(r),
     ),
+  // server-generated PDF, used directly as <a href> (versionDownloadUrl pattern)
+  reportDownloadUrl: (orgId: string, params?: ReportingParams) =>
+    `/api/organizations/${orgId}/reporting/report.pdf${reportingQuery(params)}`,
   getSoaHistory: (orgId: string, controlId: string) =>
     fetch(`/api/organizations/${orgId}/reporting/soa/${controlId}/history`).then((r) =>
       json<SoaDecision[]>(r),

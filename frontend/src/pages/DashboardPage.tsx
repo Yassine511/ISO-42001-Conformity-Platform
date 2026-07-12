@@ -83,7 +83,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <h1 className="text-xl font-semibold tracking-tight">Tableau de bord de conformité</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold tracking-tight">Tableau de bord de conformité</h1>
+        <a
+          href={api.reportDownloadUrl(orgId!, params)}
+          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+          download
+        >
+          ⬇ Exporter le rapport PDF
+        </a>
+      </div>
 
       {conformity.data && <ScopeBanners scope={conformity.data.scope} />}
 

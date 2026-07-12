@@ -72,3 +72,22 @@ jobs:
       # (the esbuild/Vite dev-server disclosure was fixed by the Vite 6 bump).
       - name: Audit
         run: npm audit --audit-level=high
+
+  # M8 PDF export: the ONLY environment that authoritatively validates the
+  # WeasyPrint native libraries (Pango/Cairo/fonts) is the backend Docker
+  # image itself — a host venv can pass unit tests while the image lacks a
+  # library. Build the image and render a real PDF inside it.
+  backend-docker-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t int102-backend-ci backend
+      - name: Render a PDF inside the image (native-lib smoke)
+        run: |
+          docker run --rm int102-backend-ci python -c "
+          from weasyprint import HTML
+          pdf = HTML(string='<h1>Test PDF — éàü</h1>').write_pdf()
+          assert pdf.startswith(b'%PDF'), 'not a PDF'
+          print('PDF OK,', len(pdf), 'bytes')
+          "

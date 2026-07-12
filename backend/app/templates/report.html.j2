@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rapport de conformité ISO/IEC 42001</title>
+<style>
+  @page { size: A4; margin: 2cm; @bottom-center { content: "Page " counter(page) " / " counter(pages); font-size: 9px; color: #64748b; } }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 10.5px; color: #0f172a; }
+  h1 { font-size: 22px; margin-bottom: 2px; }
+  h2 { font-size: 14px; margin: 18px 0 6px; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
+  h3 { font-size: 11px; margin: 10px 0 4px; }
+  .muted { color: #64748b; font-size: 9.5px; }
+  .banner { border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 6px 8px; margin: 8px 0; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; }
+  .bar { background: #e2e8f0; height: 8px; border-radius: 4px; }
+  .bar > div { background: #4f46e5; height: 8px; border-radius: 4px; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 9px; font-weight: 600; }
+  .high { background: #fee2e2; color: #b91c1c; }
+  .medium { background: #fef3c7; color: #b45309; }
+  .low { background: #d1fae5; color: #047857; }
+  .none { background: #f1f5f9; color: #64748b; }
+  .invariant { background: #ecfdf5; color: #047857; padding: 4px 6px; border-radius: 4px; font-size: 9.5px; }
+  .cover { margin-bottom: 24px; }
+  .kv { margin: 2px 0; }
+  .kv span { color: #64748b; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Rapport de conformité ISO/IEC 42001</h1>
+  <p class="muted">Généré de façon déterministe à partir des constats confirmés par un humain — aucun score n'est produit par l'IA.</p>
+  <p class="kv"><span>Généré le :</span> {{ scope.generated_at }}</p>
+  <p class="kv"><span>Périmètre :</span> {{ "évaluation " ~ scope.assessment_id if scope.mode == "assessment" else "organisation (derniers verdicts confirmés)" }}</p>
+  {% if scope.assessment_status %}<p class="kv"><span>Statut de l'évaluation :</span> {{ scope.assessment_status }}</p>{% endif %}
+  <p class="kv"><span>Version(s) de corpus :</span> {{ scope.corpus_versions | join(", ") }}</p>
+  <p class="kv"><span>Politique de notation :</span> {{ scope.scoring_policy_version }}</p>
+  <p class="kv"><span>Évaluations incluses :</span> {{ scope.included_assessment_ids | length }}</p>
+  <p class="kv"><span>Statut du rapport :</span> {{ "OFFICIEL" if scope.is_official else "NON OFFICIEL" }}</p>
+  {% if scope.is_preliminary %}
+  <p class="banner">Résultat <strong>préliminaire</strong> — inclut des évaluations non terminées ; ne constitue pas un état officiel.</p>
+  {% endif %}
+  {% if not scope.scope_complete %}
+  <p class="banner">Périmètre incomplet : {{ scope.legacy_manifest_missing_ids | length }} évaluation(s) sans manifeste d'exigences sont hors du dénominateur (constats non comptés).</p>
+  {% endif %}
+</div>
+
+<h2>1. Conformité</h2>
+<p>
+  Conformité globale : <strong>{{ conformity.global_pct if conformity.global_pct is not none else "—" }}{{ "%" if conformity.global_pct is not none }}</strong>,
+  calculée sur {{ conformity.scored }} exigence(s) confirmée(s) / {{ conformity.total_in_scope }} du périmètre
+  ({{ conformity.coverage_pct if conformity.coverage_pct is not none else "—" }}% couvert).
+  Couverture de la norme : {{ conformity.total_in_scope }}/{{ scope.kb_total_requirements }}.
+</p>
+<table>
+  <thead><tr><th>Domaine</th><th>Conformité</th><th></th><th>Confirmées</th><th>À examiner</th><th>Non évaluées</th></tr></thead>
+  <tbody>
+  {% for d in conformity.domains %}
+    <tr>
+      <td>{{ d.domain }} · {{ d.domain_title_fr }}</td>
+      <td>{{ d.pct if d.pct is not none else "non évalué" }}{{ "%" if d.pct is not none }}</td>
+      <td style="width: 20%"><div class="bar"><div style="width: {{ d.pct or 0 }}%"></div></div></td>
+      <td>{{ d.scored }}/{{ d.total_in_scope }}</td>
+      <td>{{ d.pending_review }}</td>
+      <td>{{ d.not_assessed }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>2. Panneau de confiance</h2>
+<h3>Barrière de vérification</h3>
+<table>
+  <tbody>
+    <tr><td>Brouillons IA</td><td>{{ trust.gate.drafts_total }}</td></tr>
+    <tr><td>Brouillons avec citation non vérifiable</td><td>{{ trust.gate.drafts_with_unsupported_citation }}</td></tr>
+    <tr><td>Taux de brouillons non étayés</td><td>{{ trust.gate.unsupported_draft_rate_pct if trust.gate.unsupported_draft_rate_pct is not none else "—" }}{{ "%" if trust.gate.unsupported_draft_rate_pct is not none }}</td></tr>
+    <tr><td>Schéma invalide / échec fournisseur</td><td>{{ trust.gate.drafts_schema_invalid }} / {{ trust.gate.drafts_provider_failure }}</td></tr>
+    <tr><td>Constats en abstention (dont vérificateur)</td><td>{{ trust.gate.findings_abstained }} ({{ trust.gate.findings_abstained_by_verifier }})</td></tr>
+  </tbody>
+</table>
+<p class="invariant">Citations non étayées affichées : {{ trust.gate.unsupported_citations_displayed }} — invariant structurel (vérifié, pas mesuré).</p>
+<h3>Revue humaine (historique immuable)</h3>
+<p>
+  {{ trust.review.review_events }} décision(s) ; taux d'intervention :
+  {{ trust.review.intervention_rate_pct if trust.review.intervention_rate_pct is not none else "—" }}{{ "%" if trust.review.intervention_rate_pct is not none }} ;
+  taux de remplacement du verdict :
+  {{ trust.review.verdict_override_rate_pct if trust.review.verdict_override_rate_pct is not none else "—" }}{{ "%" if trust.review.verdict_override_rate_pct is not none }}.
+</p>
+<h3>Copilote (portée : organisation)</h3>
+<p>{{ trust.chat.messages }} message(s) — {{ trust.chat.answered }} réponse(s) citée(s), {{ trust.chat.abstained }} abstention(s), {{ trust.chat.stripped_citation_count }} citation(s) retirée(s) par la vérification.</p>
+<p class="muted">{{ trust.m6_benchmark.label }} — référence statique (artefact {{ trust.m6_benchmark.source_artifact }}, sha256 {{ trust.m6_benchmark.source_artifact_sha256[:12] }}…) : verdicts {{ trust.m6_benchmark.pipeline_verdict_accuracy }}, localisation des citations chat {{ trust.m6_benchmark.chat_citation_location_validity }}, fidélité {{ trust.m6_benchmark.chat_faithfulness }}.</p>
+
+<h2>3. Registre des écarts et des risques</h2>
+{% if register.rows %}
+<p class="muted">{{ register.counts.high }} sévérité(s) élevée(s), {{ register.counts.medium }} moyenne(s), {{ register.counts.low }} faible(s){% if register.counts.unscored %}, {{ register.counts.unscored }} non évaluée(s){% endif %}. Sévérité = facteur d'écart × poids du contrôle (politique {{ scope.scoring_policy_version }}).</p>
+<table>
+  <thead><tr><th>Exigence</th><th>Verdict</th><th>Sévérité</th><th>Énoncé de risque</th><th>Traitement</th></tr></thead>
+  <tbody>
+  {% for r in register.rows %}
+    <tr>
+      <td>{{ r.requirement_id }}<br><span class="muted">{{ r.domain_title_fr }}</span></td>
+      <td>{{ r.human_verdict }}</td>
+      <td>
+        {% if r.severity %}<span class="badge {{ r.severity }}">{{ {"high": "Élevée", "medium": "Moyenne", "low": "Faible"}[r.severity] }} ({{ r.severity_score }})</span>
+        {% else %}<span class="badge none">non évaluée</span>{% endif %}
+      </td>
+      <td>{{ r.risk_statement_fr }}</td>
+      <td>
+        {% if r.treatment and r.treatment.active_case_id %}Cas actif ({{ r.treatment.active_case_status }}), {{ r.treatment.approved_action_count }} action(s) approuvée(s)
+        {% elif r.treatment and r.treatment.closed_case_ids %}{{ r.treatment.closed_case_ids | length }} cas clôturé(s)
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Aucun écart confirmé dans ce périmètre.</p>
+{% endif %}
+
+<h2>4. Déclaration d'applicabilité (Annexe A)</h2>
+<p class="muted">État d'applicabilité : organisation courante{{ " (le rapport est par ailleurs restreint à une évaluation)" if scope.mode == "assessment" }}. L'applicabilité annote la déclaration ; elle ne modifie ni les scores ni le registre.</p>
+<table>
+  <thead><tr><th>Contrôle</th><th>Applicable</th><th>Justification</th><th>Statut</th></tr></thead>
+  <tbody>
+  {% for c in soa.controls %}
+    <tr>
+      <td>{{ c.control_id }}<br><span class="muted">{{ c.domain_title_fr }}</span></td>
+      <td>{{ "oui" if c.applicable else "non" }}{{ " (défaut)" if c.is_default }}</td>
+      <td>{{ c.justification_fr or "—" }}</td>
+      <td>{{ {"conforme": "conforme", "ecart": "écart", "non_evalue": "non évalué"}[c.status] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+</body>
+</html>
