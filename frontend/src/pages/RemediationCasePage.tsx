@@ -67,10 +67,10 @@ export default function RemediationCasePage() {
     queryClient.invalidateQueries({ queryKey: ["remediation-case", orgId, caseId] });
 
   if (detail.isError) {
-    return <p className="text-sm text-red-600">{(detail.error as Error).message}</p>;
+    return <p className="text-sm text-destructive">{(detail.error as Error).message}</p>;
   }
   if (!detail.data) {
-    return <p className="text-sm text-slate-500">Chargement…</p>;
+    return <p className="text-sm text-muted-foreground">Chargement…</p>;
   }
   const c = detail.data;
   const activePlan = c.plans.find((p) => p.id === c.active_plan_id) ?? null;
@@ -79,7 +79,7 @@ export default function RemediationCasePage() {
     <div className="space-y-6">
       <Link
         to={`/organizations/${orgId}/remediation`}
-        className="text-sm text-indigo-600 hover:underline"
+        className="text-sm text-primary hover:underline"
       >
         ← Cas de remédiation
       </Link>
@@ -100,7 +100,7 @@ export default function RemediationCasePage() {
 
 function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
-  return <p className="text-sm text-red-600">{(error as Error).message}</p>;
+  return <p className="text-sm text-destructive">{(error as Error).message}</p>;
 }
 
 // -------------------------------------------------------- linked findings
@@ -133,28 +133,28 @@ function LinkedFindings({
   });
 
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <section className="space-y-3 rounded-xl border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Constats liés
       </h2>
       <ul className="space-y-2">
         {c.finding_links.map((l) => (
           <li
             key={l.finding_id}
-            className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm"
           >
             <span className="font-mono text-xs">{l.finding_requirement_id}</span>
             {l.is_primary && (
-              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
+              <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-primary">
                 principal
               </span>
             )}
-            <span className="text-slate-600">{l.finding_requirement_fr}</span>
-            <span className="text-xs text-slate-500">verdict : {l.finding_human_verdict}</span>
+            <span className="text-muted-foreground">{l.finding_requirement_fr}</span>
+            <span className="text-xs text-muted-foreground">verdict : {l.finding_human_verdict}</span>
             {!l.is_primary && c.status === "TRIAGE" && (
               <button
                 onClick={() => unlink.mutate(l.finding_id)}
-                className="ml-auto text-xs text-red-600 hover:underline"
+                className="ml-auto text-xs text-destructive hover:underline"
               >
                 Délier
               </button>
@@ -164,17 +164,17 @@ function LinkedFindings({
       </ul>
       {c.status === "TRIAGE" && (suggestions.data?.length ?? 0) > 0 && (
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold text-slate-500">
+          <h3 className="text-xs font-semibold text-muted-foreground">
             Lacunes similaires suggérées (décision humaine : lier ou écarter)
           </h3>
           <ul className="space-y-1">
             {suggestions.data!.map((s) => (
               <li
                 key={s.finding_id}
-                className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-sm"
+                className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 p-2 text-sm"
               >
                 <span className="font-mono text-xs">{s.requirement_id}</span>
-                <span className="text-slate-600">{s.requirement_fr}</span>
+                <span className="text-muted-foreground">{s.requirement_fr}</span>
                 {s.same_domain && (
                   <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-700">
                     même domaine
@@ -183,7 +183,7 @@ function LinkedFindings({
                 <span className="ml-auto flex gap-2">
                   <button
                     onClick={() => link.mutate({ finding_id: s.finding_id, decision: "link" })}
-                    className="text-xs font-medium text-indigo-600 hover:underline"
+                    className="text-xs font-medium text-primary hover:underline"
                   >
                     Lier
                   </button>
@@ -191,7 +191,7 @@ function LinkedFindings({
                     onClick={() =>
                       link.mutate({ finding_id: s.finding_id, decision: "reject" })
                     }
-                    className="text-xs text-slate-500 hover:underline"
+                    className="text-xs text-muted-foreground hover:underline"
                   >
                     Écarter
                   </button>
@@ -247,15 +247,15 @@ function TriagePanel({
   const abstained = latest?.status === "ABSTAINED";
 
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+    <section className="space-y-3 rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Triage</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Triage</h2>
         {approved ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
             approuvé par un humain
           </span>
         ) : (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+          <span className="rounded-full bg-amber-100 dark:bg-amber-400/15 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
             en attente d'approbation humaine
           </span>
         )}
@@ -264,21 +264,21 @@ function TriagePanel({
       {approved ? (
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-xs text-slate-500">Qualification</dt>
+            <dt className="text-xs text-muted-foreground">Qualification</dt>
             <dd>{CLASSIFICATION_LABELS[c.classification!]}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">Périmètre</dt>
+            <dt className="text-xs text-muted-foreground">Périmètre</dt>
             <dd>{SCOPE_LABELS[c.scope!]}</dd>
           </div>
           {c.correction_note && (
             <div className="sm:col-span-2">
-              <dt className="text-xs text-slate-500">Correction immédiate</dt>
+              <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
               <dd>{c.correction_note}</dd>
             </div>
           )}
           <div className="sm:col-span-2">
-            <dt className="text-xs text-slate-500">Justification du périmètre</dt>
+            <dt className="text-xs text-muted-foreground">Justification du périmètre</dt>
             <dd>{c.scope_rationale}</dd>
           </div>
         </dl>
@@ -288,12 +288,12 @@ function TriagePanel({
             className={`rounded-lg border p-4 text-sm ${
               abstained
                 ? isOperationalAbort(latest.abstain_reason)
-                  ? "border-slate-200 bg-slate-50"
-                  : "border-amber-200 bg-amber-50"
-                : "border-indigo-200 bg-indigo-50"
+                  ? "border-border bg-muted/50"
+                  : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
+                : "border-primary/25 bg-accent"
             }`}
           >
-            <p className="text-xs font-semibold text-slate-500">
+            <p className="text-xs font-semibold text-muted-foreground">
               Proposition IA (brouillon n°{latest.sequence}) — à valider par un humain
             </p>
             {abstained ? (
@@ -304,19 +304,19 @@ function TriagePanel({
             ) : (
               <dl className="mt-2 grid gap-2 sm:grid-cols-2">
                 <div>
-                  <dt className="text-xs text-slate-500">Qualification proposée</dt>
+                  <dt className="text-xs text-muted-foreground">Qualification proposée</dt>
                   <dd>{CLASSIFICATION_LABELS[latest.ai_classification!]}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-slate-500">Périmètre proposé</dt>
+                  <dt className="text-xs text-muted-foreground">Périmètre proposé</dt>
                   <dd>{SCOPE_LABELS[latest.ai_scope!]}</dd>
                 </div>
                 <div className="sm:col-span-2">
-                  <dt className="text-xs text-slate-500">Correction immédiate</dt>
+                  <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
                   <dd>{latest.ai_correction_note}</dd>
                 </div>
                 <div className="sm:col-span-2">
-                  <dt className="text-xs text-slate-500">Justification</dt>
+                  <dt className="text-xs text-muted-foreground">Justification</dt>
                   <dd>{latest.ai_scope_rationale}</dd>
                 </div>
               </dl>
@@ -325,13 +325,13 @@ function TriagePanel({
 
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-sm">
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 Qualification {abstained ? "(requise)" : "(laisser vide pour accepter)"}
               </span>
               <select
                 value={classification}
                 onChange={(e) => setClassification(e.target.value as Classification | "")}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
               >
                 <option value="">— proposition IA —</option>
                 {Object.entries(CLASSIFICATION_LABELS).map(([v, l]) => (
@@ -342,13 +342,13 @@ function TriagePanel({
               </select>
             </label>
             <label className="text-sm">
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 Périmètre {abstained ? "(requis)" : "(laisser vide pour accepter)"}
               </span>
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value as RemediationScope | "")}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
               >
                 <option value="">— proposition IA —</option>
                 {Object.entries(SCOPE_LABELS).map(([v, l]) => (
@@ -359,23 +359,23 @@ function TriagePanel({
               </select>
             </label>
             <label className="text-sm sm:col-span-2">
-              <span className="text-xs text-slate-500">Correction immédiate (surcharge)</span>
+              <span className="text-xs text-muted-foreground">Correction immédiate (surcharge)</span>
               <textarea
                 value={correctionNote}
                 onChange={(e) => setCorrectionNote(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
               />
             </label>
             <label className="text-sm sm:col-span-2">
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 Justification du périmètre {abstained ? "(requise)" : "(surcharge)"}
               </span>
               <textarea
                 value={scopeRationale}
                 onChange={(e) => setScopeRationale(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
               />
             </label>
           </div>
@@ -390,31 +390,31 @@ function TriagePanel({
             <button
               onClick={() => redraft.mutate()}
               disabled={redraft.isPending}
-              className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+              className="rounded-lg border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-accent disabled:opacity-50"
             >
               Relancer la proposition IA
             </button>
           </div>
         </div>
       ) : (
-        <p className="text-sm text-slate-500">Aucune proposition de triage.</p>
+        <p className="text-sm text-muted-foreground">Aucune proposition de triage.</p>
       )}
 
       {c.triage_drafts.length > 1 && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
             Historique des propositions ({c.triage_drafts.length})
           </summary>
           <ul className="mt-2 space-y-1">
             {c.triage_drafts.map((d) => (
-              <li key={d.id} className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <li key={d.id} className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">n°{d.sequence}</span>
                 <span>{d.status}</span>
                 {d.abstain_reason && <span>({d.abstain_reason})</span>}
                 {d.id === c.approved_triage_draft_id && (
-                  <span className="text-emerald-700">approuvée</span>
+                  <span className="text-emerald-700 dark:text-emerald-300">approuvée</span>
                 )}
-                <span className="text-slate-400">
+                <span className="text-muted-foreground/80">
                   {new Date(d.created_at).toLocaleString("fr-FR")}
                 </span>
               </li>
@@ -426,7 +426,7 @@ function TriagePanel({
         <button
           onClick={() => reopen.mutate()}
           disabled={reopen.isPending}
-          className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+          className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-700 dark:text-amber-300 hover:bg-amber-50 disabled:opacity-50"
         >
           Rouvrir le triage
         </button>
@@ -456,16 +456,16 @@ function PlanPanel({
   const canDraft = ["TRIAGE_APPROVED", "PLAN_READY"].includes(c.status);
 
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+    <section className="space-y-3 rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Plan d'actions correctives
         </h2>
         {canDraft && (
           <button
             onClick={() => draft.mutate()}
             disabled={draft.isPending}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             {draft.isPending
               ? "Rédaction en cours…"
@@ -477,15 +477,15 @@ function PlanPanel({
       </div>
 
       {activePlan === null ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           Aucun plan actif. {c.status === "TRIAGE" && "Approuvez d'abord le triage."}
         </p>
       ) : activePlan.status === "ABSTAINED" ? (
         <div
           className={`rounded-lg border p-4 text-sm ${
             isOperationalAbort(activePlan.abstain_reason)
-              ? "border-slate-200 bg-slate-50"
-              : "border-amber-200 bg-amber-50"
+              ? "border-border bg-muted/50"
+              : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
           }`}
         >
           <p className="font-medium">
@@ -493,15 +493,15 @@ function PlanPanel({
               ? "Rédaction interrompue (incident technique)"
               : "L'agent s'est abstenu"}
           </p>
-          <p className="mt-1 text-slate-600">
+          <p className="mt-1 text-muted-foreground">
             Motif : {activePlan.abstain_reason}. Relancez la rédaction ou traitez le cas
             manuellement.
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm">
-            <p className="text-xs font-semibold text-slate-500">
+          <div className="rounded-lg border border-primary/25 bg-accent p-4 text-sm">
+            <p className="text-xs font-semibold text-muted-foreground">
               Brouillon IA n°{activePlan.sequence} — chaque action requiert votre décision
             </p>
             <p className="mt-2">{activePlan.gap_restatement}</p>
@@ -525,17 +525,17 @@ function PlanPanel({
       )}
       {c.plans.length > (activePlan ? 1 : 0) && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
             Historique des plans ({c.plans.length})
           </summary>
           <ul className="mt-2 space-y-1">
             {c.plans.map((p) => (
-              <li key={p.id} className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <li key={p.id} className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">n°{p.sequence}</span>
                 <span>{p.status}</span>
                 {p.abstain_reason && <span>({p.abstain_reason})</span>}
                 {p.status === "SUPERSEDED" && (
-                  <span className="text-amber-700">
+                  <span className="text-amber-700 dark:text-amber-300">
                     remplacé
                     {p.superseded_by_plan_id
                       ? ` par le plan ${
@@ -548,7 +548,7 @@ function PlanPanel({
                       : ""}
                   </span>
                 )}
-                {p.id === c.active_plan_id && <span className="text-emerald-700">actif</span>}
+                {p.id === c.active_plan_id && <span className="text-emerald-700 dark:text-emerald-300">actif</span>}
               </li>
             ))}
           </ul>
@@ -637,46 +637,46 @@ function ActionCard({
     a.lifecycle === "PROPOSED" || (a.review_status === "CONFIRMED" && a.lifecycle === "APPROVED");
 
   return (
-    <li className="space-y-3 rounded-lg border border-slate-200 p-4 text-sm">
+    <li className="space-y-3 rounded-lg border border-border p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-slate-500">#{a.position}</span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+        <span className="font-mono text-xs text-muted-foreground">#{a.position}</span>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
           {ACTION_TYPE_LABELS[a.action_type]}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
           {LIFECYCLE_LABELS[a.lifecycle]}
         </span>
         {a.priority && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
             priorité {a.priority}
           </span>
         )}
         {a.effectiveness !== "NOT_CHECKED" && (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
             {EFFECTIVENESS_LABELS[a.effectiveness]}
           </span>
         )}
       </div>
       <p>{a.description ?? a.ai_description}</p>
-      <p className="text-xs text-slate-500">Justification IA : {a.ai_rationale}</p>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">Justification IA : {a.ai_rationale}</p>
+      <p className="text-xs text-muted-foreground">
         Rôle suggéré : {a.owner_role ?? a.ai_owner_role} · Critère de succès :{" "}
         {a.success_criterion ?? a.ai_success_criterion}
       </p>
       {a.policy_quote &&
         (a.source_quote ? (
-          <blockquote className="border-l-2 border-indigo-300 pl-3 text-xs text-slate-600">
+          <blockquote className="border-l-2 border-primary/40 pl-3 text-xs text-muted-foreground">
             « {a.source_quote} »
-            <span className="ml-1 text-slate-400">
+            <span className="ml-1 text-muted-foreground/80">
               (citation localisée, pertinence à confirmer)
             </span>
           </blockquote>
         ) : (
-          <p className="text-xs text-red-600">
+          <p className="text-xs text-destructive">
             Citation non affichable : {a.source_quote_error ?? "provenance invalide"}
           </p>
         ))}
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">
         Exigences visées (proposition IA) : {a.ai_impacted_requirement_ids.join(", ")}
         {a.effective_requirement_ids?.length > 0 && (
           <>
@@ -697,8 +697,8 @@ function ActionCard({
                 aria-pressed={reviewAction === ra}
                 className={`rounded-lg border px-3 py-1 text-xs font-medium ${
                   reviewAction === ra
-                    ? "border-indigo-500 bg-indigo-600 text-white"
-                    : "border-slate-300 hover:bg-slate-50"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input hover:bg-muted/50"
                 }`}
               >
                 {ra === "approve" ? "Approuver" : ra === "edit" ? "Modifier" : "Rejeter"}
@@ -708,18 +708,18 @@ function ActionCard({
           {reviewAction && reviewAction !== "reject" && (
             <div className="grid gap-2 sm:grid-cols-2">
               <label>
-                <span className="text-xs text-slate-500">Priorité (requise)</span>
+                <span className="text-xs text-muted-foreground">Priorité (requise)</span>
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as typeof priority)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1"
+                  className="mt-1 w-full rounded-lg border border-input px-2 py-1"
                 >
                   <option value="haute">Haute</option>
                   <option value="normale">Normale</option>
                   <option value="basse">Basse</option>
                 </select>
                 {a.suggested_priority && !a.priority && (
-                  <span className="mt-1 block text-xs text-slate-400">
+                  <span className="mt-1 block text-xs text-muted-foreground/80">
                     Suggestion « {a.suggested_priority} » dérivée de la sévérité (politique{" "}
                     {a.suggested_priority_policy_version}) — décision humaine requise.
                   </span>
@@ -728,23 +728,23 @@ function ActionCard({
               {reviewAction === "edit" && (
                 <>
                   <label className="sm:col-span-2">
-                    <span className="text-xs text-slate-500">Description (surcharge)</span>
+                    <span className="text-xs text-muted-foreground">Description (surcharge)</span>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1"
+                      className="mt-1 w-full rounded-lg border border-input px-2 py-1"
                     />
                   </label>
                   <label className="sm:col-span-2">
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-muted-foreground">
                       Exigences visées (ids séparés par des virgules — votre décision remplace
                       la proposition IA)
                     </span>
                     <input
                       value={scopeIds}
                       onChange={(e) => setScopeIds(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1"
+                      className="mt-1 w-full rounded-lg border border-input px-2 py-1"
                     />
                   </label>
                 </>
@@ -755,7 +755,7 @@ function ActionCard({
             <button
               onClick={() => review.mutate()}
               disabled={review.isPending}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-emerald-700 disabled:opacity-50"
             >
               Enregistrer la décision
             </button>
@@ -767,13 +767,13 @@ function ActionCard({
         <div className="flex gap-2">
           <button
             onClick={() => lifecycle.mutate("IN_PROGRESS")}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50"
+            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Démarrer
           </button>
           <button
             onClick={() => lifecycle.mutate("CANCELLED")}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50"
+            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Annuler
           </button>
@@ -783,28 +783,28 @@ function ActionCard({
         <div className="flex gap-2">
           <button
             onClick={() => lifecycle.mutate("DONE")}
-            className="rounded-lg border border-emerald-300 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+            className="rounded-lg border border-emerald-300 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50"
           >
             Marquer terminée
           </button>
           <button
             onClick={() => lifecycle.mutate("CANCELLED")}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50"
+            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Annuler
           </button>
         </div>
       )}
       {a.lifecycle === "DONE" && c.status !== "CLOSED" && (
-        <div className="space-y-2 rounded-lg bg-slate-50 p-3">
-          <p className="text-xs font-semibold text-slate-500">
+        <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+          <p className="text-xs font-semibold text-muted-foreground">
             Efficacité (verdict humain — une réévaluation est une preuve, jamais une garantie)
           </p>
           <div className="flex flex-wrap gap-2">
             <select
               value={effVerdict}
               onChange={(e) => setEffVerdict(e.target.value as typeof effVerdict)}
-              className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              className="rounded-lg border border-input px-2 py-1 text-xs"
             >
               <option value="EFFECTIVE">Efficace</option>
               <option value="PARTIALLY_EFFECTIVE">Partiellement efficace</option>
@@ -815,7 +815,7 @@ function ActionCard({
                 value={effReassessment}
                 onChange={(e) => setEffReassessment(e.target.value)}
                 aria-label="Réévaluation citée en preuve"
-                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                className="rounded-lg border border-input px-2 py-1 text-xs"
               >
                 <option value="">Sans réévaluation (preuve externe)</option>
                 {citable.map((r) => (
@@ -830,12 +830,12 @@ function ActionCard({
               value={effNote}
               onChange={(e) => setEffNote(e.target.value)}
               placeholder="Preuve / justification (requise)"
-              className="min-w-64 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              className="min-w-64 flex-1 rounded-lg border border-input px-2 py-1 text-xs"
             />
             <button
               onClick={() => effectiveness.mutate()}
               disabled={effectiveness.isPending || !effNote.trim()}
-              className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
             >
               Enregistrer
             </button>
@@ -909,14 +909,14 @@ function PatchPanel({
   });
 
   return (
-    <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
-      <p className="text-xs font-semibold text-indigo-700">Correctif documentaire</p>
+    <div className="space-y-3 rounded-lg border border-primary/20 bg-accent/50 p-3">
+      <p className="text-xs font-semibold text-primary">Correctif documentaire</p>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={docId}
           onChange={(e) => setDocId(e.target.value)}
           aria-label="Document cible"
-          className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+          className="rounded-lg border border-input px-2 py-1 text-xs"
         >
           <option value="">Choisir le document cible…</option>
           {parsed.map((d) => (
@@ -930,7 +930,7 @@ function PatchPanel({
             <button
               onClick={() => propose.mutate()}
               disabled={propose.isPending}
-              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               Proposer un correctif
             </button>
@@ -938,14 +938,14 @@ function PatchPanel({
             <button
               onClick={() => proposeArtifact.mutate()}
               disabled={proposeArtifact.isPending}
-              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               Proposer une rédaction (PDF/DOCX)
             </button>
           ))}
       </div>
       {selected && !isTextual && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           PDF/DOCX : l'agent produit une proposition Markdown ; le document original reste
           inchangé et seul un téléversement humain crée une nouvelle version.
         </p>
@@ -1017,17 +1017,17 @@ function ArtifactCard({
   // recover id: the in-session mutation result, else the stranded version on load
   const recoverVersionId = inSessionRecoverable ? result?.version_id : stranded?.id;
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
-      <p className="font-medium text-slate-700">
+    <div className="space-y-2 rounded-lg border bg-card p-3 text-xs">
+      <p className="font-medium text-foreground/90">
         Proposition de rédaction ({art.canonical_format.toUpperCase()})
       </p>
       <a
         href={api.artifactDownloadUrl(orgId, c.id, art.id)}
-        className="text-indigo-600 underline"
+        className="text-primary underline"
       >
         Télécharger le brouillon Markdown
       </a>
-      <p className="text-slate-400">
+      <p className="text-muted-foreground/80">
         Brouillon IA — préparez le fichier {art.canonical_format.toUpperCase()} révisé,
         puis téléversez-le ici pour créer la nouvelle version (le document original reste
         inchangé).
@@ -1043,37 +1043,37 @@ function ArtifactCard({
         <button
           onClick={() => file && supersede.mutate(file)}
           disabled={!file || supersede.isPending}
-          className="rounded-lg bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-lg bg-primary px-3 py-1 font-medium text-white hover:bg-primary/90 disabled:opacity-50"
         >
           Téléverser la version révisée
         </button>
       </div>
       {(outcome === "activated" || outcome === "already_active") && (
-        <p className="text-emerald-700">
+        <p className="text-emerald-700 dark:text-emerald-300">
           Nouvelle version créée et activée à partir de votre fichier révisé.
         </p>
       )}
       {outcome === "index_failed" && (
-        <p className="text-amber-700">
+        <p className="text-amber-700 dark:text-amber-300">
           Indexation vectorielle échouée ; la version est conservée et peut être reprise.
         </p>
       )}
       {outcome === "pending" && (
-        <p className="text-amber-700">Activation en attente ; vous pouvez la reprendre.</p>
+        <p className="text-amber-700 dark:text-amber-300">Activation en attente ; vous pouvez la reprendre.</p>
       )}
       {outcome === "assessment_conflict" && (
-        <p className="text-amber-700">
+        <p className="text-amber-700 dark:text-amber-300">
           Une évaluation est en cours ; réessayez la reprise une fois qu'elle est terminée.
         </p>
       )}
       {outcome.startsWith("abandoned:") && (
-        <p className="text-red-600">
+        <p className="text-destructive">
           Activation abandonnée ({outcome.split(":")[1]}) : retéléversez la version révisée.
         </p>
       )}
       {/* stranded on load (survives a refresh), when no in-session outcome shows it */}
       {!inSessionRecoverable && stranded && (
-        <p className="text-amber-700">
+        <p className="text-amber-700 dark:text-amber-300">
           Une activation de version ({stranded.state === "INDEX_FAILED"
             ? "échec d'indexation"
             : "en attente"}) est restée inachevée ; vous pouvez la reprendre.
@@ -1083,7 +1083,7 @@ function ArtifactCard({
         <button
           onClick={() => recover.mutate(recoverVersionId)}
           disabled={recover.isPending}
-          className="rounded-lg border border-indigo-300 px-3 py-1 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+          className="rounded-lg border border-primary/40 px-3 py-1 text-primary hover:bg-accent disabled:opacity-50"
         >
           Reprendre l'activation
         </button>
@@ -1138,7 +1138,7 @@ function PatchProposalCard({
 
   if (p.status === "ABSTAINED") {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+      <div className="rounded-lg border border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10 p-3 text-xs text-amber-800 dark:text-amber-200">
         <p className="font-medium">Correctif en abstention ({p.abstain_reason})</p>
         <p className="mt-1">
           L'agent n'a pas pu ancrer un correctif fiable ; rédigez la modification manuellement.
@@ -1147,7 +1147,7 @@ function PatchProposalCard({
     );
   }
   if (p.status === "DRAFTING") {
-    return <p className="text-xs text-slate-500">Rédaction du correctif en cours…</p>;
+    return <p className="text-xs text-muted-foreground">Rédaction du correctif en cours…</p>;
   }
 
   const resultVersion = (versions.data ?? []).find((v) => v.id === p.decision?.result_version_id);
@@ -1156,35 +1156,35 @@ function PatchProposalCard({
     (resultVersion.state === "INDEX_FAILED" || resultVersion.state === "PENDING_INDEX");
 
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
-      <p className="font-medium text-slate-700">
+    <div className="space-y-2 rounded-lg border bg-card p-3 text-xs">
+      <p className="font-medium text-foreground/90">
         Diff proposé ({p.operation === "replace" ? "remplacement" : "insertion"})
       </p>
       {/* Server-derived source slice at the resolved anchor — never the model quote */}
-      <div className="rounded bg-slate-50 p-2 font-mono text-[11px] leading-relaxed">
-        <span className="text-slate-400">{p.context_before}</span>
+      <div className="rounded bg-muted/50 p-2 font-mono text-[11px] leading-relaxed">
+        <span className="text-muted-foreground/80">{p.context_before}</span>
         <mark className="bg-amber-200">{p.anchor_slice}</mark>
         {p.operation === "insert_after" && (
-          <ins className="bg-emerald-100 text-emerald-800 no-underline">
+          <ins className="bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200 no-underline">
             {"\n\n"}
             {editing ? finalText || p.new_text_fr : p.new_text_fr}
           </ins>
         )}
         {p.operation === "replace" && (
-          <span className="text-slate-400 line-through">{/* replaced */}</span>
+          <span className="text-muted-foreground/80 line-through">{/* replaced */}</span>
         )}
-        <span className="text-slate-400">{p.context_after}</span>
+        <span className="text-muted-foreground/80">{p.context_after}</span>
       </div>
       {p.operation === "replace" && (
         <div className="rounded bg-emerald-50 p-2 font-mono text-[11px] text-emerald-800">
           → {editing ? finalText || p.new_text_fr : p.new_text_fr}
         </div>
       )}
-      <p className="text-slate-500">Justification IA : {p.rationale}</p>
+      <p className="text-muted-foreground">Justification IA : {p.rationale}</p>
 
       {p.decision ? (
-        <div className="rounded bg-slate-50 p-2">
-          <p className="font-medium text-slate-600">
+        <div className="rounded bg-muted/50 p-2">
+          <p className="font-medium text-muted-foreground">
             Décision : {p.decision.decision}
             {resultVersion && ` → version ${resultVersion.version_number} (${
               VERSION_STATE_LABELS[resultVersion.state]
@@ -1195,7 +1195,7 @@ function PatchProposalCard({
               resultVersion.canonical_format === "md") && (
               <a
                 href={api.versionDownloadUrl(p.document_id, resultVersion.id)}
-                className="text-indigo-600 underline"
+                className="text-primary underline"
               >
                 Télécharger la nouvelle version
               </a>
@@ -1204,7 +1204,7 @@ function PatchProposalCard({
             <button
               onClick={() => recover.mutate()}
               disabled={recover.isPending}
-              className="mt-1 rounded-lg border border-indigo-300 px-2 py-0.5 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+              className="mt-1 rounded-lg border border-primary/40 px-2 py-0.5 text-primary hover:bg-accent disabled:opacity-50"
             >
               Reprendre l'activation
             </button>
@@ -1218,7 +1218,7 @@ function PatchProposalCard({
               onChange={(e) => setFinalText(e.target.value)}
               rows={3}
               placeholder="Texte final (votre rédaction sera appliquée telle quelle)"
-              className="w-full rounded-lg border border-slate-300 px-2 py-1"
+              className="w-full rounded-lg border border-input px-2 py-1"
             />
           )}
           <div className="flex flex-wrap gap-2">
@@ -1233,7 +1233,7 @@ function PatchProposalCard({
               <button
                 onClick={() => decide.mutate({ decision: "edit", final_text_fr: finalText })}
                 disabled={decide.isPending || !finalText.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-lg bg-primary px-3 py-1 font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               >
                 Appliquer ma rédaction
               </button>
@@ -1243,7 +1243,7 @@ function PatchProposalCard({
                   setFinalText(p.new_text_fr ?? "");
                   setEditing(true);
                 }}
-                className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50"
+                className="rounded-lg border border-input px-3 py-1 hover:bg-muted/50"
               >
                 Modifier le texte
               </button>
@@ -1251,7 +1251,7 @@ function PatchProposalCard({
             <button
               onClick={() => decide.mutate({ decision: "reject" })}
               disabled={decide.isPending}
-              className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50"
+              className="rounded-lg border border-input px-3 py-1 hover:bg-muted/50"
             >
               Rejeter le correctif
             </button>
@@ -1292,8 +1292,8 @@ function ReassessmentPanel({
   });
 
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <section className="space-y-3 rounded-xl border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Réévaluations ciblées (preuve d'efficacité)
       </h2>
       {doneActions.length > 0 && c.status === "IN_PROGRESS" && (
@@ -1317,7 +1317,7 @@ function ReassessmentPanel({
           <button
             onClick={() => launch.mutate()}
             disabled={launch.isPending || selected.length === 0}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             Lancer une réévaluation
           </button>
@@ -1326,31 +1326,31 @@ function ReassessmentPanel({
       {(reassessments.data?.length ?? 0) > 0 && (
         <ul className="space-y-2 text-sm">
           {reassessments.data!.map((r) => (
-            <li key={r.id} className="rounded-lg border border-slate-200 p-3">
+            <li key={r.id} className="rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{r.status}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{r.status}</span>
                 {r.assessment_id && (
                   <Link
                     to={`/organizations/${orgId}/assessments/${r.assessment_id}`}
-                    className="text-xs text-indigo-600 hover:underline"
+                    className="text-xs text-primary hover:underline"
                   >
                     Voir l'évaluation
                   </Link>
                 )}
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted-foreground">
                   {new Date(r.created_at).toLocaleString("fr-FR")}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Exigences réévaluées : {r.included_requirement_ids.join(", ") || "—"}
               </p>
               {r.excluded_holdout_ids.length > 0 && (
-                <p className="mt-1 text-xs text-amber-700">
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                   Exclues (réservées au jeu de test M6, jamais réévaluées ici) :{" "}
                   {r.excluded_holdout_ids.join(", ")}
                 </p>
               )}
-              {r.error && <p className="mt-1 text-xs text-red-600">{r.error}</p>}
+              {r.error && <p className="mt-1 text-xs text-destructive">{r.error}</p>}
             </li>
           ))}
         </ul>
@@ -1383,8 +1383,8 @@ function ClosurePanel({
 
   if (c.status === "CLOSED") {
     return (
-      <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="space-y-2 rounded-xl border bg-card p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Clôture
         </h2>
         <p className="text-sm">
@@ -1394,7 +1394,7 @@ function ClosurePanel({
         <button
           onClick={() => reopen.mutate()}
           disabled={reopen.isPending}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-lg border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
         >
           Rouvrir le cas
         </button>
@@ -1404,19 +1404,19 @@ function ClosurePanel({
   }
   if (!["TRIAGE_APPROVED", "PLAN_READY", "IN_PROGRESS"].includes(c.status)) return null;
   return (
-    <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Clôture</h2>
+    <section className="space-y-2 rounded-xl border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Clôture</h2>
       <div className="flex flex-wrap gap-2">
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Note de clôture (requise)"
-          className="min-w-64 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          className="min-w-64 flex-1 rounded-lg border border-input px-2 py-1.5 text-sm"
         />
         <button
           onClick={() => close.mutate()}
           disabled={close.isPending || !note.trim()}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-lg border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
         >
           Clôturer le cas
         </button>
@@ -1430,18 +1430,18 @@ function ClosurePanel({
 
 function EventsTimeline({ c }: { c: RemediationCaseDetail }) {
   return (
-    <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <section className="space-y-2 rounded-xl border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Journal d'audit
       </h2>
-      <ul className="space-y-1 text-xs text-slate-600">
+      <ul className="space-y-1 text-xs text-muted-foreground">
         {[...c.events].reverse().map((e) => (
           <li key={e.sequence} className="flex flex-wrap gap-2">
-            <span className="font-mono text-slate-400">#{e.sequence}</span>
+            <span className="font-mono text-muted-foreground/80">#{e.sequence}</span>
             <span className="font-medium">{e.event_type}</span>
             <span>{new Date(e.created_at).toLocaleString("fr-FR")}</span>
             {e.actor_label && (
-              <span className="text-slate-400">par {e.actor_label} (non vérifié)</span>
+              <span className="text-muted-foreground/80">par {e.actor_label} (non vérifié)</span>
             )}
           </li>
         ))}

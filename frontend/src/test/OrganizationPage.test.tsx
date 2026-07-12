@@ -38,8 +38,8 @@ const PARSED_DOC = {
 
 function renderPage() {
   return renderWithProviders(<OrganizationPage />, {
-    route: "/organizations/org-1",
-    path: "/organizations/:orgId",
+    route: "/organizations/org-1/evaluations",
+    path: "/organizations/:orgId/evaluations",
   });
 }
 

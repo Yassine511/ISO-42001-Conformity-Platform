@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { MessageSquareText } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -66,27 +67,23 @@ export default function ReviewWorkspacePage() {
     (selectedId && filtered.find((f) => f.id === selectedId)) || filtered[0] || null;
 
   if (detail.isError) {
-    return <p className="text-sm text-red-600">{(detail.error as Error).message}</p>;
+    return <p className="text-sm text-destructive">{(detail.error as Error).message}</p>;
   }
   if (!detail.data) {
-    return <p className="text-sm text-slate-500">Chargement…</p>;
+    return <p className="text-sm text-muted-foreground">Chargement…</p>;
   }
   const a = detail.data;
 
   return (
     <div className="space-y-6">
-      <Link to={`/organizations/${orgId}`} className="text-sm text-indigo-600 hover:underline">
-        ← Organisation
-      </Link>
-
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Espace de revue</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Espace de revue</h1>
         <AssessmentStatusBadge status={a.status} />
-        <span aria-live="polite" className="text-sm text-slate-500">
+        <span aria-live="polite" className="text-sm text-muted-foreground">
           {a.reviewed_count} / {a.total} confirmés
         </span>
         {a.status === "RUNNING" && (
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-muted-foreground">
             évaluation en cours — les constats apparaissent au fil de l'eau
           </span>
         )}
@@ -98,10 +95,10 @@ export default function ReviewWorkspacePage() {
             key={key}
             onClick={() => setFilter(key)}
             aria-pressed={filter === key}
-            className={`rounded-full px-3 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+            className={`rounded-full px-3 py-1 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring ${
               filter === key
-                ? "bg-indigo-600 text-white"
-                : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                ? "bg-primary text-primary-foreground"
+                : "border border-input bg-card text-muted-foreground hover:bg-muted/50"
             }`}
           >
             {FILTER_LABELS[key]}
@@ -118,7 +115,7 @@ export default function ReviewWorkspacePage() {
         {selected ? (
           <FindingPanel key={selected.id} orgId={orgId!} assessmentId={assessmentId!} findingId={selected.id} />
         ) : (
-          <p className="text-sm text-slate-500">Aucun constat pour ce filtre.</p>
+          <p className="text-sm text-muted-foreground">Aucun constat pour ce filtre.</p>
         )}
       </div>
     </div>
@@ -143,10 +140,10 @@ function FindingList({
             <button
               onClick={() => onSelect(f.id)}
               aria-current={f.id === selectedId}
-              className={`w-full rounded-lg border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+              className={`w-full rounded-lg border p-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring ${
                 f.id === selectedId
-                  ? "border-indigo-400 bg-indigo-50"
-                  : "border-slate-200 bg-white hover:bg-slate-50"
+                  ? "border-primary/50 bg-accent"
+                  : "border bg-card hover:bg-muted/50"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -157,11 +154,11 @@ function FindingList({
                 {f.status === "VERIFIED" ? (
                   <VerdictBadge verdict={f.verdict} />
                 ) : infra ? (
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                     Échec technique — relancez l'évaluation
                   </span>
                 ) : (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  <span className="rounded-full bg-amber-100 dark:bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
                     Nécessite votre jugement
                   </span>
                 )}
@@ -189,9 +186,9 @@ function FindingPanel({
   });
 
   if (finding.isError) {
-    return <p className="text-sm text-red-600">{(finding.error as Error).message}</p>;
+    return <p className="text-sm text-destructive">{(finding.error as Error).message}</p>;
   }
-  if (!finding.data) return <p className="text-sm text-slate-500">Chargement…</p>;
+  if (!finding.data) return <p className="text-sm text-muted-foreground">Chargement…</p>;
   const f = finding.data;
 
   return (
@@ -208,19 +205,19 @@ function FindingPanel({
 function RequirementPane({ finding: f }: { finding: FindingDetail }) {
   const infra = isInfraAbstain(f.abstain_reason);
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <section className="space-y-4 rounded-xl border border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Exigence ISO
       </h2>
       <div>
         <div className="flex items-center gap-2">
           <span className="text-lg font-semibold">{f.requirement_id}</span>
-          {f.domain && <span className="text-xs text-slate-500">{f.domain}</span>}
+          {f.domain && <span className="text-xs text-muted-foreground">{f.domain}</span>}
         </div>
         {f.requirement_fr ? (
-          <p className="mt-2 text-sm text-slate-700">{f.requirement_fr}</p>
+          <p className="mt-2 text-sm text-foreground/90">{f.requirement_fr}</p>
         ) : (
-          <p className="mt-2 text-sm text-amber-700">
+          <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
             Texte de l'exigence indisponible : constat antérieur aux instantanés et version de
             corpus différente ({f.corpus_mismatch ? "corpus modifié depuis" : ""}).
           </p>
@@ -230,14 +227,14 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
       <div
         className={`rounded-lg border p-4 ${
           f.status === "VERIFIED"
-            ? "border-slate-200 bg-slate-50"
+            ? "border-border bg-muted/50"
             : infra
-              ? "border-slate-200 bg-slate-100"
-              : "border-amber-200 bg-amber-50"
+              ? "border-border bg-muted"
+              : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
         }`}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {f.status === "VERIFIED"
               ? "Brouillon IA — citation localisée, pertinence à confirmer"
               : "Brouillon IA — abstention"}
@@ -248,12 +245,12 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
             <AbstainReasonLabel reason={f.abstain_reason} />
           )}
           {f.confidence !== null && (
-            <span className="text-xs text-slate-500">confiance {f.confidence.toFixed(2)}</span>
+            <span className="text-xs text-muted-foreground">confiance {f.confidence.toFixed(2)}</span>
           )}
         </div>
-        {f.rationale && <p className="mt-2 text-sm text-slate-700">{f.rationale}</p>}
+        {f.rationale && <p className="mt-2 text-sm text-foreground/90">{f.rationale}</p>}
         {f.status === "ABSTAINED" && !infra && (
-          <p className="mt-2 text-xs text-amber-800">
+          <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
             Le système n'a pas pu produire de citation vérifiable — ce constat nécessite votre
             jugement (action « remplacer »).
           </p>
@@ -267,12 +264,12 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
 
 function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
   return (
-    <details className="rounded-lg border border-slate-200 p-3 text-sm">
-      <summary className="cursor-pointer font-medium text-slate-600">
+    <details className="rounded-lg border border-border p-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground">
         Provenance ({f.attempts} tentative{f.attempts > 1 ? "s" : ""}
         {f.final_model ? ` · ${f.final_model}` : ""})
       </summary>
-      <div className="mt-3 space-y-3 text-xs text-slate-600">
+      <div className="mt-3 space-y-3 text-xs text-muted-foreground">
         {f.policy_quote && (
           <p>
             Citation déclarée par le modèle (audit — le texte affiché comme preuve est
@@ -280,7 +277,7 @@ function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
           </p>
         )}
         {f.attempt_history.map((att) => (
-          <div key={att.attempt_number} className="rounded border border-slate-100 p-2">
+          <div key={att.attempt_number} className="rounded border border-border/60 p-2">
             <p className="font-medium">
               Tentative {att.attempt_number} ({att.prompt_version}) —{" "}
               {att.parsed_ok ? "analysée" : "non analysable"}
@@ -293,7 +290,7 @@ function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
               </p>
             ))}
             {att.verifier_errors?.map((e, i) => (
-              <p key={i} className="text-amber-700">
+              <p key={i} className="text-amber-700 dark:text-amber-300">
                 vérif ✗ {e}
               </p>
             ))}
@@ -318,8 +315,8 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
     matched && f.match_end !== null ? f.match_end - (matched.char_start ?? 0) : null;
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <section className="space-y-4 rounded-xl border border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Preuves (politiques)
       </h2>
 
@@ -327,18 +324,18 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
         <div
           className={`rounded-lg border p-4 ${
             f.source_quote_kind === "candidate"
-              ? "border-amber-200 bg-amber-50/50"
-              : "border-emerald-200 bg-emerald-50/50"
+              ? "border-amber-600/25 bg-amber-50/60 dark:border-amber-400/25 dark:bg-amber-400/10"
+              : "border-emerald-600/25 bg-emerald-50/60 dark:border-emerald-400/25 dark:bg-emerald-400/10"
           }`}
         >
-          <p className="text-xs font-medium text-slate-500">
+          <p className="text-xs font-medium text-muted-foreground">
             {matched.filename}
             {matched.page_number ? `, p.${matched.page_number}` : ""} —{" "}
             {f.source_quote_kind === "candidate"
               ? "passage candidat (correspondance approximative)"
               : "passage cité"}
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-800">
+          <p className="mt-2 text-sm leading-relaxed text-foreground">
             <HighlightedText
               text={matched.text}
               start={f.source_quote_error ? null : localStart}
@@ -346,43 +343,43 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
             />
           </p>
           {f.source_quote && f.source_quote_kind === "verified" && (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               Extrait source (autoritatif) : « {f.source_quote} »
             </p>
           )}
           {f.source_quote && f.source_quote_kind === "candidate" && (
-            <p className="mt-2 text-xs font-medium text-amber-700">
+            <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
               Localisation approximative retenue pour votre revue — ce n'est pas une citation
               vérifiée.
             </p>
           )}
           {f.source_quote_error && (
-            <p className="mt-2 text-xs font-medium text-amber-700">
+            <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
               Provenance non affichable : {f.source_quote_error}
             </p>
           )}
         </div>
       )}
       {!matched && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           Aucun passage cité — extraits récupérés ci-dessous.
         </p>
       )}
 
       {others.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-sm font-medium text-slate-600">
+          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
             Autres extraits récupérés ({others.length})
           </summary>
           <ul className="mt-3 space-y-3">
             {others.map((r) => (
-              <li key={r.result_id} className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs font-medium text-slate-500">
+              <li key={r.result_id} className="rounded-lg border border-border p-3">
+                <p className="text-xs font-medium text-muted-foreground">
                   {r.source_type === "policy"
                     ? `${r.filename ?? "document"}${r.page_number ? `, p.${r.page_number}` : ""}`
                     : `Exigence ISO ${r.requirement_id}`}
                 </p>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{r.text}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">{r.text}</p>
               </li>
             ))}
           </ul>
@@ -431,34 +428,35 @@ function ReviewSection({
   const submitDisabled = review.isPending || (needsRationale && !rationale.trim());
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+    <section className="space-y-4 rounded-xl border border bg-card p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Décision humaine
         </h2>
         <ReviewStatusBadge status={f.review_status} />
         <Link
           to={`/organizations/${orgId}/chat?finding=${f.id}`}
-          className="ml-auto text-xs text-indigo-600 hover:underline"
+          className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
         >
-          💬 Expliquer via le copilote
+          <MessageSquareText className="size-3.5" aria-hidden="true" />
+          Expliquer via le copilote
         </Link>
       </div>
 
       {f.review_status === "CONFIRMED" && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm">
+        <div className="rounded-lg border border-emerald-600/30 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-400/10 p-4 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{ACTION_LABELS[f.review_action!]}</span>
             <VerdictBadge verdict={f.human_verdict} />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               le {f.reviewed_at ? new Date(f.reviewed_at).toLocaleString("fr-FR") : ""}
             </span>
           </div>
-          {f.human_rationale && <p className="mt-2 text-slate-700">{f.human_rationale}</p>}
+          {f.human_rationale && <p className="mt-2 text-foreground/90">{f.human_rationale}</p>}
           {f.review_note && (
-            <p className="mt-1 text-xs text-slate-500">Note : {f.review_note}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Note : {f.review_note}</p>
           )}
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Le brouillon IA reste affiché tel quel ci-dessus — votre décision est enregistrée à
             côté, jamais à sa place. Vous pouvez réviser votre décision : l'historique conserve
             chaque version.
@@ -475,10 +473,10 @@ function ReviewSection({
           disabled={abstained}
           aria-pressed={action === "approve"}
           title={abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 ${
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-emerald-500 ${
             action === "approve"
               ? "bg-emerald-600 text-white"
-              : "border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+              : "border border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
           }`}
         >
           Approuver
@@ -488,10 +486,10 @@ function ReviewSection({
           disabled={abstained}
           aria-pressed={action === "edit"}
           title={abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring ${
             action === "edit"
-              ? "bg-indigo-600 text-white"
-              : "border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+              ? "bg-primary text-primary-foreground"
+              : "border border-primary/40 text-primary hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
           }`}
         >
           Modifier
@@ -499,16 +497,16 @@ function ReviewSection({
         <button
           onClick={() => setAction("override")}
           aria-pressed={action === "override"}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 ${
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-amber-500 ${
             action === "override"
               ? "bg-amber-600 text-white"
-              : "border border-amber-300 text-amber-700 hover:bg-amber-50"
+              : "border border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50"
           }`}
         >
           Remplacer
         </button>
         {abstained && (
-          <span className="self-center text-xs text-amber-700">
+          <span className="self-center text-xs text-amber-700 dark:text-amber-300">
             Abstention : seul « Remplacer » est possible — le verdict vous appartient.
           </span>
         )}
@@ -528,7 +526,7 @@ function ReviewSection({
               <select
                 value={humanVerdict}
                 onChange={(e) => setHumanVerdict(e.target.value as Verdict)}
-                className="mt-1 block rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                className="mt-1 block rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               >
                 {VERDICT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -546,7 +544,7 @@ function ReviewSection({
               value={rationale}
               onChange={(e) => setRationale(e.target.value)}
               rows={3}
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+              className="mt-1 block w-full rounded-lg border border-input px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -555,7 +553,7 @@ function ReviewSection({
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                className="mt-1 block w-full rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
             <label className="block text-sm">
@@ -563,7 +561,7 @@ function ReviewSection({
               <input
                 value={reviewer}
                 onChange={(e) => setReviewer(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                className="mt-1 block w-full rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
           </div>
@@ -571,12 +569,12 @@ function ReviewSection({
             <button
               type="submit"
               disabled={submitDisabled}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               {review.isPending ? "Enregistrement…" : "Enregistrer la décision"}
             </button>
             {review.isError && (
-              <p className="text-sm text-red-600">{(review.error as Error).message}</p>
+              <p className="text-sm text-destructive">{(review.error as Error).message}</p>
             )}
           </div>
         </form>
@@ -584,25 +582,25 @@ function ReviewSection({
 
       {f.reviews.length > 0 && (
         <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-slate-600">
+          <summary className="cursor-pointer font-medium text-muted-foreground">
             Historique des décisions ({f.reviews.length})
           </summary>
           <ul className="mt-2 space-y-2">
             {f.reviews.map((r) => (
-              <li key={r.sequence} className="rounded-lg border border-slate-200 p-3 text-xs">
+              <li key={r.sequence} className="rounded-lg border border-border p-3 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">#{r.sequence}</span>
                   <span>{ACTION_LABELS[r.action]}</span>
                   <VerdictBadge verdict={r.human_verdict} />
-                  <span className="text-slate-500">
+                  <span className="text-muted-foreground">
                     {new Date(r.created_at).toLocaleString("fr-FR")}
                   </span>
                   {r.reviewer_label && (
-                    <span className="text-slate-500">par {r.reviewer_label} (non vérifié)</span>
+                    <span className="text-muted-foreground">par {r.reviewer_label} (non vérifié)</span>
                   )}
                 </div>
-                {r.human_rationale && <p className="mt-1 text-slate-600">{r.human_rationale}</p>}
-                {r.review_note && <p className="mt-1 text-slate-500">Note : {r.review_note}</p>}
+                {r.human_rationale && <p className="mt-1 text-muted-foreground">{r.human_rationale}</p>}
+                {r.review_note && <p className="mt-1 text-muted-foreground">Note : {r.review_note}</p>}
               </li>
             ))}
           </ul>

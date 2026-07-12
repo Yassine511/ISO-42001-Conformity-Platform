@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { MessageSquareText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, RiskRow, Severity, Verdict } from "../api";
 import VerdictBadge from "../components/VerdictBadge";
@@ -12,16 +13,16 @@ const SEVERITY_LABELS: Record<Severity, string> = {
 };
 
 const SEVERITY_CLASSES: Record<Severity, string> = {
-  high: "bg-red-100 text-red-700",
-  medium: "bg-amber-100 text-amber-700",
-  low: "bg-emerald-100 text-emerald-700",
+  high: "bg-red-100 text-red-700 dark:bg-red-400/15 dark:text-red-300",
+  medium: "bg-amber-100 dark:bg-amber-400/15 text-amber-700 dark:text-amber-300",
+  low: "bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300",
 };
 
 export function SeverityBadge({ severity, score }: { severity: Severity | null; score: number | null }) {
   if (severity === null) {
     return (
       <span
-        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500"
+        className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
         title="Poids de contrôle indisponible dans la politique de notation"
       >
         non évaluée
@@ -87,21 +88,11 @@ export default function RiskRegisterPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <Link to={`/organizations/${orgId}`} className="text-sm text-indigo-600 hover:underline">
-          ← Organisation
-        </Link>
-        <Link
-          to={`/organizations/${orgId}/dashboard`}
-          className="text-sm text-indigo-600 hover:underline"
-        >
-          📊 Tableau de bord
-        </Link>
-      </div>
-
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Registre des écarts et des risques IA</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Registre des écarts et des risques IA
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Dérivé déterministe des constats confirmés par un humain (derniers verdicts) — sévérité ={" "}
           facteur d'écart × poids du contrôle
           {register.data && <> · politique {register.data.scope.scoring_policy_version}</>}.
@@ -117,8 +108,8 @@ export default function RiskRegisterPage() {
               aria-pressed={filter === f}
               className={`rounded-full px-3 py-1 text-sm ${
                 filter === f
-                  ? "bg-indigo-600 text-white"
-                  : "border border-slate-300 text-slate-600 hover:bg-slate-100"
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-input text-muted-foreground hover:bg-muted"
               }`}
             >
               {f === "all"
@@ -126,12 +117,12 @@ export default function RiskRegisterPage() {
                 : `${SEVERITY_LABELS[f]} (${register.data.counts[f]})`}
             </button>
           ))}
-          <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
             Trier par
             <select
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+              className="rounded-lg border border-input bg-card px-2 py-1 text-sm"
             >
               {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
                 <option key={k} value={k}>
@@ -143,21 +134,21 @@ export default function RiskRegisterPage() {
         </div>
       )}
 
-      {register.isLoading && <p className="text-sm text-slate-500">Chargement…</p>}
+      {register.isLoading && <p className="text-sm text-muted-foreground">Chargement…</p>}
       {register.error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           {(register.error as Error).message}
         </p>
       )}
       {register.data && rows.length === 0 && (
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
+        <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
           Aucun écart confirmé dans ce périmètre.
         </p>
       )}
       {rows.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Exigence</th>
                 <th className="px-4 py-3">Verdict</th>
@@ -167,7 +158,7 @@ export default function RiskRegisterPage() {
                 <th className="px-4 py-3">Traitement</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border/60">
               {rows.map((row) => (
                 <RegisterRow key={row.finding_id} orgId={orgId!} row={row} />
               ))}
@@ -183,11 +174,11 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
   return (
     <tr className="align-top">
       <td className="px-4 py-3">
-        <span className="font-medium text-slate-800">{row.requirement_id}</span>
-        <p className="text-xs text-slate-500">{row.domain_title_fr}</p>
+        <span className="font-medium text-foreground">{row.requirement_id}</span>
+        <p className="text-xs text-muted-foreground">{row.domain_title_fr}</p>
         {!row.applicable && (
           <span
-            className="mt-1 inline-block rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600"
+            className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
             title={row.applicability_justification_fr ?? undefined}
           >
             déclaré non applicable (SoA)
@@ -200,33 +191,34 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
       <td className="px-4 py-3">
         <SeverityBadge severity={row.severity} score={row.severity_score} />
         {row.weight !== null && (
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             écart {row.gap_factor} × poids {row.weight}
           </p>
         )}
       </td>
-      <td className="max-w-md px-4 py-3 text-slate-700">
+      <td className="max-w-md px-4 py-3 text-foreground/90">
         {row.risk_statement_fr}
         {row.requirement_fr && (
           <details className="mt-1">
-            <summary className="cursor-pointer text-xs text-indigo-600">Exigence évaluée</summary>
-            <p className="mt-1 text-xs text-slate-500">{row.requirement_fr}</p>
+            <summary className="cursor-pointer text-xs text-primary">Exigence évaluée</summary>
+            <p className="mt-1 text-xs text-muted-foreground">{row.requirement_fr}</p>
           </details>
         )}
       </td>
       <td className="px-4 py-3">
         <Link
           to={`/organizations/${orgId}/assessments/${row.assessment_id}`}
-          className="text-xs text-indigo-600 hover:underline"
+          className="text-xs text-primary hover:underline"
         >
           Constat confirmé
           {row.reviewed_at && <> le {new Date(row.reviewed_at).toLocaleDateString("fr-FR")}</>}
         </Link>
         <Link
           to={`/organizations/${orgId}/chat?finding=${row.finding_id}`}
-          className="mt-1 block text-xs text-indigo-600 hover:underline"
+          className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
         >
-          💬 Expliquer via le copilote
+          <MessageSquareText className="size-3" aria-hidden="true" />
+          Expliquer via le copilote
         </Link>
       </td>
       <td className="px-4 py-3">
@@ -234,11 +226,11 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
           <div className="text-xs">
             <Link
               to={`/organizations/${orgId}/remediation/${row.treatment.active_case_id}`}
-              className="font-medium text-indigo-600 hover:underline"
+              className="font-medium text-primary hover:underline"
             >
               Cas en cours ({row.treatment.active_case_status})
             </Link>
-            <p className="text-slate-500">
+            <p className="text-muted-foreground">
               {row.treatment.approved_action_count} action(s) approuvée(s) au plan actif
             </p>
           </div>
@@ -246,7 +238,7 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
           <>
             <OpenRemediationCaseButton orgId={orgId} findingId={row.finding_id} />
             {row.treatment && row.treatment.closed_case_ids.length > 0 && (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {row.treatment.closed_case_ids.length} cas clôturé(s)
               </p>
             )}

@@ -1,13 +1,19 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, FileText, FileUp, Trash2 } from "lucide-react";
 import { api, type Assessment, type Doc } from "../api";
 import { AssessmentStatusBadge } from "../components/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<Doc["status"], string> = {
-  parsed: "bg-emerald-100 text-emerald-700",
-  uploaded: "bg-amber-100 text-amber-700",
-  failed: "bg-red-100 text-red-700",
+  parsed: "bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300",
+  uploaded: "bg-amber-100 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
+  failed: "bg-red-100 text-red-700 dark:bg-red-400/10 dark:text-red-300",
 };
 
 const STATUS_LABELS: Record<Doc["status"], string> = {
@@ -27,43 +33,6 @@ export default function OrganizationPage() {
   const { orgId } = useParams<{ orgId: string }>();
   return (
     <div className="space-y-10">
-      <div className="flex items-center justify-between">
-        <Link to="/" className="text-sm text-indigo-600 hover:underline">
-          ← Organisations
-        </Link>
-        <div className="flex gap-2">
-        <Link
-          to={`/organizations/${orgId}/dashboard`}
-          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
-          📊 Tableau de bord
-        </Link>
-        <Link
-          to={`/organizations/${orgId}/risk-register`}
-          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
-          ⚠️ Registre des risques
-        </Link>
-        <Link
-          to={`/organizations/${orgId}/soa`}
-          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
-          📋 SoA
-        </Link>
-        <Link
-          to={`/organizations/${orgId}/remediation`}
-          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
-          🛠 Remédiation
-        </Link>
-        <Link
-          to={`/organizations/${orgId}/chat`}
-          className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
-          💬 Copilote
-        </Link>
-        </div>
-      </div>
       <DocumentsSection orgId={orgId!} />
       <AssessmentsSection orgId={orgId!} />
     </div>
@@ -116,12 +85,10 @@ function DocumentsSection({ orgId }: { orgId: string }) {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Documents de politique</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          PDF, DOCX, TXT ou Markdown — 20 Mo maximum par fichier.
-        </p>
-      </div>
+      <PageHeader
+        title="Documents de politique"
+        description="PDF, DOCX, TXT ou Markdown — 20 Mo maximum par fichier."
+      />
 
       <div
         onDragOver={(e) => {
@@ -134,16 +101,18 @@ function DocumentsSection({ orgId }: { orgId: string }) {
           setDragOver(false);
           handleFiles(e.dataTransfer.files);
         }}
-        className={`rounded-xl border-2 border-dashed p-10 text-center transition ${
-          dragOver ? "border-indigo-500 bg-indigo-50" : "border-slate-300 bg-white"
-        }`}
+        className={cn(
+          "rounded-xl border-2 border-dashed p-10 text-center transition-colors",
+          dragOver ? "border-primary bg-accent" : "border-border bg-card",
+        )}
       >
-        <p className="text-sm text-slate-600">
+        <FileUp className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+        <p className="mt-3 text-sm text-muted-foreground">
           Glissez-déposez vos documents ici, ou{" "}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="rounded text-indigo-600 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+            className="rounded font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
           >
             parcourir vos fichiers
           </button>
@@ -161,42 +130,47 @@ function DocumentsSection({ orgId }: { orgId: string }) {
           }}
         />
         {upload.isPending && (
-          <p aria-live="polite" className="mt-2 text-sm text-indigo-600">
+          <p aria-live="polite" className="mt-2 text-sm text-primary">
             Téléversement…
           </p>
         )}
       </div>
 
       {uploadErrors.map((msg) => (
-        <p key={msg} className="text-sm text-red-600">
+        <p key={msg} className="text-sm text-destructive">
           {msg}
         </p>
       ))}
 
-      {removeError && <p className="text-sm text-red-600">{removeError}</p>}
+      {removeError && <p className="text-sm text-destructive">{removeError}</p>}
 
-      <ul className="divide-y rounded-xl border border-slate-200 bg-white">
+      <ul className="divide-y rounded-xl border bg-card">
         {docs.data?.length === 0 && (
-          <li className="p-4 text-sm text-slate-500">Aucun document pour le moment.</li>
+          <li className="p-4 text-sm text-muted-foreground">Aucun document pour le moment.</li>
         )}
         {docs.data?.map((doc) => (
           <li key={doc.id} className="flex items-center gap-3 p-4">
+            <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{doc.filename}</div>
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-muted-foreground">
                 {doc.page_count} page{doc.page_count > 1 ? "s" : ""}
                 {doc.error ? ` — ${doc.error}` : ""}
               </div>
             </div>
             <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[doc.status]}`}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                STATUS_STYLES[doc.status],
+              )}
             >
               {STATUS_LABELS[doc.status]}
             </span>
             <button
               onClick={() => remove.mutate(doc.id)}
-              className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-destructive"
             >
+              <Trash2 className="size-3" aria-hidden="true" />
               Supprimer
             </button>
           </li>
@@ -204,18 +178,14 @@ function DocumentsSection({ orgId }: { orgId: string }) {
       </ul>
 
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => index.mutate()}
-          disabled={index.isPending}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-        >
+        <Button variant="outline" onClick={() => index.mutate()} disabled={index.isPending}>
           {index.isPending ? "Indexation…" : "Indexer les documents"}
-        </button>
-        <span aria-live="polite" className="text-sm text-slate-500">
+        </Button>
+        <span aria-live="polite" className="text-sm text-muted-foreground">
           {index.isSuccess &&
             `Index à jour : ${index.data.chunks} extraits (${index.data.added} ajoutés, ${index.data.removed} retirés).`}
           {index.isError && (
-            <span className="text-red-600">{(index.error as Error).message}</span>
+            <span className="text-destructive">{(index.error as Error).message}</span>
           )}
         </span>
       </div>
@@ -260,43 +230,48 @@ function AssessmentsSection({ orgId }: { orgId: string }) {
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold">Évaluations de conformité</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-xl font-semibold tracking-tight">Évaluations de conformité</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           Chaque exigence passe par récupération → jugement → vérification ; les citations sont
           vérifiées par le code, puis chaque constat attend votre confirmation.
         </p>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center gap-4">
-          <button
-            onClick={() => launch.mutate()}
-            disabled={launch.isPending || running || !hasParsedDoc}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-          >
-            {launch.isPending ? "Indexation puis lancement…" : "Lancer l'évaluation"}
-          </button>
-          <p className="text-sm text-slate-500">
-            Exigences de développement (51) — le jeu de test est réservé à l'évaluation M6.
-          </p>
-        </div>
-        {!hasParsedDoc && (
-          <p className="mt-3 text-sm text-amber-700">
-            Téléversez au moins un document analysé avant de lancer une évaluation.
-          </p>
-        )}
-        {running && (
-          <p className="mt-3 text-sm text-slate-500">
-            Une évaluation est déjà en cours — attendez sa fin ou abandonnez-la.
-          </p>
-        )}
-        {launchError && <p className="mt-3 text-sm text-red-600">{launchError}</p>}
-      </div>
+      <Card className="py-5">
+        <CardContent className="px-5">
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              onClick={() => launch.mutate()}
+              disabled={launch.isPending || running || !hasParsedDoc}
+            >
+              {launch.isPending ? "Indexation puis lancement…" : "Lancer l'évaluation"}
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              Exigences de développement (51) — le jeu de test est réservé à l'évaluation M6.
+            </p>
+          </div>
+          {!hasParsedDoc && (
+            <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+              Téléversez au moins un document analysé avant de lancer une évaluation.
+            </p>
+          )}
+          {running && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Une évaluation est déjà en cours — attendez sa fin ou abandonnez-la.
+            </p>
+          )}
+          {launchError && <p className="mt-3 text-sm text-destructive">{launchError}</p>}
+        </CardContent>
+      </Card>
 
       <ul className="space-y-3">
         {assessments.data?.length === 0 && (
-          <li className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-            Aucune évaluation pour le moment.
+          <li>
+            <EmptyState
+              icon={FileText}
+              title="Aucune évaluation pour le moment."
+              description="Lancez une première évaluation dès qu'un document est analysé."
+            />
           </li>
         )}
         {assessments.data?.map((a) => (
@@ -343,51 +318,46 @@ function AssessmentCard({
       : null;
 
   return (
-    <li className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+    <li className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-3">
         <AssessmentStatusBadge status={a.status} />
-        <span className="text-sm text-slate-600">{startedAt}</span>
-        <span className="text-xs text-slate-400">corpus {a.corpus_version} · k={a.retrieval_k}</span>
+        <span className="text-sm">{startedAt}</span>
+        <span className="font-mono text-xs text-muted-foreground">
+          corpus {a.corpus_version} · k={a.retrieval_k}
+        </span>
         {!a.manifest_complete && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             manifeste incomplet (antérieure à M5)
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
           {a.status === "RUNNING" && a.cancel_requested && (
-            <span className="text-xs text-slate-500">Annulation en cours…</span>
+            <span className="text-xs text-muted-foreground">Annulation en cours…</span>
           )}
           {a.status === "RUNNING" && !a.cancel_requested && (
             <>
-              <button
-                onClick={() => resume.mutate()}
-                className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-              >
+              <Button variant="outline" size="sm" onClick={() => resume.mutate()}>
                 Reprendre
-              </button>
+              </Button>
               {confirmAbandon ? (
                 <span className="flex items-center gap-2 text-xs">
                   Abandonner cette évaluation ?
-                  <button
-                    onClick={() => abandon.mutate()}
-                    className="rounded-lg bg-red-600 px-2.5 py-1 font-medium text-white hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
-                  >
+                  <Button variant="destructive" size="sm" onClick={() => abandon.mutate()}>
                     Confirmer
-                  </button>
-                  <button
-                    onClick={() => setConfirmAbandon(false)}
-                    className="rounded-lg border border-slate-300 px-2.5 py-1 text-slate-600 hover:bg-slate-50"
-                  >
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setConfirmAbandon(false)}>
                     Non
-                  </button>
+                  </Button>
                 </span>
               ) : (
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setConfirmAbandon(true)}
-                  className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
                 >
                   Abandonner
-                </button>
+                </Button>
               )}
             </>
           )}
@@ -396,31 +366,36 @@ function AssessmentCard({
 
       <div className="space-y-1">
         <progress
-          className="h-2 w-full overflow-hidden rounded [&::-moz-progress-bar]:bg-indigo-500 [&::-webkit-progress-bar]:bg-slate-100 [&::-webkit-progress-value]:bg-indigo-500"
+          className="h-2 w-full overflow-hidden rounded [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
           value={a.findings_done}
           max={Math.max(a.total, 1)}
           aria-label="Progression de l'évaluation"
         />
-        <div aria-live="polite" className="flex flex-wrap gap-x-4 text-xs text-slate-500">
+        <div aria-live="polite" className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
           <span>
             {a.findings_done}/{a.total} constats
           </span>
-          <span className="text-emerald-700">{a.verified_count} vérifiés</span>
-          <span className="text-amber-700">{a.abstained_count} abstentions</span>
+          <span className="text-emerald-700 dark:text-emerald-300">
+            {a.verified_count} vérifiés
+          </span>
+          <span className="text-amber-700 dark:text-amber-300">
+            {a.abstained_count} abstentions
+          </span>
           <span>{a.reviewed_count} confirmés</span>
-          {progressLabel && <span className="text-indigo-600">{progressLabel}</span>}
+          {progressLabel && <span className="text-primary">{progressLabel}</span>}
         </div>
       </div>
 
-      {a.error && <p className="text-xs text-red-600">{a.error}</p>}
-      {actionError && <p className="text-xs text-red-600">{actionError}</p>}
+      {a.error && <p className="text-xs text-destructive">{a.error}</p>}
+      {actionError && <p className="text-xs text-destructive">{actionError}</p>}
 
       {a.findings_done > 0 && (
         <Link
           to={`/organizations/${orgId}/assessments/${a.id}`}
-          className="inline-block text-sm font-medium text-indigo-600 hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
         >
-          Ouvrir l'espace de revue →
+          Ouvrir l'espace de revue
+          <ArrowRight className="size-3.5" aria-hidden="true" />
         </Link>
       )}
     </li>
