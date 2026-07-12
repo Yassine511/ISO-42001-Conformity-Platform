@@ -134,6 +134,7 @@ def post_message(org_id: str, body: ChatAsk, db: Session = Depends(get_db)):
             k_policy=body.k_policy,
             k_kb=body.k_kb,
             finding_id=body.finding_id,
+            kb_only=body.kb_only,
         )
     except service.OrganizationNotFoundError:
         raise HTTPException(404, "Organisation introuvable.")

@@ -14,6 +14,8 @@ vi.mock("../api", async (importOriginal) => {
       listConversations: vi.fn(),
       listMessages: vi.fn(),
       postMessage: vi.fn(),
+      listDocuments: vi.fn(),
+      uploadDocument: vi.fn(),
     },
   };
 });
@@ -145,6 +147,7 @@ beforeEach(() => {
     },
   ]);
   mocked.listMessages.mockResolvedValue([makeAnswered()]);
+  mocked.listDocuments.mockResolvedValue([]);
 });
 
 describe("answered rendering", () => {
@@ -239,10 +242,38 @@ describe("composer", () => {
       "Question test",
       "conv-1",
       undefined,
+      false,
     );
     expect(
       await screen.findByText("Index vectoriel indisponible : down"),
     ).toBeInTheDocument();
+  });
+
+  it("sends kb_only when «Norme seule» is selected and false by default", async () => {
+    mocked.postMessage.mockResolvedValue(makeAnswered());
+    renderChat("conv-1");
+    const box = await screen.findByPlaceholderText("Votre question…");
+    await userEvent.click(screen.getByRole("button", { name: /Norme seule/ }));
+    await userEvent.type(box, "Que dit la norme ?");
+    await userEvent.click(screen.getByRole("button", { name: "Envoyer" }));
+    expect(mocked.postMessage).toHaveBeenCalledWith(
+      "org-1",
+      "Que dit la norme ?",
+      "conv-1",
+      undefined,
+      true,
+    );
+    // switching back restores the default documents+standard mode
+    await userEvent.click(screen.getByRole("button", { name: /Documents \+ norme/ }));
+    await userEvent.type(box, "Et nos politiques ?");
+    await userEvent.click(screen.getByRole("button", { name: "Envoyer" }));
+    expect(mocked.postMessage).toHaveBeenLastCalledWith(
+      "org-1",
+      "Et nos politiques ?",
+      "conv-1",
+      undefined,
+      false,
+    );
   });
 });
 
@@ -286,6 +317,7 @@ describe("finding drill-down (M8)", () => {
       "Pourquoi ?",
       "conv-1",
       "fid-12345678",
+      false,
     );
     // removable: the chip disappears and later questions are unanchored
     await userEvent.click(

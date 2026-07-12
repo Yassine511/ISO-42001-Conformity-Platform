@@ -786,3 +786,80 @@ def test_generic_question_without_finding_is_unchanged(env):
     assert message.finding_id is None
     assert message.finding_context_snapshot is None
     assert "Contexte de constat" not in fake.requests[0][-1]["content"]
+
+
+# ------------------------------------------------------------- kb_only mode
+
+
+def _spy_scopes(monkeypatch):
+    """Record the scope of every hybrid_search the service performs while
+    still delegating to the real retrieval."""
+    calls: list[str] = []
+    real = hybrid_search
+
+    def spy(db, org_id, query, *, k, scope):
+        calls.append(scope)
+        return real(db, org_id, query, k=k, scope=scope)
+
+    monkeypatch.setattr(service, "hybrid_search", spy)
+    return calls
+
+
+def test_kb_only_skips_policy_retrieval(env, monkeypatch):
+    scopes = _spy_scopes(monkeypatch)
+    clause = _retrieved_kb_ids(env)[0]
+    _, _, m = _ask(
+        env,
+        [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=clause)])],
+        kb_only=True,
+    )
+    assert scopes == ["kb"]  # the policy arm was never searched
+    assert m.status == "ANSWERED"
+    assert m.evidence_scope == "kb_only"
+    assert m.retrieved_policy == []
+
+
+def test_default_mode_still_retrieves_both_arms(env, monkeypatch):
+    scopes = _spy_scopes(monkeypatch)
+    _, _, m = _ask(
+        env, [_draft(claims=[_org_claim()], citations=[_policy_citation()])]
+    )
+    assert sorted(scopes) == ["kb", "policy"]
+    assert m.evidence_scope == "policy"
+
+
+def test_kb_only_policy_citation_cannot_survive(env):
+    """Structural: nothing was retrieved from the policies, so even a verbatim
+    policy quote fails verification (no displayed chunk to anchor it) and the
+    exchange abstains rather than showing policy evidence."""
+    _, _, m = _ask(
+        env,
+        [
+            _draft(claims=[_org_claim()], citations=[_policy_citation()]),
+            _draft(claims=[_org_claim()], citations=[_policy_citation()]),
+        ],
+        kb_only=True,
+    )
+    assert m.status == "ABSTAINED"
+    assert m.evidence_scope is None  # abstention: scope records nothing
+    assert m.retrieved_policy == []
+    assert all(c.get("type") != "policy" for c in m.citations)
+
+
+def test_kb_only_combines_with_finding_drilldown(env, monkeypatch):
+    """finding_id + «Norme seule»: the finding snapshot stays non-citable
+    context (still injected into the prompt) while the policy arm is skipped."""
+    scopes = _spy_scopes(monkeypatch)
+    fid = _make_finding(env)
+    clause = _retrieved_kb_ids(env)[0]
+    _, fake, m = _ask(
+        env,
+        [_draft(claims=[_std_claim()], citations=[_kb_citation(clause=clause)])],
+        finding_id=fid,
+        kb_only=True,
+    )
+    assert scopes == ["kb"]
+    assert m.status == "ANSWERED"
+    assert m.finding_id == fid
+    assert m.finding_context_snapshot is not None
+    assert "Contexte de constat" in fake.requests[0][-1]["content"]

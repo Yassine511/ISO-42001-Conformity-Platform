@@ -353,8 +353,15 @@ def ask(
     k_policy: int = 8,
     k_kb: int = 4,
     finding_id: str | None = None,
+    kb_only: bool = False,
 ) -> ChatMessage:
     """One grounded Q&A exchange. Returns the persisted ChatMessage.
+
+    kb_only=True («Norme seule») skips the policy retrieval arm entirely:
+    with no retrieved policy passages there is nothing a policy citation could
+    verify against, so the surviving answer is structurally KB-only. The
+    requested mode itself is not persisted — evidence_scope records what
+    survived verification (and stays null on abstention).
 
     Raises OrganizationNotFoundError / ConversationNotFoundError for the router
     to map to 404; Qdrant exceptions propagate (router maps to 503) — nothing
@@ -390,7 +397,11 @@ def ask(
         )
 
     kb = load_kb()
-    retrieved_policy = [asdict(i) for i in hybrid_search(db, org_id, retrieval_query, k=k_policy, scope="policy")]
+    retrieved_policy = (
+        []
+        if kb_only
+        else [asdict(i) for i in hybrid_search(db, org_id, retrieval_query, k=k_policy, scope="policy")]
+    )
     retrieved_kb = [asdict(i) for i in hybrid_search(db, org_id, retrieval_query, k=k_kb, scope="kb")]
     db.rollback()  # end the read transaction: no connection held across the LLM call
 

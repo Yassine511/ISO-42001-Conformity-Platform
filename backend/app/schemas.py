@@ -104,6 +104,11 @@ class ChatAsk(BaseModel):
     # M8 drill-down: anchor the exchange on one finding (server loads the
     # snapshot; the finding's text is context, never citable evidence)
     finding_id: str | None = None
+    # M9 «Norme seule» mode: skip the policy retrieval arm entirely, so the
+    # answer can only cite the ISO KB. Combines freely with finding_id (the
+    # finding stays non-citable context). The REQUESTED mode is not persisted;
+    # evidence_scope on the message records what survived verification.
+    kb_only: bool = False
 
 
 class ChatClaimOut(BaseModel):

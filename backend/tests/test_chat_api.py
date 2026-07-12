@@ -307,3 +307,28 @@ def test_chat_qdrant_down_is_503(client, org_id, monkeypatch):
     assert "Index vectoriel indisponible" in r.json()["detail"]
     # nothing persisted
     assert client.get(f"/api/organizations/{org_id}/chat/conversations").json() == []
+
+
+def test_kb_only_flag_reaches_service(client, org_id, monkeypatch):
+    """The router forwards kb_only; the service then never searches the
+    policy arm and the persisted replay shows an empty policy retrieval."""
+    seen = {}
+    real_ask = chat_service.ask
+
+    def spy(db, org, question, conversation_id=None, **kw):
+        seen.update(kw)
+        return real_ask(db, org, question, conversation_id, **kw)
+
+    monkeypatch.setattr("app.api.chat.service.ask", spy)
+    llm_service.set_provider(
+        FakeLLM([_draft(no_evidence=True), ])
+    )
+    r = client.post(
+        f"/api/organizations/{org_id}/chat/messages",
+        json={"question": QUESTION, "kb_only": True},
+    )
+    assert r.status_code == 200
+    assert seen["kb_only"] is True
+    body = r.json()
+    # no policy passages were searched or displayed in the audit payload
+    assert all(item["source_type"] != "policy" for item in body["searched"])
