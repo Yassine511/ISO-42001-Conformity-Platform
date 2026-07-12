@@ -91,6 +91,9 @@ class ChatAsk(BaseModel):
     conversation_id: str | None = None
     k_policy: int = Field(default=8, ge=1, le=20)
     k_kb: int = Field(default=4, ge=1, le=10)
+    # M8 drill-down: anchor the exchange on one finding (server loads the
+    # snapshot; the finding's text is context, never citable evidence)
+    finding_id: str | None = None
 
 
 class ChatClaimOut(BaseModel):
@@ -220,6 +223,10 @@ class ChatAnswerSegmentOut(BaseModel):
 class ChatMessageOut(BaseModel):
     id: str
     conversation_id: str
+    # M8 drill-down: live pointer (may be null after finding deletion) + the
+    # IMMUTABLE ask-time snapshot the UI renders the context chip from
+    finding_id: str | None = None
+    finding_context: dict | None = None
     question: str
     status: Literal["ANSWERED", "ABSTAINED"]
     abstain_reason: str | None

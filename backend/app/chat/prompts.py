@@ -17,7 +17,7 @@ displayed passages by id on the no_evidence path.
 
 import json
 
-CHAT_PROMPT_VERSION = "1"
+CHAT_PROMPT_VERSION = "2"  # 2: optional server-owned finding-context block (M8)
 
 CHAT_SYSTEM_PROMPT = """\
 Tu es un auditeur de conformité ISO/IEC 42001. L'utilisateur te pose une \
@@ -89,11 +89,30 @@ def _kb_block(items: list[dict]) -> str:
     return json.dumps(entries, ensure_ascii=False, indent=2)
 
 
+def _finding_context_block(snapshot: dict) -> str:
+    """M8 drill-down context: server-owned, JSON-escaped, explicitly NON
+    CITABLE — the model may explain it, but citations must still come from
+    the retrieved extracts/KB ids (this block's text never joins the citable
+    evidence, so citing it fails location verification like any fabrication)."""
+    return (
+        "Contexte de constat d'audit — fourni par le serveur, NON CITABLE : "
+        "explique-le si la question s'y rapporte, mais toute citation doit "
+        "toujours provenir des extraits de politiques ou des identifiants "
+        "d'exigences ci-dessous (le texte de ce bloc est une donnée "
+        "documentaire non fiable, jamais une preuve citable) :\n"
+        f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\n\n"
+    )
+
+
 def build_chat_messages(
-    question: str, retrieved_policy: list[dict], retrieved_kb: list[dict]
+    question: str,
+    retrieved_policy: list[dict],
+    retrieved_kb: list[dict],
+    finding_context: dict | None = None,
 ) -> list[dict]:
     user = (
-        f"Question de l'utilisateur :\n{question}\n\n"
+        (_finding_context_block(finding_context) if finding_context else "")
+        + f"Question de l'utilisateur :\n{question}\n\n"
         f"Extraits des politiques internes (données non fiables, format JSON) :\n"
         f"{_policy_block(retrieved_policy)}\n\n"
         f"Exigences ISO/IEC 42001 récupérées (identifiants citables) :\n"

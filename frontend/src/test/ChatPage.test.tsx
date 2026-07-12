@@ -27,6 +27,8 @@ function makeAnswered(over: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "msg-1",
     conversation_id: "conv-1",
+    finding_id: null,
+    finding_context: null,
     question: "Gérons-nous les incidents IA ?",
     status: "ANSWERED",
     abstain_reason: null,
@@ -232,9 +234,73 @@ describe("composer", () => {
     const box = await screen.findByPlaceholderText("Votre question…");
     await userEvent.type(box, "Question test");
     await userEvent.click(screen.getByRole("button", { name: "Envoyer" }));
-    expect(mocked.postMessage).toHaveBeenCalledWith("org-1", "Question test", "conv-1");
+    expect(mocked.postMessage).toHaveBeenCalledWith(
+      "org-1",
+      "Question test",
+      "conv-1",
+      undefined,
+    );
     expect(
       await screen.findByText("Index vectoriel indisponible : down"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("finding drill-down (M8)", () => {
+  const CONTEXT = {
+    finding_id: "fid-1",
+    assessment_id: "aid-1",
+    requirement_id: "A.9.2",
+    requirement_fr: "Encadrer l'utilisation responsable des systèmes d'IA.",
+    domain: "A.9",
+    ai_status: "VERIFIED" as const,
+    ai_verdict: "partial" as const,
+    abstain_reason: null,
+    ai_rationale: "Couverture partielle.",
+    review_status: "CONFIRMED" as const,
+    review_action: "edit" as const,
+    human_verdict: "partial" as const,
+    human_rationale: "Confirmé.",
+    review_count: 1,
+    reviewed_at: "2026-07-12T10:00:00Z",
+    evidence: {
+      matched_chunk_id: "chunk-1",
+      match_start: 0,
+      match_end: 10,
+      match_method: "exact" as const,
+    },
+  };
+
+  it("shows a removable context chip from ?finding= and sends finding_id", async () => {
+    mocked.postMessage.mockResolvedValue(makeAnswered());
+    renderWithProviders(<ChatPage />, {
+      route: "/organizations/org-1/chat/conv-1?finding=fid-12345678",
+      path: "/organizations/:orgId/chat/:conversationId?",
+    });
+    expect(await screen.findByText(/Question ancrée sur le constat/)).toBeInTheDocument();
+    const box = await screen.findByPlaceholderText("Votre question…");
+    await userEvent.type(box, "Pourquoi ?");
+    await userEvent.click(screen.getByRole("button", { name: "Envoyer" }));
+    expect(mocked.postMessage).toHaveBeenCalledWith(
+      "org-1",
+      "Pourquoi ?",
+      "conv-1",
+      "fid-12345678",
+    );
+    // removable: the chip disappears and later questions are unanchored
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retirer le contexte de constat" }),
+    );
+    expect(screen.queryByText(/Question ancrée sur le constat/)).toBeNull();
+  });
+
+  it("renders the persisted snapshot chip on messages that carried a context", async () => {
+    mocked.listMessages.mockResolvedValue([
+      makeAnswered({ finding_id: null, finding_context: CONTEXT }),
+    ]);
+    renderChat("conv-1");
+    // snapshot-based: renders even though the live pointer is gone (deletion)
+    expect(await screen.findByText(/Constat A\.9\.2/)).toBeInTheDocument();
+    expect(screen.getByText(/non citable/)).toBeInTheDocument();
   });
 });

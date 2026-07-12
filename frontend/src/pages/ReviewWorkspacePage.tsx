@@ -437,6 +437,12 @@ function ReviewSection({
           Décision humaine
         </h2>
         <ReviewStatusBadge status={f.review_status} />
+        <Link
+          to={`/organizations/${orgId}/chat?finding=${f.id}`}
+          className="ml-auto text-xs text-indigo-600 hover:underline"
+        >
+          💬 Expliquer via le copilote
+        </Link>
       </div>
 
       {f.review_status === "CONFIRMED" && (

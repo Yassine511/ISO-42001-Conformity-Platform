@@ -49,7 +49,7 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.models import ChatLlmCall, ChatMessage, Conversation, Organization
+from app.models import ChatLlmCall, ChatMessage, Conversation, Finding, Organization
 from app.pipeline import llm as llm_service
 from app.pipeline.state import AbstainReason
 from app.pipeline.verifier import MIN_QUOTE_LEN, find_quote_in_retrieved, normalize
@@ -100,6 +100,39 @@ class OrganizationNotFoundError(LookupError):
 
 class ConversationNotFoundError(LookupError):
     pass
+
+
+class FindingNotFoundError(LookupError):
+    pass
+
+
+def _finding_snapshot(finding: Finding) -> dict:
+    """IMMUTABLE drill-down context, built exclusively from persisted columns
+    at ask time. Persisted on the message (the UI replays it after finding
+    deletion or re-review) and injected as a non-citable prompt block."""
+    return {
+        "finding_id": finding.id,
+        "assessment_id": finding.assessment_id,
+        "requirement_id": finding.requirement_id,
+        "requirement_fr": finding.requirement_fr,  # snapshot column, never live KB
+        "domain": finding.domain,
+        "ai_status": finding.status,
+        "ai_verdict": finding.verdict,
+        "abstain_reason": finding.abstain_reason,
+        "ai_rationale": finding.rationale,
+        "review_status": finding.review_status,
+        "review_action": finding.review_action,
+        "human_verdict": finding.human_verdict,
+        "human_rationale": finding.human_rationale,
+        "review_count": finding.review_count,
+        "reviewed_at": finding.reviewed_at.isoformat() if finding.reviewed_at else None,
+        "evidence": {
+            "matched_chunk_id": finding.matched_chunk_id,
+            "match_start": finding.match_start,
+            "match_end": finding.match_end,
+            "match_method": finding.match_method,
+        },
+    }
 
 
 @dataclass
@@ -319,6 +352,7 @@ def ask(
     *,
     k_policy: int = 8,
     k_kb: int = 4,
+    finding_id: str | None = None,
 ) -> ChatMessage:
     """One grounded Q&A exchange. Returns the persisted ChatMessage.
 
@@ -334,15 +368,38 @@ def ask(
         if conv is None or conv.organization_id != org_id:
             raise ConversationNotFoundError(conversation_id)
 
+    finding_snapshot: dict | None = None
+    retrieval_query = question
+    if finding_id is not None:
+        finding = db.get(Finding, finding_id)
+        if finding is None or finding.assessment.organization_id != org_id:
+            raise FindingNotFoundError(finding_id)
+        finding_snapshot = _finding_snapshot(finding)
+        # Server-owned retrieval query: a terse follow-up («Pourquoi ?»)
+        # retrieves nothing on its own — anchor retrieval on the finding's
+        # requirement text and rationale. The verbatim user question is still
+        # what the model is asked to answer.
+        retrieval_query = " ".join(
+            part
+            for part in (
+                finding.requirement_fr or finding.requirement_id,
+                finding.rationale,
+                question,
+            )
+            if part
+        )
+
     kb = load_kb()
-    retrieved_policy = [asdict(i) for i in hybrid_search(db, org_id, question, k=k_policy, scope="policy")]
-    retrieved_kb = [asdict(i) for i in hybrid_search(db, org_id, question, k=k_kb, scope="kb")]
+    retrieved_policy = [asdict(i) for i in hybrid_search(db, org_id, retrieval_query, k=k_policy, scope="policy")]
+    retrieved_kb = [asdict(i) for i in hybrid_search(db, org_id, retrieval_query, k=k_kb, scope="kb")]
     db.rollback()  # end the read transaction: no connection held across the LLM call
 
     displayed_policy_ids = [i["result_id"] for i in retrieved_policy]
 
     # ---- draft loop: ≤2 attempts, repair on parse/schema failure only ----
-    base_messages = build_chat_messages(question, retrieved_policy, retrieved_kb)
+    base_messages = build_chat_messages(
+        question, retrieved_policy, retrieved_kb, finding_context=finding_snapshot
+    )
     schema = ChatDraft.model_json_schema()
     messages = base_messages
 
@@ -470,8 +527,14 @@ def ask(
         db.add(conv)
         db.flush()
 
+    if finding_id is not None and db.get(Finding, finding_id) is None:
+        # deleted between phases: keep the immutable snapshot, drop the pointer
+        finding_id = None
+
     message = ChatMessage(
         conversation_id=conv.id,
+        finding_id=finding_id,
+        finding_context_snapshot=finding_snapshot,
         question=question,
         status=status,
         abstain_reason=abstain_reason,

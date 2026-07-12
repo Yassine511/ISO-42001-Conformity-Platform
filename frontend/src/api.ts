@@ -237,9 +237,37 @@ export interface SuggestedClause {
   domain: string | null;
 }
 
+export interface FindingContext {
+  finding_id: string;
+  assessment_id: string;
+  requirement_id: string;
+  requirement_fr: string | null;
+  domain: string | null;
+  ai_status: FindingStatus;
+  ai_verdict: Verdict | null;
+  abstain_reason: string | null;
+  ai_rationale: string | null;
+  review_status: "PENDING" | "CONFIRMED";
+  review_action: ReviewAction | null;
+  human_verdict: Verdict | null;
+  human_rationale: string | null;
+  review_count: number;
+  reviewed_at: string | null;
+  evidence: {
+    matched_chunk_id: string | null;
+    match_start: number | null;
+    match_end: number | null;
+    match_method: "exact" | "fuzzy" | null;
+  };
+}
+
 export interface ChatMessage {
   id: string;
   conversation_id: string;
+  // M8 drill-down: live pointer (null after finding deletion) + the
+  // immutable ask-time snapshot the chip renders from
+  finding_id: string | null;
+  finding_context: FindingContext | null;
   question: string;
   status: "ANSWERED" | "ABSTAINED";
   abstain_reason: string | null;
@@ -964,9 +992,10 @@ export const api = {
     fetch(`/api/organizations/${orgId}/chat/conversations/${conversationId}/messages`).then(
       (r) => json<ChatMessage[]>(r),
     ),
-  postMessage: (orgId: string, question: string, conversationId?: string) =>
+  postMessage: (orgId: string, question: string, conversationId?: string, findingId?: string) =>
     post(`/api/organizations/${orgId}/chat/messages`, {
       question,
       conversation_id: conversationId ?? null,
+      finding_id: findingId ?? null,
     }).then((r) => json<ChatMessage>(r)),
 };

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -18,6 +18,9 @@ export default function ChatPage() {
   }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // M8 drill-down: ?finding=<id> anchors the next question on one finding
+  const findingId = searchParams.get("finding");
   const [question, setQuestion] = useState("");
   const [askError, setAskError] = useState<string | null>(null);
 
@@ -33,7 +36,8 @@ export default function ChatPage() {
   });
 
   const ask = useMutation({
-    mutationFn: (q: string) => api.postMessage(orgId!, q, conversationId),
+    mutationFn: (q: string) =>
+      api.postMessage(orgId!, q, conversationId, findingId ?? undefined),
     onSuccess: (message) => {
       setQuestion("");
       setAskError(null);
@@ -115,6 +119,22 @@ export default function ChatPage() {
             )}
           </div>
 
+          {findingId && (
+            <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+              <span>
+                Question ancrée sur le constat <span className="font-mono">{findingId.slice(0, 8)}</span> —
+                le copilote reçoit son contexte (non citable).
+              </span>
+              <button
+                type="button"
+                aria-label="Retirer le contexte de constat"
+                onClick={() => setSearchParams({}, { replace: true })}
+                className="ml-auto rounded-full px-2 text-indigo-600 hover:bg-indigo-100"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -159,6 +179,13 @@ export default function ChatPage() {
 function MessageThread({ message: m }: { message: ChatMessage }) {
   return (
     <div className="space-y-3">
+      {m.finding_context && (
+        <div className="ml-auto max-w-[85%] rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs text-indigo-700">
+          Constat {m.finding_context.requirement_id}
+          {m.finding_context.human_verdict && <> — {m.finding_context.human_verdict}</>}
+          {" "}(contexte transmis au copilote, non citable)
+        </div>
+      )}
       <div className="ml-auto max-w-[85%] rounded-xl bg-indigo-600 px-4 py-3 text-sm text-white">
         {m.question}
       </div>

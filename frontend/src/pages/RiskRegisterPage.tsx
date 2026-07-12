@@ -165,6 +165,12 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
           Constat confirmé
           {row.reviewed_at && <> le {new Date(row.reviewed_at).toLocaleDateString("fr-FR")}</>}
         </Link>
+        <Link
+          to={`/organizations/${orgId}/chat?finding=${row.finding_id}`}
+          className="mt-1 block text-xs text-indigo-600 hover:underline"
+        >
+          💬 Expliquer via le copilote
+        </Link>
       </td>
       <td className="px-4 py-3">
         {row.treatment?.active_case_id ? (

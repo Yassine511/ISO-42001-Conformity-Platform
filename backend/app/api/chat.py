@@ -101,6 +101,8 @@ def message_to_out(message: ChatMessage) -> ChatMessageOut:
     return ChatMessageOut(
         id=message.id,
         conversation_id=message.conversation_id,
+        finding_id=message.finding_id,
+        finding_context=message.finding_context_snapshot,
         question=message.question,
         status=message.status,
         abstain_reason=message.abstain_reason,
@@ -131,11 +133,14 @@ def post_message(org_id: str, body: ChatAsk, db: Session = Depends(get_db)):
             body.conversation_id,
             k_policy=body.k_policy,
             k_kb=body.k_kb,
+            finding_id=body.finding_id,
         )
     except service.OrganizationNotFoundError:
         raise HTTPException(404, "Organisation introuvable.")
     except service.ConversationNotFoundError:
         raise HTTPException(404, "Conversation introuvable.")
+    except service.FindingNotFoundError:
+        raise HTTPException(404, "Constat introuvable pour cette organisation.")
     except CorpusChangedError as exc:
         # Retryable, nothing persisted: retrieval happens before any
         # ChatMessage row exists (same doctrine as the Qdrant 503 below).

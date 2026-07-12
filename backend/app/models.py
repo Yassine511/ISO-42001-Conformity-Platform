@@ -709,6 +709,14 @@ class ChatMessage(Base):
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
+    # M8 finding drill-down: live pointer (SET NULL on finding deletion) +
+    # IMMUTABLE context snapshot captured at ask time — the API/UI reads the
+    # snapshot, so the chip survives deletion and later re-reviews and never
+    # depends on ChatLlmCall request-payload provenance.
+    finding_id: Mapped[str | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="SET NULL"), nullable=True
+    )
+    finding_context_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     question: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20))
     abstain_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
