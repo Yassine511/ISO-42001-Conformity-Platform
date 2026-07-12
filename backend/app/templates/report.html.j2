@@ -33,6 +33,8 @@
   <h1>Rapport de conformité ISO/IEC 42001</h1>
   <p class="muted">Généré de façon déterministe à partir des constats confirmés par un humain — aucun score n'est produit par l'IA.</p>
   <p class="kv"><span>Généré le :</span> {{ scope.generated_at }}</p>
+  <p class="kv"><span>Coupure de revue :</span> {{ scope.review_cutoff }} — les décisions de revue postérieures à cet instant ne figurent pas dans ce rapport.</p>
+  <p class="kv"><span>Dénominateur (exigences du périmètre) :</span> {{ scope.requirement_universe | length }} — {{ scope.requirement_universe | join(", ") }}</p>
   <p class="kv"><span>Périmètre :</span> {{ "évaluation " ~ scope.assessment_id if scope.mode == "assessment" else "organisation (derniers verdicts confirmés)" }}</p>
   {% if scope.assessment_status %}<p class="kv"><span>Statut de l'évaluation :</span> {{ scope.assessment_status }}</p>{% endif %}
   <p class="kv"><span>Version(s) de corpus :</span> {{ scope.corpus_versions | join(", ") }}</p>
@@ -101,7 +103,9 @@
   <tbody>
   {% for r in register.rows %}
     <tr>
-      <td>{{ r.requirement_id }}<br><span class="muted">{{ r.domain_title_fr }}</span></td>
+      <td>{{ r.requirement_id }}<br><span class="muted">{{ r.domain_title_fr }}</span>
+        {% if not r.applicable %}<br><span class="badge none">déclaré non applicable (SoA)</span>{% endif %}
+      </td>
       <td>{{ r.human_verdict }}</td>
       <td>
         {% if r.severity %}<span class="badge {{ r.severity }}">{{ {"high": "Élevée", "medium": "Moyenne", "low": "Faible"}[r.severity] }} ({{ r.severity_score }})</span>

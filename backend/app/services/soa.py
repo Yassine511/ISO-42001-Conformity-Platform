@@ -48,16 +48,13 @@ def annex_a_controls() -> list[dict]:
     return entries
 
 
-def soa_table(db: Session, scope: ReportingScope) -> dict:
-    """The SoA over the given reporting scope. The applicability columns are
-    ORGANIZATION-CURRENT state (they have no assessment binding) even when
-    the finding-status column is assessment-scoped — labelled in the payload."""
-    projections = {
-        row.control_id: row
-        for row in db.scalars(
-            select(SoaControl).where(SoaControl.organization_id == scope.organization_id)
-        )
-    }
+def soa_table(scope: ReportingScope) -> dict:
+    """The SoA over the given reporting scope, computed from the DETACHED
+    scope alone (projections were materialized at build time — same snapshot
+    as every other section). The applicability columns are ORGANIZATION-
+    CURRENT state (they have no assessment binding) even when the
+    finding-status column is assessment-scoped — labelled in the payload."""
+    projections = scope.soa_projections
     controls = []
     domain_summaries: dict[str, dict] = {}
     for entry in annex_a_controls():
@@ -79,11 +76,11 @@ def soa_table(db: Session, scope: ReportingScope) -> dict:
                 "domain_title_fr": entry["domain_title_fr"],
                 # holdout posture: text only from the finding snapshot
                 "requirement_fr": ef.requirement_fr if ef is not None else None,
-                "applicable": proj.applicable if proj else True,
-                "justification_fr": proj.justification_fr if proj else None,
-                "editor_label": proj.editor_label if proj else None,
-                "decision_count": proj.decision_count if proj else 0,
-                "updated_at": proj.updated_at.isoformat() if proj else None,
+                "applicable": proj["applicable"] if proj else True,
+                "justification_fr": proj["justification_fr"] if proj else None,
+                "editor_label": proj["editor_label"] if proj else None,
+                "decision_count": proj["decision_count"] if proj else 0,
+                "updated_at": proj["updated_at"] if proj else None,
                 "is_default": proj is None,
                 "status": status,
                 "human_verdict": ef.human_verdict if confirmed else None,
@@ -107,7 +104,7 @@ def soa_table(db: Session, scope: ReportingScope) -> dict:
             },
         )
         d["controls"] += 1
-        d["applicable"] += 1 if (proj.applicable if proj else True) else 0
+        d["applicable"] += 1 if (proj["applicable"] if proj else True) else 0
         d[status] += 1
 
     return {

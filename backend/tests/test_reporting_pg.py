@@ -102,9 +102,9 @@ def test_review_committed_mid_assembly_never_mixes_states(pg_env):
     writer.commit()
     writer.close()
 
-    # the SAME report transaction must keep seeing the pre-review state:
-    # trust_panel re-queries the DB, so READ COMMITTED would count 1 event
-    trust = scoring.trust_panel(report_db, scope)
+    # the SAME report transaction must keep seeing the pre-review state
+    # (trust data is materialized at build time, inside the isolated tx)
+    trust = scoring.trust_panel(scope)
     assert trust["review"]["review_events"] == 0
     report_db.close()
 
@@ -112,7 +112,7 @@ def test_review_committed_mid_assembly_never_mixes_states(pg_env):
     fresh = _reporting_session(session_factory)
     scope2 = scoring.build_reporting_scope(fresh, org_id)
     assert scoring.conformity_summary(scope2)["scored"] == 1
-    assert scoring.trust_panel(fresh, scope2)["review"]["review_events"] == 1
+    assert scoring.trust_panel(scope2)["review"]["review_events"] == 1
     fresh.close()
 
 

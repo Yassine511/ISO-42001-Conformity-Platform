@@ -48,6 +48,7 @@ from app.models import (
     RemediationAction,
     RemediationCase,
     RemediationCaseFinding,
+    SoaControl,
 )
 from app.services.retrieval import load_kb
 from app.services.scoring_policy import (
@@ -167,9 +168,17 @@ class ReportingScope:
     # newest PENDING finding when nothing is confirmed (coverage status only)
     effective: dict[str, EffectiveFinding] = field(default_factory=dict)
     treatments: dict[str, Treatment] = field(default_factory=dict)  # by finding_id
+    # SoA current-state projection rows (control_id -> plain dict) — SoA and
+    # register applicability flags read THIS, never the live table
+    soa_projections: dict[str, dict] = field(default_factory=dict)
+    # trust-panel raw material, fully detached at build time
+    trust_data: dict = field(default_factory=dict)
 
     def meta(self) -> dict:
-        """Scope metadata block, embedded verbatim in every reporting payload."""
+        """Scope metadata block, embedded verbatim in every reporting payload.
+        requirement_universe makes the exact denominator independently
+        auditable; review_cutoff states the review-generation boundary (the
+        snapshot instant — decisions after it are not in this report)."""
         return {
             "mode": self.mode,
             "assessment_id": self.assessment_id,
@@ -177,6 +186,8 @@ class ReportingScope:
             "scoring_policy_version": self.scoring_policy_version,
             "corpus_versions": self.corpus_versions,
             "generated_at": self.generated_at,
+            "review_cutoff": self.generated_at,
+            "requirement_universe": self.requirement_universe,
             "included_assessment_ids": self.included_assessment_ids,
             "excluded_preliminary_assessment_ids": self.excluded_preliminary_assessment_ids,
             "legacy_manifest_missing_ids": self.legacy_manifest_missing_ids,
@@ -254,7 +265,12 @@ def build_reporting_scope(
 
     # ---- effective findings: latest CONFIRMED per requirement across the
     # included assessments; a PENDING-only requirement keeps its newest
-    # PENDING finding for coverage status.
+    # PENDING finding for coverage status. STRICT manifest membership: a
+    # finding whose requirement is not in ITS OWN assessment's frozen
+    # manifest is excluded (no DB constraint enforces membership; an
+    # out-of-manifest confirmed finding would otherwise inflate the global
+    # numerator past 100% — reproduced before this guard existed).
+    manifests = {a.id: set(a.requirement_ids or []) for a in included}
     effective: dict[str, EffectiveFinding] = {}
     if included_ids:
         rows = db.scalars(
@@ -263,6 +279,8 @@ def build_reporting_scope(
         best_pending: dict[str, EffectiveFinding] = {}
         best_confirmed: dict[str, tuple] = {}
         for f in rows:
+            if f.requirement_id not in manifests.get(f.assessment_id, ()):
+                continue
             ef = EffectiveFinding(
                 finding_id=f.id,
                 assessment_id=f.assessment_id,
@@ -312,7 +330,26 @@ def build_reporting_scope(
         effective=effective,
     )
     scope.treatments = _materialize_treatments(db, scope)
+    scope.soa_projections = _materialize_soa_projections(db, scope)
+    scope.trust_data = _materialize_trust(db, scope)
     return scope
+
+
+def _materialize_soa_projections(db: Session, scope: ReportingScope) -> dict[str, dict]:
+    """SoA current-state rows as plain dicts — read by soa_table() and by the
+    register's applicability flag, never re-queried by calculators."""
+    return {
+        row.control_id: {
+            "applicable": row.applicable,
+            "justification_fr": row.justification_fr,
+            "editor_label": row.editor_label,
+            "decision_count": row.decision_count,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in db.scalars(
+            select(SoaControl).where(SoaControl.organization_id == scope.organization_id)
+        )
+    }
 
 
 def _materialize_treatments(db: Session, scope: ReportingScope) -> dict[str, Treatment]:
@@ -470,6 +507,10 @@ def risk_register(scope: ReportingScope) -> dict:
             continue
         sev = severity_for(scope.policy, rid, ef.human_verdict)
         treatment = scope.treatments.get(ef.finding_id)
+        # SoA applicability ANNOTATES the row (never filters it): a scored
+        # risk on a control the human declared non-applicable is disclosed
+        soa_row = scope.soa_projections.get(rid)
+        applicable = soa_row["applicable"] if soa_row else True
         template = RISK_STATEMENT_FR.get(ef.domain) or RISK_STATEMENT_FR.get(
             domain_of(rid, None), "Risque de non-conformité ISO 42001 : exigence {req} en écart."
         )
@@ -481,6 +522,10 @@ def risk_register(scope: ReportingScope) -> dict:
                 "requirement_fr": ef.requirement_fr,  # finding snapshot only
                 "human_verdict": ef.human_verdict,
                 **sev,
+                "applicable": applicable,
+                "applicability_justification_fr": (
+                    soa_row["justification_fr"] if soa_row and not applicable else None
+                ),
                 "risk_statement_fr": template.format(req=rid),
                 "finding_id": ef.finding_id,
                 "assessment_id": ef.assessment_id,
@@ -564,12 +609,10 @@ def suggested_priority_for_action(
 # ---------------------------------------------------------------- trust panel
 
 
-def trust_panel(db: Session, scope: ReportingScope) -> dict:
-    """Defensible operational metrics over typed telemetry. Pipeline and
-    review metrics follow the scope; chat metrics have no assessment binding
-    and are ALWAYS organization-wide (metric_scope makes that explicit).
-    Never labelled a "hallucination rate" — the zero displayed-unsupported-
-    citations line is a structural invariant, checked rather than measured."""
+def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
+    """Trust-panel metrics computed AT BUILD TIME into plain data — the
+    calculator (trust_panel) then works from the detached scope alone, like
+    every other section."""
     included = scope.included_assessment_ids
 
     outcome_counts = {"parsed": 0, "schema_invalid": 0, "provider_failure": 0, "legacy_unclassified": 0}
@@ -637,7 +680,6 @@ def trust_panel(db: Session, scope: ReportingScope) -> dict:
     stripped_count = sum(len(m.stripped_citations or []) for m in chat_messages)
 
     return {
-        "scope": scope.meta(),
         "gate": {
             "drafts_total": drafts_total,
             "drafts_parsed": outcome_counts["parsed"],
@@ -678,5 +720,18 @@ def trust_panel(db: Session, scope: ReportingScope) -> dict:
             "abstained": sum(1 for m in chat_messages if m.status == "ABSTAINED"),
             "stripped_citation_count": stripped_count,
         },
+    }
+
+
+def trust_panel(scope: ReportingScope) -> dict:
+    """Defensible operational metrics over typed telemetry, served from the
+    detached scope (materialized at build time). Pipeline and review metrics
+    follow the scope; chat metrics have no assessment binding and are ALWAYS
+    organization-wide (metric_scope makes that explicit). Never labelled a
+    "hallucination rate" — the zero displayed-unsupported-citations line is a
+    structural invariant, checked rather than measured."""
+    return {
+        "scope": scope.meta(),
+        **scope.trust_data,
         "m6_benchmark": M6_BENCHMARK,
     }

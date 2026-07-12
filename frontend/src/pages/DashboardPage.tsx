@@ -38,6 +38,11 @@ export default function DashboardPage() {
     queryKey: ["assessments", orgId],
     queryFn: () => api.listAssessments(orgId!),
   });
+  const selected = (assessments.data ?? []).find((a) => a.id === assessmentId);
+  // the checkbox must stay reachable whenever a preliminary result is possible:
+  // org mode (fold RUNNING/FAILED manifests in) AND a selected non-COMPLETED
+  // assessment (without it the PDF button can only hit the designed 409)
+  const preliminaryChoiceVisible = !assessmentId || (selected && selected.status !== "COMPLETED");
   const conformity = useQuery({
     queryKey: ["conformity", orgId, assessmentId, includePreliminary],
     queryFn: () => api.getConformity(orgId!, params),
@@ -70,14 +75,16 @@ export default function DashboardPage() {
               </option>
             ))}
           </select>
-          {!assessmentId && (
+          {preliminaryChoiceVisible && (
             <label className="flex items-center gap-1.5 text-sm text-slate-600">
               <input
                 type="checkbox"
                 checked={includePreliminary}
                 onChange={(e) => setIncludePreliminary(e.target.checked)}
               />
-              inclure les évaluations préliminaires
+              {assessmentId
+                ? "autoriser un aperçu préliminaire (évaluation non terminée)"
+                : "inclure les évaluations préliminaires"}
             </label>
           )}
         </div>
@@ -239,6 +246,7 @@ function TrustSection({ data }: { data: TrustPanelData }) {
               v={gate.unsupported_draft_rate_pct === null ? "—" : `${gate.unsupported_draft_rate_pct}%`}
             />
             <Row k="Schéma invalide" v={gate.drafts_schema_invalid} />
+            <Row k="Échec fournisseur LLM" v={gate.drafts_provider_failure} />
             <Row k="Constats en abstention" v={gate.findings_abstained} />
             {gate.legacy_unclassified > 0 && (
               <Row k="Anciennes tentatives non classées" v={gate.legacy_unclassified} />

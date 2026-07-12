@@ -35,6 +35,8 @@ function makeRow(over: Partial<RiskRow> = {}): RiskRow {
     weight_source: "policy",
     severity_score: 6,
     severity: "high",
+    applicable: true,
+    applicability_justification_fr: null,
     risk_statement_fr:
       "Risque de données d'entraînement ou d'exploitation non tracées : exigence A.7.4 en écart.",
     finding_id: "fid-1",
@@ -120,6 +122,45 @@ describe("RiskRegisterPage", () => {
     await waitFor(() =>
       expect(mocked.createCase).toHaveBeenCalledWith("org-1", { finding_id: "fid-1" }),
     );
+  });
+
+  it("discloses a control declared non-applicable in the SoA", async () => {
+    mocked.getRiskRegister.mockResolvedValue(
+      makeRegister([
+        makeRow({ applicable: false, applicability_justification_fr: "Hors périmètre." }),
+      ]),
+    );
+    renderPage();
+    expect(await screen.findByText("déclaré non applicable (SoA)")).toBeInTheDocument();
+    // still a full row: annotate, never filter
+    expect(screen.getByText("Élevée (6)")).toBeInTheDocument();
+  });
+
+  it("sorts rows by the selected key", async () => {
+    mocked.getRiskRegister.mockResolvedValue(
+      makeRegister([
+        makeRow(), // A.7.4, high
+        makeRow({
+          requirement_id: "7.3",
+          finding_id: "fid-2",
+          human_verdict: "missing",
+          gap_factor: 3,
+          weight: 1,
+          severity_score: 3,
+          severity: "medium",
+        }),
+      ]),
+    );
+    renderPage();
+    await screen.findByText("A.7.4");
+    const requirementCells = () =>
+      screen.getAllByRole("row").slice(1).map((tr) => tr.textContent ?? "");
+    // default: severity (high first)
+    expect(requirementCells()[0]).toContain("A.7.4");
+    await userEvent.selectOptions(screen.getByLabelText(/Trier par/), "requirement");
+    expect(requirementCells()[0]).toContain("7.3");
+    await userEvent.selectOptions(screen.getByLabelText(/Trier par/), "verdict");
+    expect(requirementCells()[0]).toContain("7.3"); // missing sorts first
   });
 
   it("filters rows by severity", async () => {

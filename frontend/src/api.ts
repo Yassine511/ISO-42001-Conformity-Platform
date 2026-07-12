@@ -585,6 +585,10 @@ export interface ReportingScopeMeta {
   scoring_policy_version: string;
   corpus_versions: string[];
   generated_at: string;
+  // snapshot instant: review decisions after it are not in this report
+  review_cutoff: string;
+  // the exact denominator, independently auditable
+  requirement_universe: string[];
   included_assessment_ids: string[];
   excluded_preliminary_assessment_ids: string[];
   legacy_manifest_missing_ids: string[];
@@ -664,6 +668,9 @@ export interface RiskRow {
   weight_source: "policy" | "unscored_weight";
   severity_score: number | null;
   severity: Severity | null;
+  // SoA declaration on this control — annotates the row, never filters it
+  applicable: boolean;
+  applicability_justification_fr: string | null;
   risk_statement_fr: string;
   finding_id: string;
   assessment_id: string;

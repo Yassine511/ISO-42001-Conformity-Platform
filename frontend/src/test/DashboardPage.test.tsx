@@ -146,6 +146,27 @@ describe("DashboardPage", () => {
     expect(container.textContent).toContain("ne peut pas être qualifié d'officiel");
   });
 
+  it("shows provider failures as their own typed line", async () => {
+    renderPage();
+    await screen.findByText("75%");
+    expect(screen.getByText("Échec fournisseur LLM")).toBeInTheDocument();
+    expect(screen.getByText("Schéma invalide")).toBeInTheDocument();
+  });
+
+  it("keeps the preliminary opt-in reachable for a non-COMPLETED assessment (PDF path)", async () => {
+    mocked.listAssessments.mockResolvedValue([
+      makeAssessment({ id: "aid-run", status: "RUNNING" }),
+    ]);
+    renderPage();
+    await screen.findByText("75%");
+    await userEvent.selectOptions(screen.getByLabelText("Périmètre"), "aid-run");
+    const checkbox = await screen.findByLabelText(/autoriser un aperçu préliminaire/);
+    await userEvent.click(checkbox);
+    const link = screen.getByRole("link", { name: /Exporter le rapport PDF/ });
+    expect(link.getAttribute("href")).toContain("assessment_id=aid-run");
+    expect(link.getAttribute("href")).toContain("include_preliminary=true");
+  });
+
   it("refetches with assessment_id when the scope selector changes", async () => {
     renderPage();
     await screen.findByText("75%");

@@ -110,7 +110,7 @@ def soa(
     db: Session = Depends(get_reporting_db),
 ):
     scope = _build_scope(db, org_id, assessment_id, scoring_policy_version, include_preliminary)
-    return soa_service.soa_table(db, scope)
+    return soa_service.soa_table(scope)
 
 
 @router.put("/organizations/{org_id}/reporting/soa/{control_id}")
@@ -190,7 +190,7 @@ def report_pdf(
             "Évaluation non terminée : un rapport officiel exige le statut COMPLETED. "
             "Utilisez include_preliminary=true pour un aperçu explicitement préliminaire.",
         )
-    context = report_pdf_service.build_report_context(db, scope)
+    context = report_pdf_service.build_report_context(scope)
     try:
         pdf_bytes = report_pdf_service.render_report_pdf(context)
     except report_pdf_service.PdfUnavailableError:
@@ -216,4 +216,4 @@ def trust(
     db: Session = Depends(get_reporting_db),
 ):
     scope = _build_scope(db, org_id, assessment_id, scoring_policy_version, include_preliminary)
-    return scoring.trust_panel(db, scope)
+    return scoring.trust_panel(scope)

@@ -477,3 +477,73 @@ def test_m6_benchmark_is_checksum_bound_to_artifact():
         "eval/m6/rapport_m6.md changed: re-verify the benchmark constants "
         "against the artifact, then update the pinned sha256"
     )
+
+
+# ------------------------------------------------- review round (P1/P2 fixes)
+
+
+def test_out_of_manifest_finding_never_scores(db_session):
+    """P1 regression: a confirmed finding whose requirement is NOT in its own
+    assessment's frozen manifest must be excluded — before the guard it
+    inflated global_pct to 200% while the domain stayed at 100%."""
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["4.1"])
+    _finding(db_session, a, "4.1", human_verdict="compliant")
+    _finding(db_session, a, "5.1", human_verdict="compliant")  # out-of-manifest
+    out = scoring.conformity_summary(_scope(db_session, org, assessment_id=a))
+    assert out["global_pct"] == 100.0
+    assert out["scored"] == 1
+    assert out["verdict_counts"]["compliant"] == 1
+    assert [d["domain"] for d in out["domains"]] == ["4"]
+    # org mode: same exclusion (5.1 is in no included manifest)
+    out = scoring.conformity_summary(_scope(db_session, org))
+    assert out["global_pct"] == 100.0 and out["scored"] == 1
+    # and the rogue finding cannot smuggle a register row either
+    register = scoring.risk_register(_scope(db_session, org))
+    assert register["rows"] == []
+
+
+def test_register_rows_carry_soa_applicability(db_session):
+    """P2: a scored risk on a control declared non-applicable stays in the
+    register (annotate, never filter) and DISCLOSES the declaration."""
+    from app.services import soa as soa_service
+
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["A.9.4", "A.9.2"])
+    _finding(db_session, a, "A.9.4", human_verdict="partial")
+    _finding(db_session, a, "A.9.2", human_verdict="missing")
+    soa_service.record_decision(
+        db_session, org, "A.9.4", applicable=False,
+        justification_fr="Hors périmètre produit.",
+    )
+    out = scoring.risk_register(_scope(db_session, org, assessment_id=a))
+    by_rid = {r["requirement_id"]: r for r in out["rows"]}
+    assert set(by_rid) == {"A.9.4", "A.9.2"}  # never filtered
+    assert by_rid["A.9.4"]["applicable"] is False
+    assert by_rid["A.9.4"]["applicability_justification_fr"] == "Hors périmètre produit."
+    assert by_rid["A.9.2"]["applicable"] is True
+    assert by_rid["A.9.2"]["applicability_justification_fr"] is None
+
+
+def test_scope_meta_exposes_universe_and_review_cutoff(db_session):
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["4.2", "4.1"])
+    meta = _scope(db_session, org, assessment_id=a).meta()
+    assert meta["requirement_universe"] == ["4.2", "4.1"]  # the exact manifest
+    assert meta["review_cutoff"] == meta["generated_at"]
+
+
+def test_calculators_work_from_the_detached_scope_alone(db_session):
+    """P2: trust_panel and soa_table take NO db handle — everything they
+    render was materialized into the scope at build time."""
+    from app.services import soa as soa_service
+
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["A.9.2"])
+    _finding(db_session, a, "A.9.2", human_verdict="compliant")
+    scope = _scope(db_session, org, assessment_id=a)
+    db_session.close()  # sever the session: calculators must not notice
+    trust = scoring.trust_panel(scope)
+    assert trust["review"]["review_events"] == 0
+    soa = soa_service.soa_table(scope)
+    assert len(soa["controls"]) == 38

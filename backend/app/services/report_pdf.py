@@ -35,15 +35,16 @@ class PdfUnavailableError(RuntimeError):
     """WeasyPrint (or its native libraries) cannot load on this host."""
 
 
-def build_report_context(db: Session, scope: scoring.ReportingScope) -> dict:
-    """Everything the template renders, from the ONE scope snapshot. Pure
-    data assembly — testable without WeasyPrint."""
+def build_report_context(scope: scoring.ReportingScope) -> dict:
+    """Everything the template renders, from the ONE detached scope snapshot
+    alone (no database access). Pure data assembly — testable without
+    WeasyPrint."""
     return {
         "scope": scope.meta(),
         "conformity": scoring.conformity_summary(scope),
         "register": scoring.risk_register(scope),
-        "trust": scoring.trust_panel(db, scope),
-        "soa": soa.soa_table(db, scope),
+        "trust": scoring.trust_panel(scope),
+        "soa": soa.soa_table(scope),
     }
 
 

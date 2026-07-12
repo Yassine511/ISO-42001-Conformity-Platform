@@ -27,6 +27,8 @@ export function makeScope(over: Partial<ReportingScopeMeta> = {}): ReportingScop
     scoring_policy_version: "m8-1",
     corpus_versions: ["1.3.0"],
     generated_at: "2026-07-12T12:00:00Z",
+    review_cutoff: "2026-07-12T12:00:00Z",
+    requirement_universe: ["4.1", "4.2"],
     included_assessment_ids: ["aid-1"],
     excluded_preliminary_assessment_ids: [],
     legacy_manifest_missing_ids: [],

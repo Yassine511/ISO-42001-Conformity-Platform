@@ -80,7 +80,7 @@ def test_context_and_html_render_without_weasyprint(db_session):
     """Assembly + Jinja render need no native libraries at all."""
     org_id, assessment_id = _seed(db_session)
     scope = scoring.build_reporting_scope(db_session, org_id, assessment_id)
-    context = report_pdf.build_report_context(db_session, scope)
+    context = report_pdf.build_report_context(scope)
     assert set(context) == {"scope", "conformity", "register", "trust", "soa"}
     html = report_pdf.render_report_html(context)
     assert "Rapport de conformité ISO/IEC 42001" in html
