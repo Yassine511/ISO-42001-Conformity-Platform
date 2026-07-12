@@ -18,9 +18,14 @@ frontend/dist/
 data/
 uploads/
 
+# Installed agent skills (npx skills add)
+.agents/
+skills-lock.json
+
 # IDE / OS
 .idea/
 .vscode/
+.claude/
 Thumbs.db
 .DS_Store
 *.tsbuildinfo
