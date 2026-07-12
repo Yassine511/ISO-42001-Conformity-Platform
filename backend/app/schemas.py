@@ -84,6 +84,16 @@ class SearchResult(BaseModel):
     domain: str | None = None
 
 
+class SoaDecisionBody(BaseModel):
+    """One SoA applicability decision (M8): mandatory French justification."""
+
+    applicable: bool
+    justification_fr: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
+    ]
+    editor_label: str | None = Field(default=None, max_length=200)
+
+
 class ChatAsk(BaseModel):
     question: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)

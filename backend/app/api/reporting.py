@@ -16,9 +16,11 @@ bump can never silently rescore an old report.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.db import SessionLocal
+from app.db import SessionLocal, get_db
 from app.models import Organization
+from app.schemas import SoaDecisionBody
 from app.services import scoring
+from app.services import soa as soa_service
 from app.services.scoring_policy import SCORING_POLICIES
 
 router = APIRouter(prefix="/api", tags=["reporting"])
@@ -96,6 +98,68 @@ def risk_register(
 ):
     scope = _build_scope(db, org_id, assessment_id, scoring_policy_version, include_preliminary)
     return scoring.risk_register(scope)
+
+
+@router.get("/organizations/{org_id}/reporting/soa")
+def soa(
+    org_id: str,
+    assessment_id: str | None = None,
+    scoring_policy_version: str | None = None,
+    include_preliminary: bool = False,
+    db: Session = Depends(get_reporting_db),
+):
+    scope = _build_scope(db, org_id, assessment_id, scoring_policy_version, include_preliminary)
+    return soa_service.soa_table(db, scope)
+
+
+@router.put("/organizations/{org_id}/reporting/soa/{control_id}")
+def put_soa_control(
+    org_id: str,
+    control_id: str,
+    body: SoaDecisionBody,
+    db: Session = Depends(get_db),
+):
+    """Record one immutable applicability decision (org row lock inside)."""
+    try:
+        projection = soa_service.record_decision(
+            db,
+            org_id,
+            control_id,
+            applicable=body.applicable,
+            justification_fr=body.justification_fr,
+            editor_label=body.editor_label,
+        )
+    except soa_service.SoaOrganizationNotFoundError:
+        raise HTTPException(404, "Organisation introuvable.")
+    except soa_service.SoaUnknownControlError:
+        raise HTTPException(404, "Contrôle Annexe A inconnu.")
+    return {
+        "control_id": projection.control_id,
+        "applicable": projection.applicable,
+        "justification_fr": projection.justification_fr,
+        "editor_label": projection.editor_label,
+        "decision_count": projection.decision_count,
+        "updated_at": projection.updated_at.isoformat(),
+    }
+
+
+@router.get("/organizations/{org_id}/reporting/soa/{control_id}/history")
+def soa_history(org_id: str, control_id: str, db: Session = Depends(get_db)):
+    _get_org(db, org_id)
+    try:
+        decisions = soa_service.decision_history(db, org_id, control_id)
+    except soa_service.SoaUnknownControlError:
+        raise HTTPException(404, "Contrôle Annexe A inconnu.")
+    return [
+        {
+            "sequence": d.sequence,
+            "applicable": d.applicable,
+            "justification_fr": d.justification_fr,
+            "editor_label": d.editor_label,
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in decisions
+    ]
 
 
 @router.get("/organizations/{org_id}/reporting/trust")

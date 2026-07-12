@@ -127,3 +127,50 @@ def test_reporting_session_is_read_only(pg_env):
     assert "read-only" in str(exc.value).lower()
     db.rollback()
     db.close()
+
+
+def test_concurrent_soa_puts_serialize_under_the_org_lock(pg_env):
+    """Two simultaneous decisions on one control: the organization row lock
+    serializes sequence allocation — both survive as history (1 then 2) and
+    the projection reflects exactly one of them; never a unique violation."""
+    import threading
+
+    from sqlalchemy import select
+
+    from app.models import SoaControl, SoaDecision
+    from app.services import soa as soa_service
+
+    session_factory, (org_id, _, _) = pg_env
+    barrier = threading.Barrier(2, timeout=10)
+    errors: list = []
+
+    def worker(applicable: bool) -> None:
+        db = session_factory()
+        try:
+            barrier.wait()
+            soa_service.record_decision(
+                db, org_id, "A.2.2",
+                applicable=applicable,
+                justification_fr=f"décision {applicable}",
+            )
+        except Exception as exc:  # noqa: BLE001 — collected for the assertion
+            errors.append(exc)
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=worker, args=(v,)) for v in (True, False)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    db = session_factory()
+    decisions = db.scalars(
+        select(SoaDecision).order_by(SoaDecision.sequence)
+    ).all()
+    assert [d.sequence for d in decisions] == [1, 2]
+    projection = db.scalars(select(SoaControl)).one()
+    assert projection.decision_count == 2
+    assert projection.applicable == decisions[-1].applicable
+    db.close()

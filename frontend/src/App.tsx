@@ -7,6 +7,7 @@ import RemediationListPage from "./pages/RemediationListPage";
 import RemediationCasePage from "./pages/RemediationCasePage";
 import DashboardPage from "./pages/DashboardPage";
 import RiskRegisterPage from "./pages/RiskRegisterPage";
+import SoaPage from "./pages/SoaPage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/organizations/:orgId/chat/:conversationId?" element={<ChatPage />} />
           <Route path="/organizations/:orgId/dashboard" element={<DashboardPage />} />
           <Route path="/organizations/:orgId/risk-register" element={<RiskRegisterPage />} />
+          <Route path="/organizations/:orgId/soa" element={<SoaPage />} />
           <Route path="/organizations/:orgId/remediation" element={<RemediationListPage />} />
           <Route
             path="/organizations/:orgId/remediation/:caseId"

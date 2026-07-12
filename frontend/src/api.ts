@@ -697,6 +697,49 @@ function reportingQuery(params?: ReportingParams): string {
   return s ? `?${s}` : "";
 }
 
+export interface SoaControlRow {
+  control_id: string;
+  domain: string;
+  domain_title_fr: string;
+  requirement_fr: string | null;
+  applicable: boolean;
+  justification_fr: string | null;
+  editor_label: string | null;
+  decision_count: number;
+  updated_at: string | null;
+  is_default: boolean;
+  status: "conforme" | "ecart" | "non_evalue";
+  human_verdict: Verdict | null;
+  in_scope: boolean;
+  finding_id: string | null;
+  assessment_id: string | null;
+  weight: number | null;
+  weight_source: "policy" | "unscored_weight";
+}
+
+export interface SoaTable {
+  scope: ReportingScopeMeta;
+  applicability_scope: "organization_current";
+  controls: SoaControlRow[];
+  domains: {
+    domain: string;
+    domain_title_fr: string;
+    controls: number;
+    applicable: number;
+    conforme: number;
+    ecart: number;
+    non_evalue: number;
+  }[];
+}
+
+export interface SoaDecision {
+  sequence: number;
+  applicable: boolean;
+  justification_fr: string;
+  editor_label: string | null;
+  created_at: string;
+}
+
 // Abstentions caused by provider infrastructure — rendered as neutral
 // service failures, never as amber "needs your judgment".
 export const INFRA_ABSTAIN_REASONS = ["llm_error", "rate_limited"] as const;
@@ -981,6 +1024,32 @@ export const api = {
   getRiskRegister: (orgId: string, params?: ReportingParams) =>
     fetch(`/api/organizations/${orgId}/reporting/risk-register${reportingQuery(params)}`).then(
       (r) => json<RiskRegister>(r),
+    ),
+
+  getSoa: (orgId: string, params?: ReportingParams) =>
+    fetch(`/api/organizations/${orgId}/reporting/soa${reportingQuery(params)}`).then((r) =>
+      json<SoaTable>(r),
+    ),
+  putSoaControl: (
+    orgId: string,
+    controlId: string,
+    body: { applicable: boolean; justification_fr: string; editor_label?: string },
+  ) =>
+    fetch(`/api/organizations/${orgId}/reporting/soa/${controlId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) =>
+      json<{
+        control_id: string;
+        applicable: boolean;
+        justification_fr: string;
+        decision_count: number;
+      }>(r),
+    ),
+  getSoaHistory: (orgId: string, controlId: string) =>
+    fetch(`/api/organizations/${orgId}/reporting/soa/${controlId}/history`).then((r) =>
+      json<SoaDecision[]>(r),
     ),
 
   // chat
