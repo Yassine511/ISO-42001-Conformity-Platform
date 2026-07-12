@@ -30,10 +30,6 @@ export default function DashboardPage() {
   const [assessmentId, setAssessmentId] = useState("");
   const [includePreliminary, setIncludePreliminary] = useState(false);
 
-  const params = {
-    assessmentId: assessmentId || undefined,
-    includePreliminary: includePreliminary || undefined,
-  };
   const assessments = useQuery({
     queryKey: ["assessments", orgId],
     queryFn: () => api.listAssessments(orgId!),
@@ -43,12 +39,20 @@ export default function DashboardPage() {
   // org mode (fold RUNNING/FAILED manifests in) AND a selected non-COMPLETED
   // assessment (without it the PDF button can only hit the designed 409)
   const preliminaryChoiceVisible = !assessmentId || (selected && selected.status !== "COMPLETED");
+  // the TRANSMITTED flag is derived from visibility: a stale checked value
+  // must never mark a COMPLETED assessment preliminary after a scope switch
+  const effectivePreliminary = preliminaryChoiceVisible ? includePreliminary : false;
+
+  const params = {
+    assessmentId: assessmentId || undefined,
+    includePreliminary: effectivePreliminary || undefined,
+  };
   const conformity = useQuery({
-    queryKey: ["conformity", orgId, assessmentId, includePreliminary],
+    queryKey: ["conformity", orgId, assessmentId, effectivePreliminary],
     queryFn: () => api.getConformity(orgId!, params),
   });
   const trust = useQuery({
-    queryKey: ["trust", orgId, assessmentId, includePreliminary],
+    queryKey: ["trust", orgId, assessmentId, effectivePreliminary],
     queryFn: () => api.getTrustPanel(orgId!, params),
   });
 

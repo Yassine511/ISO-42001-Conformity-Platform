@@ -167,6 +167,34 @@ describe("DashboardPage", () => {
     expect(link.getAttribute("href")).toContain("include_preliminary=true");
   });
 
+  it("drops a stale preliminary opt-in when switching to a COMPLETED assessment", async () => {
+    mocked.listAssessments.mockResolvedValue([
+      makeAssessment({ id: "aid-done", status: "COMPLETED" }),
+    ]);
+    renderPage();
+    await screen.findByText("75%");
+    // enable the opt-in in org mode…
+    await userEvent.click(screen.getByLabelText(/inclure les évaluations préliminaires/));
+    await waitFor(() =>
+      expect(mocked.getConformity).toHaveBeenLastCalledWith(
+        "org-1",
+        expect.objectContaining({ includePreliminary: true }),
+      ),
+    );
+    // …then select a COMPLETED assessment: the checkbox disappears AND the
+    // stale flag must not leak into the requests or the PDF link
+    await userEvent.selectOptions(screen.getByLabelText("Périmètre"), "aid-done");
+    expect(screen.queryByLabelText(/aperçu préliminaire/)).toBeNull();
+    await waitFor(() =>
+      expect(mocked.getConformity).toHaveBeenLastCalledWith(
+        "org-1",
+        expect.objectContaining({ assessmentId: "aid-done", includePreliminary: undefined }),
+      ),
+    );
+    const link = screen.getByRole("link", { name: /Exporter le rapport PDF/ });
+    expect(link.getAttribute("href")).not.toContain("include_preliminary");
+  });
+
   it("refetches with assessment_id when the scope selector changes", async () => {
     renderPage();
     await screen.findByText("75%");

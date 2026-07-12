@@ -547,3 +547,31 @@ def test_calculators_work_from_the_detached_scope_alone(db_session):
     assert trust["review"]["review_events"] == 0
     soa = soa_service.soa_table(scope)
     assert len(soa["controls"]) == 38
+
+
+def test_out_of_manifest_rows_never_contaminate_trust_telemetry(db_session):
+    """P2 regression: the manifest guard applies to trust telemetry too —
+    before the fix a rogue finding/attempt inflated findings_verified,
+    drafts_total and review_events past the scope's own contents."""
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["4.1"])
+    for rid in ("4.1", "5.1"):  # 5.1 is NOT in the manifest
+        fid = _finding(db_session, a, rid, human_verdict="compliant")
+        db_session.add(
+            FindingReview(finding_id=fid, sequence=1, action="approve", human_verdict="compliant")
+        )
+        db_session.add(
+            AssessmentAttempt(
+                assessment_id=a, requirement_id=rid, attempt_number=1,
+                prompt_version="p", parsed_ok=True, attempt_outcome="parsed",
+                verifier_error_codes=["citation_not_found"] if rid == "5.1" else [],
+            )
+        )
+    db_session.commit()
+    trust = scoring.trust_panel(_scope(db_session, org, assessment_id=a))
+    assert trust["gate"]["findings_verified"] == 1
+    assert trust["gate"]["drafts_total"] == 1
+    # the rogue attempt's codes are excluded from the histogram too
+    assert trust["gate"]["verifier_error_code_counts"] == {}
+    assert trust["gate"]["drafts_with_unsupported_citation"] == 0
+    assert trust["review"]["review_events"] == 1

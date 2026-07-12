@@ -168,6 +168,9 @@ class ReportingScope:
     # newest PENDING finding when nothing is confirmed (coverage status only)
     effective: dict[str, EffectiveFinding] = field(default_factory=dict)
     treatments: dict[str, Treatment] = field(default_factory=dict)  # by finding_id
+    # frozen manifest of each included assessment — the SAME membership guard
+    # applies to every consumer (effective findings AND trust telemetry)
+    included_manifests: dict[str, set] = field(default_factory=dict)
     # SoA current-state projection rows (control_id -> plain dict) — SoA and
     # register applicability flags read THIS, never the live table
     soa_projections: dict[str, dict] = field(default_factory=dict)
@@ -328,6 +331,7 @@ def build_reporting_scope(
         kb_total_requirements=len(kb["by_id"]),
         domain_titles=domain_titles,
         effective=effective,
+        included_manifests=manifests,
     )
     scope.treatments = _materialize_treatments(db, scope)
     scope.soa_projections = _materialize_soa_projections(db, scope)
@@ -612,8 +616,12 @@ def suggested_priority_for_action(
 def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
     """Trust-panel metrics computed AT BUILD TIME into plain data — the
     calculator (trust_panel) then works from the detached scope alone, like
-    every other section."""
+    every other section. The manifest guard applies here exactly as it does
+    to the effective findings: attempts/findings on a requirement outside
+    their OWN assessment's frozen manifest are out of scope for telemetry
+    too (they would otherwise inflate the gate counts and review rates)."""
     included = scope.included_assessment_ids
+    manifests = scope.included_manifests
 
     outcome_counts = {"parsed": 0, "schema_invalid": 0, "provider_failure": 0, "legacy_unclassified": 0}
     code_counts: dict[str, int] = {}
@@ -623,6 +631,8 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
         for attempt in db.scalars(
             select(AssessmentAttempt).where(AssessmentAttempt.assessment_id.in_(included))
         ):
+            if attempt.requirement_id not in manifests.get(attempt.assessment_id, ()):
+                continue
             outcome_counts[attempt.attempt_outcome] = (
                 outcome_counts.get(attempt.attempt_outcome, 0) + 1
             )
@@ -642,15 +652,22 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
     intervention_events = 0
     override_events = 0
     if included:
-        finding_rows = list(
-            db.execute(
+        finding_rows = [
+            r
+            for r in db.execute(
                 select(
-                    Finding.id, Finding.status, Finding.abstain_reason
+                    Finding.id,
+                    Finding.status,
+                    Finding.abstain_reason,
+                    Finding.assessment_id,
+                    Finding.requirement_id,
                 ).where(Finding.assessment_id.in_(included))
             )
-        )
+            if r[4] in manifests.get(r[3], ())
+        ]
+        # review events derive ONLY from the manifest-filtered findings
         finding_ids = [r[0] for r in finding_rows]
-        for _, status, reason in finding_rows:
+        for _, status, reason, _, _ in finding_rows:
             status_counts[status] = status_counts.get(status, 0) + 1
             if reason:
                 abstain_counts[reason] = abstain_counts.get(reason, 0) + 1
