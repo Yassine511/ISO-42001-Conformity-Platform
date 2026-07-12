@@ -116,6 +116,10 @@ class VerificationResult:
     ok: bool
     errors: list[str] = field(default_factory=list)        # all applicable errors
     repair_errors: list[str] = field(default_factory=list)  # errors fed to the retry
+    # M8 typed codes, parallel to `errors` (same order): clause_mismatch,
+    # missing_quote_incoherent, quote_missing, quote_too_short, quote_too_long,
+    # citation_not_found, citation_fuzzy, low_confidence
+    error_codes: list[str] = field(default_factory=list)
     match: QuoteMatch | None = None
     low_confidence: bool = False  # threshold miss — abstain without retry
 

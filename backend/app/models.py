@@ -566,6 +566,14 @@ class AssessmentAttempt(Base):
         UniqueConstraint(
             "assessment_id", "requirement_id", "attempt_number", name="uq_attempts_key"
         ),
+        # M8 typed telemetry: legacy_unclassified is a first-class value (a
+        # pre-0015 parsed_ok=False row cannot distinguish schema_invalid from
+        # provider_failure and is NEVER reclassified by string matching)
+        CheckConstraint(
+            "attempt_outcome IN ('parsed', 'schema_invalid', 'provider_failure', "
+            "'legacy_unclassified')",
+            name="ck_assessment_attempts_outcome",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -576,8 +584,18 @@ class AssessmentAttempt(Base):
     attempt_number: Mapped[int] = mapped_column(Integer)  # 1-based
     prompt_version: Mapped[str] = mapped_column(String(20))
     parsed_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    # M8 typed outcome, written by the judge (parsed | schema_invalid |
+    # provider_failure); 'legacy_unclassified' only via the 0015 backfill.
+    attempt_outcome: Mapped[str] = mapped_column(
+        String(20), default="legacy_unclassified",
+        server_default=text("'legacy_unclassified'"),
+    )
     # written by the VERIFY node (errors don't exist when the judge writes)
     verifier_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # M8 typed codes, parallel authority to verifier_errors: [] = verified
+    # attempt with no error; NULL = legacy row (codes unavailable) or the
+    # verify node has not completed this attempt.
+    verifier_error_codes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

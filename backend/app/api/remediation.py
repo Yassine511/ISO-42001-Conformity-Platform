@@ -26,6 +26,7 @@ from app.remediation.service import (
     RemediationNotFoundError,
 )
 from app.services.provenance import source_slice
+from app.services import scoring
 from app.schemas import (
     PatchDecisionBody,
     PatchProposalCreate,
@@ -118,9 +119,24 @@ def _action_payload(action, plan=None) -> dict:
     body["effective_requirement_ids"] = [
         r.requirement_id for r in action.requirements
     ]
+    plan = plan if plan is not None else action.plan
+    # M8 read-only severity-derived priority suggestion: the action's own
+    # scope (effective ids once reviewed, else the AI proposal) matched
+    # against the IMMUTABLE case-link snapshots; carries its policy version
+    # so a future policy bump cannot silently change the human prefill.
+    # Never persisted — the human priority decision stays mandatory.
+    body.update(
+        scoring.suggested_priority_for_action(
+            body["effective_requirement_ids"]
+            or list(action.ai_impacted_requirement_ids or []),
+            [
+                (link.finding_requirement_id, link.finding_human_verdict)
+                for link in plan.case.finding_links
+            ],
+        )
+    )
     source_quote = source_quote_error = None
     if action.matched_chunk_id is not None:
-        plan = plan if plan is not None else action.plan
         source = next(
             (
                 item

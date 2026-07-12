@@ -1053,3 +1053,65 @@ def test_persist_finding_refuses_terminal_assessment(env):
     db = session_factory()
     assert not db.scalars(select(Finding)).all()  # no finding leaked into COMPLETED
     db.close()
+
+
+# ---------------------------------------------------------------- M8 typed telemetry
+
+
+def test_typed_attempt_telemetry_across_failure_modes(env):
+    """Every newly created attempt carries a non-null attempt_outcome and,
+    once the verify node completes it, a non-null typed code list (M8 trust
+    panel input — 0015 contract)."""
+    session_factory, org_id = env
+
+    def _attempts(assessment_id):
+        db = session_factory()
+        rows = db.scalars(
+            select(AssessmentAttempt)
+            .where(AssessmentAttempt.assessment_id == assessment_id)
+            .order_by(AssessmentAttempt.attempt_number)
+        ).all()
+        db.close()
+        return rows
+
+    # success: parsed, empty code list
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id)
+    run_requirement(session_factory, aid, REQUIREMENT)
+    finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED)
+    (a,) = _attempts(aid)
+    assert (a.attempt_outcome, a.verifier_error_codes) == ("parsed", [])
+
+    # schema failure: schema_invalid, codes [] (verify() never ran)
+    _use(FakeLLM(["pas du json", "toujours pas"]))
+    aid = create_assessment(session_factory, org_id)
+    run_requirement(session_factory, aid, REQUIREMENT)
+    finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED)
+    for a in _attempts(aid):
+        assert (a.attempt_outcome, a.verifier_error_codes) == ("schema_invalid", [])
+
+    # provider failure: provider_failure, codes []
+    _use(FakeLLM([None]))
+    aid = create_assessment(session_factory, org_id)
+    run_requirement(session_factory, aid, REQUIREMENT)
+    finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED)
+    (a,) = _attempts(aid)
+    assert (a.attempt_outcome, a.verifier_error_codes) == ("provider_failure", [])
+
+    # citation failure: parsed drafts with the typed unsupported-citation code
+    fabricated = "Lumen AI garantit une supervision humaine permanente de tous les systèmes."
+    _use(FakeLLM([_valid_draft(quote=fabricated)] * 2))
+    aid = create_assessment(session_factory, org_id)
+    run_requirement(session_factory, aid, REQUIREMENT)
+    finalize_assessment(session_factory, aid, AssessmentStatus.COMPLETED)
+    for a in _attempts(aid):
+        assert a.attempt_outcome == "parsed"
+        assert a.verifier_error_codes == ["citation_not_found"]
+
+    # low confidence: parsed, provenance-only typed code, no retry
+    _use(FakeLLM([_valid_draft(confidence=0.2)]))
+    aid = create_assessment(session_factory, org_id)
+    run_requirement(session_factory, aid, REQUIREMENT)
+    (a,) = _attempts(aid)
+    assert a.attempt_outcome == "parsed"
+    assert a.verifier_error_codes == ["low_confidence"]

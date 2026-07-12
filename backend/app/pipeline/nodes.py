@@ -93,6 +93,15 @@ def make_retrieve_node(session_factory: SessionFactory):
 # ---------------------------------------------------------------- judge
 
 
+def _attempt_outcome(content: str | None, draft: dict | None) -> str:
+    """M8 typed outcome at the only site that can tell the failure kinds
+    apart: no content = every provider failed; content that would not parse
+    or validate = schema_invalid; otherwise parsed."""
+    if content is None:
+        return "provider_failure"
+    return "parsed" if draft is not None else "schema_invalid"
+
+
 def _parse_draft(content: str) -> tuple[dict | None, list[str]]:
     """Parse + strictly validate model output. Errors become retry feedback."""
     try:
@@ -181,7 +190,9 @@ def make_judge_node(session_factory: SessionFactory):
                     # it, and overwriting would falsify provenance.
                     attempt.prompt_version = PROMPT_VERSION
                 attempt.parsed_ok = draft is not None
+                attempt.attempt_outcome = _attempt_outcome(content, draft)
                 attempt.verifier_errors = None
+                attempt.verifier_error_codes = None
                 attempt.finished_at = None
             else:
                 attempt = AssessmentAttempt(
@@ -190,6 +201,7 @@ def make_judge_node(session_factory: SessionFactory):
                     attempt_number=attempt_number,
                     prompt_version=PROMPT_VERSION,
                     parsed_ok=draft is not None,
+                    attempt_outcome=_attempt_outcome(content, draft),
                     started_at=started,
                 )
                 db.add(attempt)
@@ -314,9 +326,14 @@ def _terminal_finding(state: GovernanceState, *, status: str, abstain_reason: st
 
 
 def _record_verifier_errors(
-    session_factory: SessionFactory, state: GovernanceState, errors: list[str]
+    session_factory: SessionFactory,
+    state: GovernanceState,
+    errors: list[str],
+    codes: list[str],
 ) -> None:
-    """The verify node completes the attempt row the judge opened."""
+    """The verify node completes the attempt row the judge opened. `codes`
+    is the typed mirror of `errors` ([] = completed with no verifier error;
+    paths where verify() never ran — provider/schema failures — pass [])."""
     db = session_factory()
     try:
         attempt = db.scalars(
@@ -328,6 +345,7 @@ def _record_verifier_errors(
         ).first()
         if attempt is not None:
             attempt.verifier_errors = errors
+            attempt.verifier_error_codes = codes
             attempt.finished_at = _now()
             db.commit()
     finally:
@@ -467,7 +485,7 @@ def make_verify_node(session_factory: SessionFactory):
                 errors=["tous les fournisseurs LLM ont échoué"],
                 match=QuoteMatch(**candidate) if candidate else None,
             )
-            _record_verifier_errors(session_factory, state, finding["errors"])
+            _record_verifier_errors(session_factory, state, finding["errors"], [])
             event = _audit("verify", "abstained", reason=reason)
             _persist_finding(session_factory, state, finding, audit_event=event)
             return {"finding": finding, "audit_log": [event]}
@@ -476,11 +494,13 @@ def make_verify_node(session_factory: SessionFactory):
         if draft_payload is None:
             # parse/schema failure — the judge pre-populated the errors
             errors = state.get("verification_errors") or ["réponse du modèle invalide"]
-            return _route_failure(session_factory, state, errors, repair_errors=errors)
+            return _route_failure(
+                session_factory, state, errors, repair_errors=errors, codes=[]
+            )
 
         draft = DraftFinding.model_validate(draft_payload)
         result = verify(draft, state.get("retrieved") or [], state["requirement_id"])
-        _record_verifier_errors(session_factory, state, result.errors)
+        _record_verifier_errors(session_factory, state, result.errors, result.error_codes)
 
         # Precedence 2: fully valid `missing` — the model abstaining is a
         # valid outcome, not an error. (An invalid `missing` — wrong clause —
@@ -527,7 +547,12 @@ def make_verify_node(session_factory: SessionFactory):
 
         # Precedence 5/6: retryable failure or exhausted retries.
         return _route_failure(
-            session_factory, state, result.errors, result.repair_errors, match=result.match
+            session_factory,
+            state,
+            result.errors,
+            result.repair_errors,
+            codes=result.error_codes,
+            match=result.match,
         )
 
     def _route_failure(
@@ -535,9 +560,10 @@ def make_verify_node(session_factory: SessionFactory):
         state: GovernanceState,
         errors: list[str],
         repair_errors: list[str],
+        codes: list[str],
         match=None,
     ) -> dict:
-        _record_verifier_errors(session_factory, state, errors)
+        _record_verifier_errors(session_factory, state, errors, codes)
         # keep the newest fuzzy candidate across retries: attempt 2 returning
         # malformed JSON must not lose attempt 1's near-match offsets
         fuzzy_candidate = (

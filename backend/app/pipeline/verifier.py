@@ -260,87 +260,90 @@ def verify(draft: DraftFinding, retrieved: list[dict], requirement_id: str) -> V
     """
     errors: list[str] = []
     repair_errors: list[str] = []
+    error_codes: list[str] = []  # M8 typed telemetry, parallel to `errors`
     match: QuoteMatch | None = None
     low_confidence = False
 
-    if draft.clause_ref != requirement_id:
-        msg = (
-            f"clause_ref invalide : « {draft.clause_ref} » ne correspond pas à "
-            f"l'exigence évaluée ; utilisez exactement « {requirement_id} »."
-        )
+    def _add(code: str, msg: str, *, repair: bool = True) -> None:
         errors.append(msg)
-        repair_errors.append(msg)
+        error_codes.append(code)
+        if repair:
+            repair_errors.append(msg)
+
+    if draft.clause_ref != requirement_id:
+        _add(
+            "clause_mismatch",
+            f"clause_ref invalide : « {draft.clause_ref} » ne correspond pas à "
+            f"l'exigence évaluée ; utilisez exactement « {requirement_id} ».",
+        )
 
     if draft.verdict == Verdict.MISSING:
         # the prompt contract requires a null quote with `missing`: a verdict
         # that claims "no evidence" while citing text is incoherent
         if (draft.policy_quote or "").strip():
-            msg = (
+            _add(
+                "missing_quote_incoherent",
                 "policy_quote incohérente : le verdict « missing » signifie "
-                "qu'aucune preuve n'existe ; policy_quote doit être null."
+                "qu'aucune preuve n'existe ; policy_quote doit être null.",
             )
-            errors.append(msg)
-            repair_errors.append(msg)
     else:
         quote = (draft.policy_quote or "").strip()
         if not quote:
-            msg = (
+            _add(
+                "quote_missing",
                 "policy_quote manquante : tout verdict autre que « missing » exige "
-                "une citation exacte extraite des extraits fournis."
+                "une citation exacte extraite des extraits fournis.",
             )
-            errors.append(msg)
-            repair_errors.append(msg)
         else:
             nq = normalize(quote)  # once; reused across every retrieved chunk
             nq_len = len(nq.text)
             if nq_len < MIN_QUOTE_LEN:
-                msg = (
+                _add(
+                    "quote_too_short",
                     f"policy_quote trop courte ({nq_len} caractères utiles) : "
-                    f"citez un passage d'au moins {MIN_QUOTE_LEN} caractères."
+                    f"citez un passage d'au moins {MIN_QUOTE_LEN} caractères.",
                 )
-                errors.append(msg)
-                repair_errors.append(msg)
             elif len(quote) > MAX_QUOTE_LEN:
-                msg = (
+                _add(
+                    "quote_too_long",
                     f"policy_quote trop longue ({len(quote)} caractères) : "
-                    f"maximum {MAX_QUOTE_LEN} caractères."
+                    f"maximum {MAX_QUOTE_LEN} caractères.",
                 )
-                errors.append(msg)
-                repair_errors.append(msg)
             else:
                 match = find_quote_in_retrieved(nq, retrieved)
                 if match is None:
-                    msg = (
+                    _add(
+                        "citation_not_found",
                         "citation introuvable : la policy_quote doit exister mot pour "
                         "mot dans les extraits fournis ; citez un passage verbatim, "
-                        "sans reformulation."
+                        "sans reformulation.",
                     )
-                    errors.append(msg)
-                    repair_errors.append(msg)
                 elif match.method != "exact":
                     # A fuzzy match is a candidate, not proof: mechanical typo
                     # forms can flip valid words (lire/lier, Date/Datte). Keep
                     # the match provenance, but require an exact re-quote.
-                    msg = (
+                    _add(
+                        "citation_fuzzy",
                         f"citation approximative (similarité {match.score:.1f}) : "
                         "la citation diffère légèrement du texte source ; recopie "
-                        "le passage EXACTEMENT, caractère par caractère."
+                        "le passage EXACTEMENT, caractère par caractère.",
                     )
-                    errors.append(msg)
-                    repair_errors.append(msg)
 
     if draft.confidence < CONFIDENCE_MIN:
         low_confidence = True
         # Provenance-only error: never sent to the model for repair.
-        errors.append(
+        _add(
+            "low_confidence",
             f"confiance {draft.confidence:.2f} sous le seuil de politique "
-            f"{CONFIDENCE_MIN} (seuil non calibré, télémesure M6)."
+            f"{CONFIDENCE_MIN} (seuil non calibré, télémesure M6).",
+            repair=False,
         )
 
     return VerificationResult(
         ok=not errors,
         errors=errors,
         repair_errors=repair_errors,
+        error_codes=error_codes,
         match=match,
         low_confidence=low_confidence,
     )
