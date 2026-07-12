@@ -4,8 +4,9 @@
     "language": "fr",
     "note": "Exigences atomiques PARAPHRASÉES dans nos propres mots. Aucun texte verbatim de la norme (le texte ISO est protégé par le droit d'auteur). Chaque entrée ne porte qu'une référence de clause vers la norme.",
     "version": "1.1",
-    "corpus_version": "1.2.0",
-    "granularity_note": "7.5, 9.2 et 9.3 sont volontairement représentées par une entrée unique (choix de granularité documenté dans corpus/README.md)."
+    "corpus_version": "1.3.0",
+    "granularity_note": "7.5, 9.2 et 9.3 sont volontairement représentées par une entrée unique (choix de granularité documenté dans corpus/README.md).",
+    "weight_note": "weight (1-3) : criticité M8 du contrôle pour la formule de sévérité (gap_factor x weight). 3 = socle risques/impacts, redevabilité de la direction, contrôles dont l'absence permet directement un préjudice ; 1 = contrôles purement documentaires/de communication ; 2 = défaut."
   },
   "requirements": [
     {
@@ -18,7 +19,8 @@
         "enjeux internes et externes",
         "rôle de l'organisation",
         "SMIA"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "4.2",
@@ -30,7 +32,8 @@
         "parties prenantes",
         "attentes",
         "exigences"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "4.3",
@@ -41,7 +44,8 @@
         "périmètre",
         "domaine d'application",
         "champ d'application"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "4.4",
@@ -52,7 +56,8 @@
         "système de management de l'IA",
         "processus",
         "amélioration continue"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "5.1",
@@ -64,7 +69,8 @@
         "engagement",
         "leadership",
         "ressources"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "5.2",
@@ -75,7 +81,8 @@
         "politique d'IA",
         "direction",
         "communication de la politique"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "5.3",
@@ -87,7 +94,8 @@
         "responsabilités",
         "autorités",
         "attribution"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "6.1.1",
@@ -98,7 +106,8 @@
         "risques et opportunités",
         "planification",
         "effets indésirables"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "6.1.2",
@@ -110,7 +119,8 @@
         "analyse de risque",
         "critères de risque",
         "identification des risques"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "6.1.3",
@@ -122,7 +132,8 @@
         "plan de traitement",
         "déclaration d'applicabilité",
         "contrôles"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "6.1.4",
@@ -134,7 +145,8 @@
         "impacts sur les individus",
         "impacts sociétaux",
         "conséquences"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "6.2",
@@ -146,7 +158,8 @@
         "planification",
         "indicateurs",
         "échéances"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "6.3",
@@ -157,7 +170,8 @@
         "planification des modifications",
         "gestion du changement",
         "changements du SMIA"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "7.1",
@@ -169,7 +183,8 @@
         "moyens",
         "budget",
         "allocation"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "7.2",
@@ -181,7 +196,8 @@
         "formation",
         "sensibilisation",
         "preuves de compétence"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "7.3",
@@ -192,7 +208,8 @@
         "sensibilisation",
         "politique d'IA",
         "personnel"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "7.4",
@@ -203,7 +220,8 @@
         "communication interne",
         "communication externe",
         "plan de communication"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "7.5",
@@ -215,7 +233,8 @@
         "gestion documentaire",
         "versions",
         "approbation"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "8.1",
@@ -227,7 +246,8 @@
         "processus",
         "changements",
         "externalisation"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "8.2",
@@ -238,7 +258,8 @@
         "appréciation des risques en exploitation",
         "intervalles planifiés",
         "changements significatifs"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "8.3",
@@ -249,7 +270,8 @@
         "mise en œuvre du traitement",
         "efficacité des contrôles",
         "plan de traitement"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "8.4",
@@ -260,7 +282,8 @@
         "évaluation d'impact en exploitation",
         "réévaluation",
         "changements significatifs"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "9.1",
@@ -272,7 +295,8 @@
         "mesure",
         "indicateurs de performance",
         "analyse"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "9.2",
@@ -283,7 +307,8 @@
         "audit interne",
         "programme d'audit",
         "conformité"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "9.3",
@@ -294,7 +319,8 @@
         "revue de direction",
         "efficacité",
         "décisions d'amélioration"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "10.1",
@@ -304,7 +330,8 @@
       "keywords_fr": [
         "amélioration continue",
         "efficacité"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "10.2",
@@ -315,7 +342,8 @@
         "non-conformité",
         "actions correctives",
         "causes racines"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.2.2",
@@ -326,7 +354,8 @@
         "politique d'IA",
         "document de politique",
         "principes directeurs"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.2.3",
@@ -338,7 +367,8 @@
         "cohérence",
         "sécurité de l'information",
         "RGPD"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.2.4",
@@ -349,7 +379,8 @@
         "revue de la politique",
         "révision périodique",
         "mise à jour"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.3.2",
@@ -361,7 +392,8 @@
         "responsabilités",
         "comité IA",
         "gouvernance"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.3.3",
@@ -373,7 +405,8 @@
         "préoccupations",
         "alerte",
         "canal de remontée"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.4.2",
@@ -384,7 +417,8 @@
         "documentation des ressources",
         "inventaire",
         "ressources IA"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.4.3",
@@ -395,7 +429,8 @@
         "ressources de données",
         "inventaire des données",
         "catégories de données"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.4.4",
@@ -407,7 +442,8 @@
         "bibliothèques",
         "composants logiciels",
         "plateformes"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.4.5",
@@ -419,7 +455,8 @@
         "infrastructure",
         "hébergement",
         "capacités"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.4.6",
@@ -433,7 +470,8 @@
         "équipes",
         "déclassement",
         "transfert"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.5.2",
@@ -444,7 +482,8 @@
         "processus d'évaluation d'impact",
         "impacts potentiels",
         "déclencheurs"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.5.3",
@@ -455,7 +494,8 @@
         "documentation des impacts",
         "conservation",
         "résultats d'évaluation"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.5.4",
@@ -467,7 +507,8 @@
         "équité",
         "discrimination",
         "vie privée"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.5.5",
@@ -478,7 +519,8 @@
         "impacts sociétaux",
         "environnement",
         "société"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.6.1.2",
@@ -490,7 +532,8 @@
         "objectifs de conception",
         "équité",
         "transparence"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.6.1.3",
@@ -501,7 +544,8 @@
         "processus de développement",
         "conception responsable",
         "cycle de vie"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.6.2.2",
@@ -512,7 +556,8 @@
         "exigences",
         "spécifications",
         "cahier des charges"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.6.2.3",
@@ -523,7 +568,8 @@
         "documentation de conception",
         "architecture",
         "choix de modèle"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.6.2.4",
@@ -535,7 +581,8 @@
         "validation",
         "tests",
         "critères d'acceptation"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.6.2.5",
@@ -546,7 +593,8 @@
         "déploiement",
         "mise en production",
         "plan de déploiement"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.6.2.6",
@@ -561,7 +609,8 @@
         "mises à jour",
         "assistance",
         "maintenance"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.6.2.7",
@@ -572,7 +621,8 @@
         "documentation technique",
         "notice",
         "mise à disposition"
-      ]
+      ],
+      "weight": 1
     },
     {
       "id": "A.6.2.8",
@@ -585,7 +635,8 @@
         "traçabilité",
         "enregistrement des événements",
         "phases du cycle de vie"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.7.2",
@@ -596,7 +647,8 @@
         "gestion des données",
         "données de développement",
         "processus de données"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.7.3",
@@ -608,7 +660,8 @@
         "sources",
         "collecte",
         "droits d'utilisation"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.7.4",
@@ -620,7 +673,8 @@
         "exigences de qualité",
         "exactitude",
         "représentativité"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.7.5",
@@ -632,7 +686,8 @@
         "traçabilité",
         "lignage",
         "origine"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.7.6",
@@ -644,7 +699,8 @@
         "nettoyage",
         "annotation",
         "transformation"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.8.2",
@@ -655,7 +711,8 @@
         "information des utilisateurs",
         "documentation utilisateur",
         "limites du système"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.8.3",
@@ -666,7 +723,8 @@
         "signalement externe",
         "effets négatifs",
         "réclamations"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.8.4",
@@ -677,7 +735,8 @@
         "communication d'incident",
         "notification",
         "plan de communication"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.8.5",
@@ -688,7 +747,8 @@
         "obligations d'information",
         "autorités",
         "parties intéressées"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.9.2",
@@ -699,7 +759,8 @@
         "utilisation responsable",
         "règles d'usage",
         "supervision humaine"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.9.3",
@@ -710,7 +771,8 @@
         "objectifs d'utilisation",
         "usage éthique",
         "transparence"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.9.4",
@@ -721,7 +783,8 @@
         "usage prévu",
         "conformité d'usage",
         "détournement"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.10.2",
@@ -732,7 +795,8 @@
         "répartition des responsabilités",
         "tiers",
         "chaîne de responsabilité"
-      ]
+      ],
+      "weight": 2
     },
     {
       "id": "A.10.3",
@@ -744,7 +808,8 @@
         "due diligence",
         "exigences contractuelles",
         "sous-traitance"
-      ]
+      ],
+      "weight": 3
     },
     {
       "id": "A.10.4",
@@ -755,7 +820,8 @@
         "clients",
         "attentes des clients",
         "exigences clients"
-      ]
+      ],
+      "weight": 1
     }
   ]
 }

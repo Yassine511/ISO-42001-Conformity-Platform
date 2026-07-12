@@ -10,7 +10,7 @@
       "missing"
     ],
     "version": "1.2",
-    "corpus_version": "1.2.0",
+    "corpus_version": "1.3.0",
     "splits": {
       "dev": "réglage des prompts, de la récupération et des seuils",
       "test": "réservé au rapport final M6 — jamais utilisé pour régler quoi que ce soit"

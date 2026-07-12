@@ -59,6 +59,22 @@ exigerait une seconde organisation jamais vue (travail futur, cf. rapport).
 `corpus_version` (identique dans la KB et le gold, vérifié par le validateur) fige la version
 du corpus utilisée pour chaque run d'évaluation rapporté.
 
+## Poids des contrôles (M8, corpus v1.3.0)
+
+Chaque exigence de la KB porte un `weight` (1|2|3), entrée de la formule de sévérité M8
+(`gap_factor × weight`). Barème :
+
+- **3** — socle risques/impacts, redevabilité de la direction, contrôles dont l'absence
+  permet directement un préjudice (qualité/provenance des données, supervision humaine,
+  vérification & validation avant mise en service, prévention du détournement d'usage,
+  due diligence fournisseurs, boucle d'action corrective) ;
+- **1** — contrôles purement documentaires, d'inventaire ou de communication ;
+- **2** — défaut (contrôles opérationnels/processus).
+
+Le validateur exige la présence du champ. Les rapports M8 résolvent les poids via le registre
+immuable `backend/app/services/scoring_policy.py` (politique `m8-1`, copie archivée de ces
+valeurs), jamais via la KB vivante — un bump ultérieur ne rescore donc jamais l'historique.
+
 ## Contrat du gold set
 
 `evidence_quote_fr` est une **sous-chaîne verbatim** (≤ 300 caractères, comparaison après

@@ -5,16 +5,18 @@ be run, reviewed or tuned against during M2-M5. Runtime code therefore never
 reads corpus/gold/gold_labels.json (which would couple the API to gold-label
 membership); this literal list is the only manifest M5 runs can draw from.
 
-Provenance: extracted from corpus/gold/gold_labels.json (corpus_version 1.2.0,
-split == "dev"), in gold order. tests/test_pipeline.py cross-checks this list
-against the gold file so it cannot silently drift.
+Provenance: extracted from corpus/gold/gold_labels.json (originally at
+corpus_version 1.2.0, split == "dev"), in gold order. The 1.3.0 bump (M8) added
+per-requirement control weights only — the split membership is unchanged.
+tests/test_pipeline.py cross-checks this list against the gold file so it
+cannot silently drift.
 
 create_assessment() rejects any id outside this list unless called with
 allow_holdout=True — a keyword no HTTP route exposes; the M6 evaluation script
 is its only intended caller, after the implementation freeze.
 """
 
-DEV_SPLIT_CORPUS_VERSION = "1.2.0"
+DEV_SPLIT_CORPUS_VERSION = "1.3.0"
 
 DEV_REQUIREMENT_IDS: list[str] = [
     "A.2.2",

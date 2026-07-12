@@ -242,6 +242,10 @@ KB and gold (validator-enforced). Gold `evidence_quote_fr` must be a verbatim NF
 document — **any edit to a corpus document must be followed by `scripts/validate_corpus.py`**; a
 broken quote is a blocking error. 11 requirements are deliberately uncovered corpus-wide (the correct
 system answer is abstention). Conventions and verdict semantics: `corpus/README.md`.
+Mainline is corpus **v1.3.0** (M8): each KB requirement carries a control `weight` (1|2|3,
+validator-enforced) — but M8 reporting resolves weights through the immutable policy registry
+`backend/app/services/scoring_policy.py` (m8-1), never the live KB, so history stays reproducible.
+The published M6 result stays frozen at v1.2.0 (`m6-freeze` tag).
 
 **Copyright constraint:** the ISO 42001 text is copyrighted. The KB contains only paraphrases with
 clause references; never commit standard text to the repo (the validator flags paraphrases > 400

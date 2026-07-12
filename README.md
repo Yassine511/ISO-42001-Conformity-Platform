@@ -122,6 +122,10 @@ deliberately uncovered requirements — the system asserts authentic-but-irrelev
 instead of abstaining (0/3 pipeline, 1/3 chat); human review (M5) and remediation (M7) are
 the designed countermeasures. Dev diagnostics (n=51) reported separately, never aggregated.
 
+Note: mainline moved to corpus v1.3.0 for M8 (per-requirement control `weight` metadata only —
+requirement text, gold labels and the dev/test split are unchanged). The published M6 result
+above remains frozen at v1.2.0 under the `m6-freeze` tag.
+
 ## Frontend + HITL (M5)
 
 Three French UI pages on `http://localhost:5173` (`docker compose up --build -d`):

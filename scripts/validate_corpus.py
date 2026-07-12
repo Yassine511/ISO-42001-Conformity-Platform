@@ -24,6 +24,7 @@ DOCS_DIR = ROOT / "corpus" / "documents"
 
 ALLOWED_DOMAINS = {"4", "5", "6", "7", "8", "9", "10"} | {f"A.{i}" for i in range(2, 11)}
 ALLOWED_VERDICTS = {"compliant", "partial", "non_compliant", "missing"}
+ALLOWED_WEIGHTS = {1, 2, 3}  # M8 control weight (severity = gap_factor x weight)
 MAX_REQUIREMENT_CHARS = 400  # verbatim-ISO guard: paraphrases must stay short
 MAX_QUOTE_CHARS = 300
 
@@ -51,6 +52,11 @@ def check_kb(kb: dict) -> tuple[list[str], set[str]]:
             )
         if not entry.get("keywords_fr"):
             errors.append(f"KB {rid}: keywords_fr manquants")
+        # M8 control weight: required, small closed scale (severity formula input)
+        if entry.get("weight") not in ALLOWED_WEIGHTS:
+            errors.append(
+                f"KB {rid}: weight invalide {entry.get('weight')!r} (attendu 1, 2 ou 3)"
+            )
     return errors, ids
 
 
