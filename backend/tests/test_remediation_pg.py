@@ -26,10 +26,12 @@ from app.models import (
     RemediationCase,
     RemediationCaseFinding,
     RemediationEvent,
+    RemediationReassessment,
 )
 from app.pipeline import llm as llm_service
 from app.remediation import actions as actions_module
 from app.remediation import planner as planner_module
+from app.remediation import reassessment as reassessment_module
 from app.remediation import service as service_module
 from app.remediation.service import RemediationConflictError
 from app.services.parsing import PARSER_VERSION
@@ -649,4 +651,64 @@ def test_supersede_upload_authority_lost_between_tx_a_and_tx_b_pg(pg_env):
     assert cand.state == "ABANDONED" and cand.abandoned_reason == "authority_lost"
     assert base.state == "ACTIVE"  # the base version was never displaced
     assert doc.current_version_id == base_vid
+    db.close()
+
+
+def test_concurrent_reassessment_finalizers_single_terminal_event(pg_env):
+    """Two simultaneous finalizers of the same PENDING reassessment record
+    (the crash-recovery race): the case row lock serializes them, and the
+    PENDING -> terminal compare-and-set makes the loser a no-op. Exactly one
+    reassessment_launched event is appended and the status is not rewritten.
+    Without the CAS guard the second finalizer duplicates the event."""
+    session_factory, org_id, finding_id = pg_env
+    case_id = _approved_case(session_factory, org_id, finding_id)
+
+    db = session_factory()
+    record = RemediationReassessment(
+        case_id=case_id,
+        planned_assessment_id=str(uuid.uuid4()),
+        selected_action_ids=[],
+        included_requirement_ids=["A.9.2"],
+        excluded_holdout_ids=[],
+        status="PENDING",
+    )
+    db.add(record)
+    db.commit()
+    record_id = record.id
+    db.close()
+
+    barrier = threading.Barrier(2, timeout=10)
+
+    def worker() -> None:
+        db = session_factory()
+        try:
+            barrier.wait()
+            reassessment_module._finalize(
+                db, org_id, case_id, record_id, "LAUNCHED", None, None
+            )
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    db = session_factory()
+    row = db.get(RemediationReassessment, record_id)
+    assert row.status == "LAUNCHED"
+    launched = db.scalars(
+        select(RemediationEvent).where(
+            RemediationEvent.case_id == case_id,
+            RemediationEvent.event_type == "reassessment_launched",
+        )
+    ).all()
+    assert len(launched) == 1  # the CAS collapsed the duplicate
+    events = db.scalars(
+        select(RemediationEvent)
+        .where(RemediationEvent.case_id == case_id)
+        .order_by(RemediationEvent.sequence)
+    ).all()
+    assert [e.sequence for e in events] == list(range(1, len(events) + 1))
     db.close()

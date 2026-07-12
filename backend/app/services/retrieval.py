@@ -78,8 +78,18 @@ def drop_stale_points(stale_point_ids: list) -> None:
     """Post-commit cleanup of stale Qdrant points. A failure here is
     reconciliation debt, not a correctness problem: orphan vectors can never
     surface (search hydrates from PG/KB and discards unknown ids) and the next
-    /index reconciles them away."""
-    qdrant.delete_points_by_ids(stale_point_ids)
+    /index reconciles them away. Because the authoritative PG state is already
+    committed by every caller, a Qdrant failure here must never propagate (it
+    would misreport a succeeded /index as a 503) — swallow and log."""
+    try:
+        qdrant.delete_points_by_ids(stale_point_ids)
+    except Exception:  # pragma: no cover - best-effort cleanup
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "stale-point cleanup failed after commit; next /index reconciles",
+            exc_info=True,
+        )
 
 
 def materialize_version_chunks(db: Session, version: DocumentVersion) -> list[Chunk]:

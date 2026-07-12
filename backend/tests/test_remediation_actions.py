@@ -8,6 +8,7 @@ from app.models import (
     Assessment,
     RemediationAction,
     RemediationActionRequirement,
+    RemediationCase,
     RemediationReassessment,
 )
 from app.pipeline import llm as llm_service
@@ -80,6 +81,45 @@ def _to_done(client, org_id, case_id, action_id):
 
 
 # ------------------------------------------------------------------- review
+
+
+def test_action_mutation_blocked_while_case_planning(client, plan_case):
+    """Finding 1 TOCTOU: while a draft holds the case in PLANNING (its lock is
+    released during the LLM phase), a concurrent request must not mutate an
+    active-plan action — otherwise phase 3 supersedes the just-approved action
+    into inert history. _operable_action rejects with 409; PLAN_READY works."""
+    org_id, case_id, action_id = plan_case
+
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    db = client.session_factory()
+    case = db.get(RemediationCase, case_id)
+    assert case.status == "PLAN_READY"
+    # a coherent live PLANNING lease (ck_remediation_cases_lease_coherence)
+    case.status = "PLANNING"
+    case.planning_token = "jeton-concurrent"
+    case.planning_started_at = now
+    case.planning_heartbeat_at = now
+    db.commit()
+    db.close()
+
+    r = _review(client, org_id, case_id, action_id, action="approve", priority="haute")
+    assert r.status_code == 409
+    assert "Rédaction de plan en cours" in r.text
+
+    # the very same approval succeeds once drafting has finished (PLAN_READY)
+    db = client.session_factory()
+    case = db.get(RemediationCase, case_id)
+    case.status = "PLAN_READY"
+    case.planning_token = None
+    case.planning_started_at = None
+    case.planning_heartbeat_at = None
+    db.commit()
+    db.close()
+    assert _review(
+        client, org_id, case_id, action_id, action="approve", priority="haute"
+    ).status_code == 200
 
 
 def test_approve_requires_priority_and_snapshots_ai_values(client, plan_case):
@@ -472,6 +512,54 @@ def test_pending_resume_blocked_by_running_org_stays_pending(client, plan_case):
     db.close()
     (record,) = client.get(_url(org_id, case_id, "/reassessments")).json()
     assert record["status"] == "PENDING"
+
+
+def test_finalize_is_idempotent_pending_cas(client, plan_case):
+    """A stale second finalizer (concurrent reconciler under the same case
+    lock) must not rewrite the terminal status nor append a duplicate
+    reassessment_launched event — PENDING -> terminal is a compare-and-set."""
+    from app.remediation import reassessment as reassessment_module
+
+    org_id, case_id, action_id = plan_case
+    _to_done(client, org_id, case_id, action_id)
+
+    db = client.session_factory()
+    record = RemediationReassessment(
+        case_id=case_id,
+        planned_assessment_id="id-cas-idempotent",
+        selected_action_ids=[action_id],
+        included_requirement_ids=["A.9.2"],
+        excluded_holdout_ids=[],
+        status="PENDING",
+    )
+    db.add(record)
+    db.commit()
+    record_id = record.id
+    db.close()
+
+    # first finalizer wins
+    db = client.session_factory()
+    reassessment_module._finalize(db, org_id, case_id, record_id, "LAUNCHED", None, None)
+    db.close()
+
+    # stale second finalizer: the guard makes it a no-op
+    db = client.session_factory()
+    reassessment_module._finalize(
+        db, org_id, case_id, record_id, "LAUNCH_FAILED", "stale", None
+    )
+    db.close()
+
+    detail = client.get(_url(org_id, case_id)).json()
+    launched = [
+        e for e in detail["events"] if e["event_type"] == "reassessment_launched"
+    ]
+    assert len(launched) == 1  # no duplicate audit event
+
+    db = client.session_factory()
+    rec = db.get(RemediationReassessment, record_id)
+    assert rec.status == "LAUNCHED"  # terminal state not rewritten
+    assert rec.error is None
+    db.close()
 
 
 def test_runner_launch_false_treated_as_launched(client, plan_case, monkeypatch):

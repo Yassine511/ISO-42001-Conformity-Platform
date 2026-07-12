@@ -189,6 +189,13 @@ def _finalize(
     db.rollback()
     lock_case(db, org_id, case_id)
     record = db.get(RemediationReassessment, record_id)
+    # Idempotent PENDING -> terminal compare-and-set: a concurrent reconciler
+    # may have already finalized this record under the same case lock. Without
+    # this guard, the second finalizer rewrites the terminal status and appends
+    # a duplicate reassessment_launched event.
+    if record.status != "PENDING":
+        db.rollback()
+        return record
     record.status = status
     record.error = error
     append_event(

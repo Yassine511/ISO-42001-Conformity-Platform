@@ -412,6 +412,53 @@ def test_index_report_flags_stale_parser(client):
     assert report["stale_parser"] == ["data.txt"]
 
 
+def test_index_tolerates_post_commit_cleanup_failure(client, monkeypatch):
+    """Finding 4 regression: a Qdrant failure during POST-COMMIT stale-point
+    cleanup must NOT surface as a 503. PostgreSQL is already committed
+    (authoritative), so /index returns its report and search still works — the
+    orphan points are reconciliation debt for the next /index. Contrast
+    test_retrieval_endpoints_return_503_on_qdrant_errors, which covers the
+    PRE-commit failure that correctly stays a 503."""
+    from qdrant_client import models as qm
+
+    from app.config import settings
+    from app.services import embeddings as emb
+    from app.services import qdrant as q
+    from app.services import retrieval as retrieval_service
+
+    org_id, docs = _setup_org(client)
+    assert client.post(f"/api/organizations/{org_id}/index").status_code == 200
+
+    # plant an orphan so the next /index has a non-empty stale set to drop
+    q.get_client().upsert(
+        collection_name=settings.qdrant_collection,
+        points=[
+            qm.PointStruct(
+                id=42,
+                vector=emb.embed_texts(["orphelin"])[0],
+                payload={"source_type": "policy", "result_id": "ghost", "org_id": org_id},
+            )
+        ],
+        wait=True,
+    )
+
+    def boom(ids):
+        raise RuntimeError("qdrant delete indisponible")
+
+    monkeypatch.setattr(retrieval_service.qdrant, "delete_points_by_ids", boom)
+
+    # the authoritative PG commit already succeeded: /index returns 200, not 503
+    r = client.post(f"/api/organizations/{org_id}/index")
+    assert r.status_code == 200, r.text
+
+    # authoritative state preserved: search still hydrates the indexed policy
+    results = client.post(
+        f"/api/organizations/{org_id}/search",
+        json={"query": "provenance des données d'entraînement", "k": 1},
+    ).json()
+    assert results and results[0]["source_type"] == "policy"
+
+
 def test_reconciliation_handles_int_ids_and_noncanonical_duplicates(client):
     """Audit R3 P1: delete by RAW point id (int 42 != '42'), and purge a
     non-canonical point that claims a VALID desired result_id."""

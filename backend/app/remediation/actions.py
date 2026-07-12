@@ -68,11 +68,24 @@ def _operable_action(
 ) -> RemediationAction:
     """Resolve an action under the active-plan authority invariant. The case
     lock is already held by the caller. A CLOSED case is immutable except
-    through reopen."""
+    through reopen; a PLANNING case is mid-draft and its plan snapshot must
+    stay frozen (see below)."""
     if case.status == "CLOSED":
         db.rollback()
         raise RemediationConflictError(
             "Cas clôturé : rouvrez-le avant toute opération sur ses actions."
+        )
+    if case.status == "PLANNING":
+        # A draft releases the case lock during its LLM phase, then phase 3
+        # supersedes the active plan after re-checking only the planning
+        # token/lease. Mutating an active-plan action in that window would let
+        # a just-approved (or lifecycle-advanced) action be silently superseded
+        # into inert history. Reject the mutation immediately (409) so the
+        # plan snapshot stays stable for the whole draft.
+        db.rollback()
+        raise RemediationConflictError(
+            "Rédaction de plan en cours : les actions ne peuvent pas être "
+            "modifiées tant que le plan n'est pas finalisé."
         )
     action = db.get(RemediationAction, action_id)
     if action is None:
