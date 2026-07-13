@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { AppSidebar, NAV_ITEMS } from "@/components/app-sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { PageFade } from "@/components/motion";
 
 /** Shell for every /organizations/:orgId route: sidebar + header + content.
     The copilot route is full-bleed (its own internal scroll); other pages get
@@ -49,23 +51,25 @@ export function AppShell() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="flex h-svh flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <SidebarTrigger className="-ml-1" aria-label="Basculer la barre latérale" />
           <Separator orientation="vertical" className="mr-1 !h-4" />
-          <span className="text-sm font-medium">{section}</span>
-          <div className="ml-auto">
+          <span className="truncate text-sm font-medium tracking-tight">{section}</span>
+          <div className="ml-auto flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 text-muted-foreground"
+              className="h-9 gap-2 rounded-full px-3 text-muted-foreground sm:w-56 sm:justify-start"
+              aria-label="Rechercher"
               onClick={() => setCommandOpen(true)}
             >
               <Search className="size-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Rechercher…</span>
-              <kbd className="pointer-events-none hidden rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:inline-block">
+              <kbd className="pointer-events-none ml-auto hidden rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:inline-block">
                 Ctrl K
               </kbd>
             </Button>
+            <ThemeToggle />
           </div>
         </header>
 
@@ -75,9 +79,9 @@ export function AppShell() {
           </div>
         ) : (
           <main className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">
+            <PageFade key={pathname} className="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
               <Outlet />
-            </div>
+            </PageFade>
           </main>
         )}
       </SidebarInset>

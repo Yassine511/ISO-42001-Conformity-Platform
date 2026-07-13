@@ -16,6 +16,14 @@ const badgeVariants = cva(
           "bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // semantic status accents — the only color allowed in the monochrome UI
+        success:
+          "border-success/25 bg-success/10 text-success dark:bg-success/15",
+        warning:
+          "border-warning/30 bg-warning/10 text-warning-foreground dark:bg-warning/15 dark:text-warning",
+        danger:
+          "border-destructive/25 bg-destructive/10 text-destructive dark:bg-destructive/15",
+        neutral: "border-border bg-muted text-muted-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
       },

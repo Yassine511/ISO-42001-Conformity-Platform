@@ -126,37 +126,39 @@ export default function ChatPage() {
           e.preventDefault();
           submit();
         }}
-        className="rounded-2xl border bg-card shadow-sm focus-within:border-ring/60"
+        className="rounded-3xl border bg-card p-1.5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition-shadow duration-300 focus-within:border-ring/60 focus-within:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.18)]"
       >
-        <label className="block">
-          <span className="sr-only">Votre question</span>
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            rows={2}
-            disabled={ask.isPending}
-            placeholder="Votre question…"
-            className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-          />
-        </label>
-        <div className="flex items-center gap-2 px-2.5 pb-2.5">
-          <DocumentsPopover orgId={orgId!} />
-          <ModeToggle kbOnly={kbOnly} onChange={setKbOnly} />
-          <Button
-            type="submit"
-            size="icon"
-            aria-label="Envoyer"
-            disabled={ask.isPending || !question.trim()}
-            className="ml-auto rounded-full"
-          >
-            <ArrowUp className="size-4" aria-hidden="true" />
-          </Button>
+        <div className="rounded-[calc(1.5rem-0.375rem)] bg-background/40">
+          <label className="block">
+            <span className="sr-only">Votre question</span>
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              rows={2}
+              disabled={ask.isPending}
+              placeholder="Votre question…"
+              className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+            />
+          </label>
+          <div className="flex items-center gap-2 px-2.5 pb-2.5">
+            <DocumentsPopover orgId={orgId!} />
+            <ModeToggle kbOnly={kbOnly} onChange={setKbOnly} />
+            <Button
+              type="submit"
+              size="icon"
+              aria-label="Envoyer"
+              disabled={ask.isPending || !question.trim()}
+              className="ml-auto size-11 rounded-full transition-transform duration-200 active:scale-95"
+            >
+              <ArrowUp className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       </form>
       {askError && <p className="text-sm text-destructive">{askError}</p>}
@@ -171,13 +173,16 @@ export default function ChatPage() {
   return (
     <div className="flex h-full min-h-0">
       {/* conversations rail (desktop) */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r lg:flex">
-        <div className="p-3">
-          <Button asChild variant="outline" className="w-full justify-start">
+      <aside className="hidden w-72 shrink-0 flex-col border-r bg-sidebar/50 lg:flex">
+        <div className="space-y-2 p-4">
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Conversations
+          </p>
+          <Button asChild variant="outline" className="w-full justify-start rounded-xl">
             <Link to={`/organizations/${orgId}/chat`}>+ Nouvelle conversation</Link>
           </Button>
         </div>
-        <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3" aria-label="Conversations">
+        <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 pb-4" aria-label="Conversations">
           {conversations.data?.map((c) => (
             <li key={c.id}>
               <Link
@@ -203,7 +208,7 @@ export default function ChatPage() {
         <div className="flex items-center gap-2 border-b px-4 py-2 lg:hidden">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="min-h-11">
                 <History className="size-4" aria-hidden="true" />
                 Conversations
               </Button>
@@ -252,12 +257,12 @@ export default function ChatPage() {
           </>
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4">
-            <div className="w-full max-w-2xl space-y-6 py-10">
-              <div className="space-y-2 text-center">
-                <h1 className="text-2xl font-semibold tracking-tight">
+            <div className="w-full max-w-2xl space-y-8 py-10">
+              <div className="space-y-3 text-center">
+                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
                   Copilote — questions sur vos politiques
                 </h1>
-                <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+                <p className="mx-auto max-w-lg text-sm leading-relaxed text-muted-foreground">
                   Les réponses sont des brouillons IA : chaque citation est localisée dans vos
                   documents par du code déterministe — sa pertinence reste à confirmer par vous.
                 </p>
@@ -269,7 +274,7 @@ export default function ChatPage() {
                     key={s}
                     type="button"
                     onClick={() => setQuestion(s)}
-                    className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    className="min-h-11 rounded-full border px-4 text-xs text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                   >
                     {s}
                   </button>
@@ -363,7 +368,7 @@ function DocumentsPopover({ orgId }: { orgId: string }) {
           variant="outline"
           size="icon"
           aria-label="Ajouter des documents"
-          className="rounded-full"
+          className="size-11 rounded-full"
         >
           <Plus className="size-4" aria-hidden="true" />
         </Button>

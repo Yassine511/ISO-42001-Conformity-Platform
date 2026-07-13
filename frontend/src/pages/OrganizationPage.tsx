@@ -1,19 +1,26 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, FileText, FileUp, Trash2 } from "lucide-react";
+import { ArrowRight, FileText, FileUp, MoreHorizontal, Play, Trash2 } from "lucide-react";
 import { api, type Assessment, type Doc } from "../api";
 import { AssessmentStatusBadge } from "../components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 
-const STATUS_STYLES: Record<Doc["status"], string> = {
-  parsed: "bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300",
-  uploaded: "bg-amber-100 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-400/10 dark:text-red-300",
+const STATUS_VARIANTS: Record<Doc["status"], "success" | "warning" | "danger"> = {
+  parsed: "success",
+  uploaded: "warning",
+  failed: "danger",
 };
 
 const STATUS_LABELS: Record<Doc["status"], string> = {
@@ -32,7 +39,11 @@ const NODE_LABELS: Record<string, string> = {
 export default function OrganizationPage() {
   const { orgId } = useParams<{ orgId: string }>();
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
+      <PageHeader
+        title="Évaluations & documents"
+        description="Téléversez vos documents de politique, préparez-les pour l'évaluation, puis lancez et suivez les évaluations de conformité."
+      />
       <DocumentsSection orgId={orgId!} />
       <AssessmentsSection orgId={orgId!} />
     </div>
@@ -84,11 +95,13 @@ function DocumentsSection({ orgId }: { orgId: string }) {
   );
 
   return (
-    <section className="space-y-6">
-      <PageHeader
-        title="Documents de politique"
-        description="PDF, DOCX, TXT ou Markdown — 20 Mo maximum par fichier."
-      />
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">Bibliothèque documentaire</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          PDF, DOCX, TXT ou Markdown — 20 Mo maximum par fichier.
+        </p>
+      </div>
 
       <div
         onDragOver={(e) => {
@@ -102,17 +115,19 @@ function DocumentsSection({ orgId }: { orgId: string }) {
           handleFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "rounded-xl border-2 border-dashed p-10 text-center transition-colors",
-          dragOver ? "border-primary bg-accent" : "border-border bg-card",
+          "rounded-2xl border-2 border-dashed p-12 text-center transition-colors duration-300",
+          dragOver ? "border-foreground bg-accent" : "border-border bg-card",
         )}
       >
-        <FileUp className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
-        <p className="mt-3 text-sm text-muted-foreground">
+        <div className="mx-auto flex size-11 items-center justify-center rounded-full border bg-muted">
+          <FileUp className="size-5 text-muted-foreground" aria-hidden="true" />
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">
           Glissez-déposez vos documents ici, ou{" "}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="rounded font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+            className="rounded font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring"
           >
             parcourir vos fichiers
           </button>
@@ -130,7 +145,7 @@ function DocumentsSection({ orgId }: { orgId: string }) {
           }}
         />
         {upload.isPending && (
-          <p aria-live="polite" className="mt-2 text-sm text-primary">
+          <p aria-live="polite" className="mt-2 text-sm font-medium">
             Téléversement…
           </p>
         )}
@@ -144,13 +159,15 @@ function DocumentsSection({ orgId }: { orgId: string }) {
 
       {removeError && <p className="text-sm text-destructive">{removeError}</p>}
 
-      <ul className="divide-y rounded-xl border bg-card">
+      <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-xs">
         {docs.data?.length === 0 && (
-          <li className="p-4 text-sm text-muted-foreground">Aucun document pour le moment.</li>
+          <li className="p-5 text-sm text-muted-foreground">Aucun document pour le moment.</li>
         )}
         {docs.data?.map((doc) => (
-          <li key={doc.id} className="flex items-center gap-3 p-4">
-            <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <li key={doc.id} className="flex items-center gap-3 p-4 transition-colors hover:bg-muted/40">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
+              <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+            </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{doc.filename}</div>
               <div className="text-xs text-muted-foreground">
@@ -158,28 +175,40 @@ function DocumentsSection({ orgId }: { orgId: string }) {
                 {doc.error ? ` — ${doc.error}` : ""}
               </div>
             </div>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-xs font-medium",
-                STATUS_STYLES[doc.status],
-              )}
-            >
-              {STATUS_LABELS[doc.status]}
-            </span>
-            <button
-              onClick={() => remove.mutate(doc.id)}
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-destructive"
-            >
-              <Trash2 className="size-3" aria-hidden="true" />
-              Supprimer
-            </button>
+            <Badge variant={STATUS_VARIANTS[doc.status]}>{STATUS_LABELS[doc.status]}</Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Actions pour ${doc.filename}`}
+                  className="size-9"
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => remove.mutate(doc.id)}
+                >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                  Supprimer
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </li>
         ))}
       </ul>
 
-      <div className="flex items-center gap-3">
-        <Button variant="outline" onClick={() => index.mutate()} disabled={index.isPending}>
-          {index.isPending ? "Indexation…" : "Indexer les documents"}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="outline"
+          className="rounded-full"
+          onClick={() => index.mutate()}
+          disabled={index.isPending}
+        >
+          {index.isPending ? "Préparation…" : "Préparer les documents pour l'évaluation"}
         </Button>
         <span aria-live="polite" className="text-sm text-muted-foreground">
           {index.isSuccess &&
@@ -228,10 +257,10 @@ function AssessmentsSection({ orgId }: { orgId: string }) {
   const running = (assessments.data ?? []).some((a) => a.status === "RUNNING");
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-5 border-t pt-10">
       <div>
-        <h2 className="text-xl font-semibold tracking-tight">Évaluations de conformité</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="text-lg font-semibold tracking-tight">Évaluations de conformité</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
           Chaque exigence passe par récupération → jugement → vérification ; les citations sont
           vérifiées par le code, puis chaque constat attend votre confirmation.
         </p>
@@ -241,9 +270,11 @@ function AssessmentsSection({ orgId }: { orgId: string }) {
         <CardContent className="px-5">
           <div className="flex flex-wrap items-center gap-4">
             <Button
+              className="rounded-full"
               onClick={() => launch.mutate()}
               disabled={launch.isPending || running || !hasParsedDoc}
             >
+              <Play className="size-4" aria-hidden="true" />
               {launch.isPending ? "Indexation puis lancement…" : "Lancer l'évaluation"}
             </Button>
             <p className="text-sm text-muted-foreground">
@@ -251,7 +282,7 @@ function AssessmentsSection({ orgId }: { orgId: string }) {
             </p>
           </div>
           {!hasParsedDoc && (
-            <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+            <p className="mt-3 text-sm text-warning-foreground dark:text-warning">
               Téléversez au moins un document analysé avant de lancer une évaluation.
             </p>
           )}
@@ -318,17 +349,15 @@ function AssessmentCard({
       : null;
 
   return (
-    <li className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
+    <li className="space-y-3 rounded-2xl border bg-card p-5 shadow-xs transition-shadow duration-300 hover:shadow-[0_10px_30px_-14px_rgba(0,0,0,0.15)]">
       <div className="flex flex-wrap items-center gap-3">
         <AssessmentStatusBadge status={a.status} />
-        <span className="text-sm">{startedAt}</span>
+        <span className="text-sm font-medium">{startedAt}</span>
         <span className="font-mono text-xs text-muted-foreground">
           corpus {a.corpus_version} · k={a.retrieval_k}
         </span>
         {!a.manifest_complete && (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            manifeste incomplet (antérieure à M5)
-          </span>
+          <Badge variant="neutral">manifeste incomplet (antérieure à M5)</Badge>
         )}
         <div className="ml-auto flex items-center gap-2">
           {a.status === "RUNNING" && a.cancel_requested && (
@@ -364,9 +393,9 @@ function AssessmentCard({
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <progress
-          className="h-2 w-full overflow-hidden rounded [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
+          className="h-2 w-full overflow-hidden rounded [&::-moz-progress-bar]:bg-foreground [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-foreground"
           value={a.findings_done}
           max={Math.max(a.total, 1)}
           aria-label="Progression de l'évaluation"
@@ -375,14 +404,12 @@ function AssessmentCard({
           <span>
             {a.findings_done}/{a.total} constats
           </span>
-          <span className="text-emerald-700 dark:text-emerald-300">
-            {a.verified_count} vérifiés
-          </span>
-          <span className="text-amber-700 dark:text-amber-300">
+          <span className="text-success">{a.verified_count} vérifiés</span>
+          <span className="text-warning-foreground dark:text-warning">
             {a.abstained_count} abstentions
           </span>
           <span>{a.reviewed_count} confirmés</span>
-          {progressLabel && <span className="text-primary">{progressLabel}</span>}
+          {progressLabel && <span className="font-medium text-foreground">{progressLabel}</span>}
         </div>
       </div>
 
@@ -392,7 +419,7 @@ function AssessmentCard({
       {a.findings_done > 0 && (
         <Link
           to={`/organizations/${orgId}/assessments/${a.id}`}
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          className="inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
         >
           Ouvrir l'espace de revue
           <ArrowRight className="size-3.5" aria-hidden="true" />

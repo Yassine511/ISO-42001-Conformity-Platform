@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MessageSquareText } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -15,6 +15,9 @@ import HighlightedText from "../components/HighlightedText";
 import { AssessmentStatusBadge, ReviewStatusBadge } from "../components/StatusBadge";
 import VerdictBadge from "../components/VerdictBadge";
 import OpenRemediationCaseButton from "../components/OpenRemediationCaseButton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Filter = "all" | "pending" | "abstained" | "confirmed";
 
@@ -65,6 +68,7 @@ export default function ReviewWorkspacePage() {
   // the active filter must never stay displayed in the detail panel
   const selected =
     (selectedId && filtered.find((f) => f.id === selectedId)) || filtered[0] || null;
+  const selectedIndex = selected ? filtered.findIndex((f) => f.id === selected.id) : -1;
 
   if (detail.isError) {
     return <p className="text-sm text-destructive">{(detail.error as Error).message}</p>;
@@ -73,15 +77,26 @@ export default function ReviewWorkspacePage() {
     return <p className="text-sm text-muted-foreground">Chargement…</p>;
   }
   const a = detail.data;
+  const reviewPct = a.total > 0 ? Math.round((a.reviewed_count / a.total) * 100) : 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Espace de revue</h1>
+      <div className="flex flex-wrap items-center gap-3 border-b pb-5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Espace de revue</h1>
         <AssessmentStatusBadge status={a.status} />
         <span aria-live="polite" className="text-sm text-muted-foreground">
           {a.reviewed_count} / {a.total} confirmés
         </span>
+        <div
+          className="h-1.5 w-32 overflow-hidden rounded-full bg-muted"
+          role="presentation"
+          aria-hidden="true"
+        >
+          <div
+            className="h-full rounded-full bg-foreground transition-[width] duration-500"
+            style={{ width: `${reviewPct}%` }}
+          />
+        </div>
         {a.status === "RUNNING" && (
           <span className="text-sm text-muted-foreground">
             évaluation en cours — les constats apparaissent au fil de l'eau
@@ -95,25 +110,61 @@ export default function ReviewWorkspacePage() {
             key={key}
             onClick={() => setFilter(key)}
             aria-pressed={filter === key}
-            className={`rounded-full px-3 py-1 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring ${
+            className={cn(
+              "min-h-9 rounded-full px-4 text-xs font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
               filter === key
-                ? "bg-primary text-primary-foreground"
-                : "border border-input bg-card text-muted-foreground hover:bg-muted/50"
-            }`}
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "border border-input bg-card text-muted-foreground hover:bg-muted/60",
+            )}
           >
             {FILTER_LABELS[key]}
           </button>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[300px_1fr] lg:items-start">
         <FindingList
           findings={filtered}
           selectedId={selected?.id ?? null}
           onSelect={setSelectedId}
         />
         {selected ? (
-          <FindingPanel key={selected.id} orgId={orgId!} assessmentId={assessmentId!} findingId={selected.id} />
+          <div className="min-w-0 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                Constat <span className="font-mono font-medium text-foreground">{selectedIndex + 1}</span>{" "}
+                sur <span className="font-mono font-medium text-foreground">{filtered.length}</span>
+              </p>
+              <div className="flex gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 rounded-full"
+                  aria-label="Constat précédent"
+                  disabled={selectedIndex <= 0}
+                  onClick={() => setSelectedId(filtered[selectedIndex - 1].id)}
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 rounded-full"
+                  aria-label="Constat suivant"
+                  disabled={selectedIndex >= filtered.length - 1}
+                  onClick={() => setSelectedId(filtered[selectedIndex + 1].id)}
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+            <FindingPanel
+              key={selected.id}
+              orgId={orgId!}
+              assessmentId={assessmentId!}
+              findingId={selected.id}
+            />
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">Aucun constat pour ce filtre.</p>
         )}
@@ -132,7 +183,10 @@ function FindingList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <ul className="max-h-[70vh] space-y-1 overflow-y-auto pr-1" aria-label="Constats">
+    <ul
+      className="max-h-[calc(100dvh-16rem)] space-y-1.5 overflow-y-auto pr-1 lg:sticky lg:top-4"
+      aria-label="Constats"
+    >
       {findings.map((f) => {
         const infra = isInfraAbstain(f.abstain_reason);
         return (
@@ -140,27 +194,24 @@ function FindingList({
             <button
               onClick={() => onSelect(f.id)}
               aria-current={f.id === selectedId}
-              className={`w-full rounded-lg border p-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring ${
+              className={cn(
+                "w-full rounded-xl border p-3.5 text-left text-sm transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
                 f.id === selectedId
-                  ? "border-primary/50 bg-accent"
-                  : "border bg-card hover:bg-muted/50"
-              }`}
+                  ? "border-foreground/30 bg-accent shadow-sm"
+                  : "border-border bg-card hover:bg-muted/50",
+              )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold">{f.requirement_id}</span>
+                <span className="font-mono font-semibold">{f.requirement_id}</span>
                 <ReviewStatusBadge status={f.review_status} />
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {f.status === "VERIFIED" ? (
                   <VerdictBadge verdict={f.verdict} />
                 ) : infra ? (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    Échec technique — relancez l'évaluation
-                  </span>
+                  <Badge variant="neutral">Échec technique — relancez l'évaluation</Badge>
                 ) : (
-                  <span className="rounded-full bg-amber-100 dark:bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
-                    Nécessite votre jugement
-                  </span>
+                  <Badge variant="warning">Nécessite votre jugement</Badge>
                 )}
               </div>
             </button>
@@ -192,8 +243,8 @@ function FindingPanel({
   const f = finding.data;
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-2">
+    <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-2">
         <RequirementPane finding={f} />
         <EvidencePane finding={f} />
       </div>
@@ -205,19 +256,19 @@ function FindingPanel({
 function RequirementPane({ finding: f }: { finding: FindingDetail }) {
   const infra = isInfraAbstain(f.abstain_reason);
   return (
-    <section className="space-y-4 rounded-xl border border bg-card p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
+      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         Exigence ISO
       </h2>
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-semibold">{f.requirement_id}</span>
+          <span className="font-mono text-lg font-semibold">{f.requirement_id}</span>
           {f.domain && <span className="text-xs text-muted-foreground">{f.domain}</span>}
         </div>
         {f.requirement_fr ? (
-          <p className="mt-2 text-sm text-foreground/90">{f.requirement_fr}</p>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">{f.requirement_fr}</p>
         ) : (
-          <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
+          <p className="mt-2 text-sm text-warning-foreground dark:text-warning">
             Texte de l'exigence indisponible : constat antérieur aux instantanés et version de
             corpus différente ({f.corpus_mismatch ? "corpus modifié depuis" : ""}).
           </p>
@@ -225,13 +276,14 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
       </div>
 
       <div
-        className={`rounded-lg border p-4 ${
+        className={cn(
+          "rounded-xl border p-4",
           f.status === "VERIFIED"
             ? "border-border bg-muted/50"
             : infra
               ? "border-border bg-muted"
-              : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
-        }`}
+              : "border-warning/40 bg-warning/10",
+        )}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -245,12 +297,16 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
             <AbstainReasonLabel reason={f.abstain_reason} />
           )}
           {f.confidence !== null && (
-            <span className="text-xs text-muted-foreground">confiance {f.confidence.toFixed(2)}</span>
+            <span className="text-xs text-muted-foreground">
+              confiance {f.confidence.toFixed(2)}
+            </span>
           )}
         </div>
-        {f.rationale && <p className="mt-2 text-sm text-foreground/90">{f.rationale}</p>}
+        {f.rationale && (
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">{f.rationale}</p>
+        )}
         {f.status === "ABSTAINED" && !infra && (
-          <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+          <p className="mt-2 text-xs text-warning-foreground dark:text-warning">
             Le système n'a pas pu produire de citation vérifiable — ce constat nécessite votre
             jugement (action « remplacer »).
           </p>
@@ -264,7 +320,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
 
 function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
   return (
-    <details className="rounded-lg border border-border p-3 text-sm">
+    <details className="rounded-xl border border-border p-3 text-sm">
       <summary className="cursor-pointer font-medium text-muted-foreground">
         Provenance ({f.attempts} tentative{f.attempts > 1 ? "s" : ""}
         {f.final_model ? ` · ${f.final_model}` : ""})
@@ -277,7 +333,7 @@ function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
           </p>
         )}
         {f.attempt_history.map((att) => (
-          <div key={att.attempt_number} className="rounded border border-border/60 p-2">
+          <div key={att.attempt_number} className="rounded-lg border border-border/60 p-2">
             <p className="font-medium">
               Tentative {att.attempt_number} ({att.prompt_version}) —{" "}
               {att.parsed_ok ? "analysée" : "non analysable"}
@@ -290,7 +346,7 @@ function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
               </p>
             ))}
             {att.verifier_errors?.map((e, i) => (
-              <p key={i} className="text-amber-700 dark:text-amber-300">
+              <p key={i} className="text-warning-foreground dark:text-warning">
                 vérif ✗ {e}
               </p>
             ))}
@@ -315,18 +371,19 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
     matched && f.match_end !== null ? f.match_end - (matched.char_start ?? 0) : null;
 
   return (
-    <section className="space-y-4 rounded-xl border border bg-card p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
+      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         Preuves (politiques)
       </h2>
 
       {matched && (
         <div
-          className={`rounded-lg border p-4 ${
+          className={cn(
+            "rounded-xl border p-4",
             f.source_quote_kind === "candidate"
-              ? "border-amber-600/25 bg-amber-50/60 dark:border-amber-400/25 dark:bg-amber-400/10"
-              : "border-emerald-600/25 bg-emerald-50/60 dark:border-emerald-400/25 dark:bg-emerald-400/10"
-          }`}
+              ? "border-warning/40 bg-warning/10"
+              : "border-success/30 bg-success/5",
+          )}
         >
           <p className="text-xs font-medium text-muted-foreground">
             {matched.filename}
@@ -348,13 +405,13 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
             </p>
           )}
           {f.source_quote && f.source_quote_kind === "candidate" && (
-            <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <p className="mt-2 text-xs font-medium text-warning-foreground dark:text-warning">
               Localisation approximative retenue pour votre revue — ce n'est pas une citation
               vérifiée.
             </p>
           )}
           {f.source_quote_error && (
-            <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <p className="mt-2 text-xs font-medium text-warning-foreground dark:text-warning">
               Provenance non affichable : {f.source_quote_error}
             </p>
           )}
@@ -373,13 +430,15 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
           </summary>
           <ul className="mt-3 space-y-3">
             {others.map((r) => (
-              <li key={r.result_id} className="rounded-lg border border-border p-3">
+              <li key={r.result_id} className="rounded-xl border border-border p-3">
                 <p className="text-xs font-medium text-muted-foreground">
                   {r.source_type === "policy"
                     ? `${r.filename ?? "document"}${r.page_number ? `, p.${r.page_number}` : ""}`
                     : `Exigence ISO ${r.requirement_id}`}
                 </p>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">{r.text}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                  {r.text}
+                </p>
               </li>
             ))}
           </ul>
@@ -428,15 +487,15 @@ function ReviewSection({
   const submitDisabled = review.isPending || (needsRationale && !rationale.trim());
 
   return (
-    <section className="space-y-4 rounded-xl border border bg-card p-5">
+    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Décision humaine
         </h2>
         <ReviewStatusBadge status={f.review_status} />
         <Link
           to={`/organizations/${orgId}/chat?finding=${f.id}`}
-          className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          className="ml-auto inline-flex min-h-9 items-center gap-1 text-xs font-medium underline-offset-4 hover:underline"
         >
           <MessageSquareText className="size-3.5" aria-hidden="true" />
           Expliquer via le copilote
@@ -444,7 +503,7 @@ function ReviewSection({
       </div>
 
       {f.review_status === "CONFIRMED" && (
-        <div className="rounded-lg border border-emerald-600/30 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-400/10 p-4 text-sm">
+        <div className="rounded-xl border border-success/30 bg-success/5 p-4 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{ACTION_LABELS[f.review_action!]}</span>
             <VerdictBadge verdict={f.human_verdict} />
@@ -472,12 +531,15 @@ function ReviewSection({
           onClick={() => setAction("approve")}
           disabled={abstained}
           aria-pressed={action === "approve"}
-          title={abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-emerald-500 ${
+          title={
+            abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined
+          }
+          className={cn(
+            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-success",
             action === "approve"
-              ? "bg-emerald-600 text-white"
-              : "border border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
-          }`}
+              ? "bg-success text-success-foreground shadow-sm"
+              : "border border-success/40 text-success hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-40",
+          )}
         >
           Approuver
         </button>
@@ -485,28 +547,32 @@ function ReviewSection({
           onClick={() => setAction("edit")}
           disabled={abstained}
           aria-pressed={action === "edit"}
-          title={abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring ${
+          title={
+            abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined
+          }
+          className={cn(
+            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
             action === "edit"
-              ? "bg-primary text-primary-foreground"
-              : "border border-primary/40 text-primary hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-          }`}
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "border border-input text-foreground hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40",
+          )}
         >
           Modifier
         </button>
         <button
           onClick={() => setAction("override")}
           aria-pressed={action === "override"}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-amber-500 ${
+          className={cn(
+            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-warning",
             action === "override"
-              ? "bg-amber-600 text-white"
-              : "border border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50"
-          }`}
+              ? "bg-warning text-warning-foreground shadow-sm"
+              : "border border-warning/50 text-warning-foreground hover:bg-warning/10 dark:text-warning",
+          )}
         >
           Remplacer
         </button>
         {abstained && (
-          <span className="self-center text-xs text-amber-700 dark:text-amber-300">
+          <span className="self-center text-xs text-warning-foreground dark:text-warning">
             Abstention : seul « Remplacer » est possible — le verdict vous appartient.
           </span>
         )}
@@ -514,7 +580,7 @@ function ReviewSection({
 
       {action && (
         <form
-          className="space-y-3"
+          className="space-y-3 rounded-xl border bg-muted/30 p-4"
           onSubmit={(e) => {
             e.preventDefault();
             review.mutate();
@@ -526,7 +592,7 @@ function ReviewSection({
               <select
                 value={humanVerdict}
                 onChange={(e) => setHumanVerdict(e.target.value as Verdict)}
-                className="mt-1 block rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               >
                 {VERDICT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -544,7 +610,7 @@ function ReviewSection({
               value={rationale}
               onChange={(e) => setRationale(e.target.value)}
               rows={3}
-              className="mt-1 block w-full rounded-lg border border-input px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+              className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -553,7 +619,7 @@ function ReviewSection({
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
             <label className="block text-sm">
@@ -561,7 +627,7 @@ function ReviewSection({
               <input
                 value={reviewer}
                 onChange={(e) => setReviewer(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-input px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
           </div>
@@ -569,7 +635,7 @@ function ReviewSection({
             <button
               type="submit"
               disabled={submitDisabled}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-transform duration-200 hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               {review.isPending ? "Enregistrement…" : "Enregistrer la décision"}
             </button>
@@ -587,7 +653,7 @@ function ReviewSection({
           </summary>
           <ul className="mt-2 space-y-2">
             {f.reviews.map((r) => (
-              <li key={r.sequence} className="rounded-lg border border-border p-3 text-xs">
+              <li key={r.sequence} className="rounded-xl border border-border p-3 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">#{r.sequence}</span>
                   <span>{ACTION_LABELS[r.action]}</span>
@@ -596,11 +662,17 @@ function ReviewSection({
                     {new Date(r.created_at).toLocaleString("fr-FR")}
                   </span>
                   {r.reviewer_label && (
-                    <span className="text-muted-foreground">par {r.reviewer_label} (non vérifié)</span>
+                    <span className="text-muted-foreground">
+                      par {r.reviewer_label} (non vérifié)
+                    </span>
                   )}
                 </div>
-                {r.human_rationale && <p className="mt-1 text-muted-foreground">{r.human_rationale}</p>}
-                {r.review_note && <p className="mt-1 text-muted-foreground">Note : {r.review_note}</p>}
+                {r.human_rationale && (
+                  <p className="mt-1 text-muted-foreground">{r.human_rationale}</p>
+                )}
+                {r.review_note && (
+                  <p className="mt-1 text-muted-foreground">Note : {r.review_note}</p>
+                )}
               </li>
             ))}
           </ul>

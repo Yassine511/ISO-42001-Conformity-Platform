@@ -14,6 +14,79 @@ import {
   type TriageDraft,
 } from "../api";
 import { CaseStatusBadge } from "./RemediationListPage";
+import { ArrowLeft, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+// ------------------------------------------------------ lifecycle stepper
+
+const LIFECYCLE_STEPS = ["Triage", "Plan", "Exécution", "Efficacité", "Clôture"] as const;
+
+function stepIndex(status: RemediationCaseDetail["status"]): number {
+  switch (status) {
+    case "TRIAGE":
+      return 0;
+    case "TRIAGE_APPROVED":
+    case "PLANNING":
+    case "PLAN_READY":
+      return 1;
+    case "IN_PROGRESS":
+      return 2;
+    case "CLOSED":
+      return 4;
+    default:
+      return 0;
+  }
+}
+
+function LifecycleStepper({ status }: { status: RemediationCaseDetail["status"] }) {
+  const current = stepIndex(status);
+  return (
+    <ol
+      aria-label="Cycle de vie du cas"
+      className="flex flex-wrap items-center gap-y-2 text-xs font-medium"
+    >
+      {LIFECYCLE_STEPS.map((step, i) => (
+        <li key={step} className="flex items-center">
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors",
+              i < current
+                ? "border-transparent bg-muted text-muted-foreground"
+                : i === current
+                  ? "border-transparent bg-primary text-primary-foreground shadow-sm"
+                  : "border-border text-muted-foreground/70",
+            )}
+            aria-current={i === current ? "step" : undefined}
+          >
+            {i < current && <Check className="size-3" aria-hidden="true" />}
+            {step}
+          </span>
+          {i < LIFECYCLE_STEPS.length - 1 && (
+            <span aria-hidden className="mx-1.5 h-px w-4 bg-border sm:w-6" />
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// user-facing labels for raw backend reassessment states
+const REASSESSMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "En attente de lancement",
+  LAUNCHED: "Lancée",
+  FAILED: "Échec du lancement",
+};
+
+// one-line "next decision" hint per case status
+const NEXT_DECISION: Record<RemediationCaseDetail["status"], string | null> = {
+  TRIAGE: "Prochaine décision : approuver ou corriger le triage proposé par l'IA.",
+  TRIAGE_APPROVED: "Prochaine décision : demander un plan d'actions correctives à l'agent.",
+  PLANNING: "Rédaction du plan en cours…",
+  PLAN_READY: "Prochaine décision : approuver, modifier ou rejeter chaque action du plan.",
+  IN_PROGRESS:
+    "Prochaine étape : exécuter les actions approuvées, enregistrer leur efficacité, puis clôturer.",
+  CLOSED: null,
+};
 
 const CLASSIFICATION_LABELS: Record<Classification, string> = {
   evidence_gap: "Lacune de preuve",
@@ -77,15 +150,22 @@ export default function RemediationCasePage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        to={`/organizations/${orgId}/remediation`}
-        className="text-sm text-primary hover:underline"
-      >
-        ← Cas de remédiation
-      </Link>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">{c.title}</h1>
-        <CaseStatusBadge status={c.status} />
+      <div className="sticky top-0 z-10 -mx-4 space-y-3 border-b bg-background/90 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:-mx-8 md:px-8">
+        <Link
+          to={`/organizations/${orgId}/remediation`}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden="true" />
+          Cas de remédiation
+        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{c.title}</h1>
+          <CaseStatusBadge status={c.status} />
+        </div>
+        <LifecycleStepper status={c.status} />
+        {NEXT_DECISION[c.status] && (
+          <p className="text-xs text-muted-foreground">{NEXT_DECISION[c.status]}</p>
+        )}
       </div>
 
       <LinkedFindings orgId={orgId!} c={c} onChanged={invalidate} />
@@ -133,7 +213,7 @@ function LinkedFindings({
   });
 
   return (
-    <section className="space-y-3 rounded-xl border bg-card p-5">
+    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Constats liés
       </h2>
@@ -247,7 +327,7 @@ function TriagePanel({
   const abstained = latest?.status === "ABSTAINED";
 
   return (
-    <section className="space-y-3 rounded-xl border bg-card p-5">
+    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Triage</h2>
         {approved ? (
@@ -456,7 +536,7 @@ function PlanPanel({
   const canDraft = ["TRIAGE_APPROVED", "PLAN_READY"].includes(c.status);
 
   return (
-    <section className="space-y-3 rounded-xl border bg-card p-5">
+    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Plan d'actions correctives
@@ -1161,7 +1241,7 @@ function PatchProposalCard({
         Diff proposé ({p.operation === "replace" ? "remplacement" : "insertion"})
       </p>
       {/* Server-derived source slice at the resolved anchor — never the model quote */}
-      <div className="rounded bg-muted/50 p-2 font-mono text-[11px] leading-relaxed">
+      <div className="rounded bg-muted/50 p-2 font-mono text-xs leading-relaxed">
         <span className="text-muted-foreground/80">{p.context_before}</span>
         <mark className="bg-amber-200">{p.anchor_slice}</mark>
         {p.operation === "insert_after" && (
@@ -1176,7 +1256,7 @@ function PatchProposalCard({
         <span className="text-muted-foreground/80">{p.context_after}</span>
       </div>
       {p.operation === "replace" && (
-        <div className="rounded bg-emerald-50 p-2 font-mono text-[11px] text-emerald-800">
+        <div className="rounded bg-emerald-50 p-2 font-mono text-xs text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200">
           → {editing ? finalText || p.new_text_fr : p.new_text_fr}
         </div>
       )}
@@ -1292,7 +1372,7 @@ function ReassessmentPanel({
   });
 
   return (
-    <section className="space-y-3 rounded-xl border bg-card p-5">
+    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Réévaluations ciblées (preuve d'efficacité)
       </h2>
@@ -1328,7 +1408,9 @@ function ReassessmentPanel({
           {reassessments.data!.map((r) => (
             <li key={r.id} className="rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{r.status}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                  {REASSESSMENT_STATUS_LABELS[r.status] ?? r.status}
+                </span>
                 {r.assessment_id && (
                   <Link
                     to={`/organizations/${orgId}/assessments/${r.assessment_id}`}
@@ -1383,7 +1465,7 @@ function ClosurePanel({
 
   if (c.status === "CLOSED") {
     return (
-      <section className="space-y-2 rounded-xl border bg-card p-5">
+      <section className="space-y-2 rounded-2xl border bg-card p-6 shadow-xs">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Clôture
         </h2>
@@ -1404,7 +1486,7 @@ function ClosurePanel({
   }
   if (!["TRIAGE_APPROVED", "PLAN_READY", "IN_PROGRESS"].includes(c.status)) return null;
   return (
-    <section className="space-y-2 rounded-xl border bg-card p-5">
+    <section className="space-y-2 rounded-2xl border bg-card p-6 shadow-xs">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Clôture</h2>
       <div className="flex flex-wrap gap-2">
         <input
@@ -1430,22 +1512,30 @@ function ClosurePanel({
 
 function EventsTimeline({ c }: { c: RemediationCaseDetail }) {
   return (
-    <section className="space-y-2 rounded-xl border bg-card p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
+      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         Journal d'audit
       </h2>
-      <ul className="space-y-1 text-xs text-muted-foreground">
+      <ol className="relative space-y-4 border-l border-border pl-5">
         {[...c.events].reverse().map((e) => (
-          <li key={e.sequence} className="flex flex-wrap gap-2">
-            <span className="font-mono text-muted-foreground/80">#{e.sequence}</span>
-            <span className="font-medium">{e.event_type}</span>
-            <span>{new Date(e.created_at).toLocaleString("fr-FR")}</span>
-            {e.actor_label && (
-              <span className="text-muted-foreground/80">par {e.actor_label} (non vérifié)</span>
-            )}
+          <li key={e.sequence} className="relative text-xs text-muted-foreground">
+            <span
+              aria-hidden
+              className="absolute -left-[calc(1.25rem+3.5px)] top-1 size-2 rounded-full border border-background bg-foreground/70"
+            />
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="font-medium text-foreground">{e.event_type}</span>
+              <span>{new Date(e.created_at).toLocaleString("fr-FR")}</span>
+              <span className="font-mono text-muted-foreground/70">#{e.sequence}</span>
+              {e.actor_label && (
+                <span className="text-muted-foreground/80">
+                  par {e.actor_label} (non vérifié)
+                </span>
+              )}
+            </div>
           </li>
         ))}
-      </ul>
+      </ol>
     </section>
   );
 }
