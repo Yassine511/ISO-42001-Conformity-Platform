@@ -1,35 +1,49 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
-import HomePage from "./pages/HomePage";
-import OrganizationPage from "./pages/OrganizationPage";
-import ReviewWorkspacePage from "./pages/ReviewWorkspacePage";
-import ChatPage from "./pages/ChatPage";
-import RemediationListPage from "./pages/RemediationListPage";
-import RemediationCasePage from "./pages/RemediationCasePage";
-import DashboardPage from "./pages/DashboardPage";
-import RiskRegisterPage from "./pages/RiskRegisterPage";
-import SoaPage from "./pages/SoaPage";
 import { AppShell } from "@/components/app-shell";
+
+// Route-level code splitting: each page (and its heavy deps — recharts on the
+// dashboard, the remediation workflow) loads on demand instead of in one bundle.
+const HomePage = lazy(() => import("./pages/HomePage"));
+const OrganizationPage = lazy(() => import("./pages/OrganizationPage"));
+const ReviewWorkspacePage = lazy(() => import("./pages/ReviewWorkspacePage"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const RemediationListPage = lazy(() => import("./pages/RemediationListPage"));
+const RemediationCasePage = lazy(() => import("./pages/RemediationCasePage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const RiskRegisterPage = lazy(() => import("./pages/RiskRegisterPage"));
+const SoaPage = lazy(() => import("./pages/SoaPage"));
 
 function LegacyDashboardRedirect() {
   const { orgId } = useParams<{ orgId: string }>();
   return <Navigate replace to={`/organizations/${orgId}`} />;
 }
 
+function RouteFallback() {
+  return (
+    <p className="p-6 text-sm text-muted-foreground" aria-live="polite">
+      Chargement…
+    </p>
+  );
+}
+
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/organizations/:orgId" element={<AppShell />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="dashboard" element={<LegacyDashboardRedirect />} />
-        <Route path="evaluations" element={<OrganizationPage />} />
-        <Route path="assessments/:assessmentId" element={<ReviewWorkspacePage />} />
-        <Route path="chat/:conversationId?" element={<ChatPage />} />
-        <Route path="risk-register" element={<RiskRegisterPage />} />
-        <Route path="soa" element={<SoaPage />} />
-        <Route path="remediation" element={<RemediationListPage />} />
-        <Route path="remediation/:caseId" element={<RemediationCasePage />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/organizations/:orgId" element={<AppShell />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="dashboard" element={<LegacyDashboardRedirect />} />
+          <Route path="evaluations" element={<OrganizationPage />} />
+          <Route path="assessments/:assessmentId" element={<ReviewWorkspacePage />} />
+          <Route path="chat/:conversationId?" element={<ChatPage />} />
+          <Route path="risk-register" element={<RiskRegisterPage />} />
+          <Route path="soa" element={<SoaPage />} />
+          <Route path="remediation" element={<RemediationListPage />} />
+          <Route path="remediation/:caseId" element={<RemediationCasePage />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

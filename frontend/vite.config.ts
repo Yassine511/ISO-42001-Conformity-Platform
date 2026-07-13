@@ -11,6 +11,18 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // stable vendor chunks: heavy libs cache independently of app code
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          recharts: ["recharts"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       "/api": "http://localhost:8000",
