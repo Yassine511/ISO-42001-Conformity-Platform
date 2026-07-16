@@ -34,7 +34,12 @@ class DocumentTooLarge(Exception):
     inflate far beyond it in memory."""
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+# Single source of truth: extension -> canonical format label. The upload
+# routing (api/documents.py) derives the format from this map, so adding a
+# new extension here cannot leave the routing map behind (a mismatch used to
+# be a latent 500).
+CANONICAL_FORMATS = {".pdf": "pdf", ".docx": "docx", ".txt": "txt", ".md": "md"}
+SUPPORTED_EXTENSIONS = set(CANONICAL_FORMATS)
 
 # Cap on total DECOMPRESSED DOCX content. A .docx is a zip; a small upload can
 # declare gigabytes of expanded parts. Checked against the central directory's

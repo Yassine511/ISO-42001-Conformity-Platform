@@ -18,21 +18,20 @@ Abstention taxonomy (models.REMEDIATION_ABSTAIN_REASONS):
 
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 
 from pydantic import ValidationError
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models import (
     Finding,
-    RemediationAttempt,
     RemediationCase,
-    RemediationLlmCall,
     RemediationTriageDraft,
 )
 from app.pipeline import llm as llm_service
+from app.remediation.common import now as _now
+from app.remediation.common import persist_attempt_calls
 from app.remediation.prompts import (
     REMEDIATION_PROMPT_VERSION,
     build_repair_messages,
@@ -64,19 +63,6 @@ STALE_TRIAGE_FR = (
 )
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
 def _parse_triage(content: str) -> tuple[TriageDraft | None, list[str]]:
     try:
         payload = json.loads(content)
@@ -96,8 +82,21 @@ def _similar_findings(db: Session, org_id: str, linked_ids: set[str]) -> list[di
     similar-gap search). Deterministic SQL, most recent first, capped."""
     from app.models import Assessment
 
-    rows = db.scalars(
+    # Exclusion + cap in SQL, and only the columns this snapshot needs: the
+    # full Finding row carries large JSON provenance (retrieved/audit_log)
+    # that must not be hydrated just to build five summaries.
+    query = (
         select(Finding)
+        .options(
+            load_only(
+                Finding.id,
+                Finding.requirement_id,
+                Finding.requirement_fr,
+                Finding.domain,
+                Finding.human_verdict,
+                Finding.human_rationale,
+            )
+        )
         .join(Assessment, Finding.assessment_id == Assessment.id)
         .where(
             Assessment.organization_id == org_id,
@@ -105,7 +104,10 @@ def _similar_findings(db: Session, org_id: str, linked_ids: set[str]) -> list[di
             Finding.human_verdict.in_(ELIGIBLE_VERDICTS),
         )
         .order_by(Finding.reviewed_at.desc())
-    ).all()
+        .limit(5)
+    )
+    if linked_ids:
+        query = query.where(Finding.id.not_in(linked_ids))
     return [
         {
             "finding_id": f.id,
@@ -115,9 +117,8 @@ def _similar_findings(db: Session, org_id: str, linked_ids: set[str]) -> list[di
             "human_verdict": f.human_verdict,
             "human_rationale": f.human_rationale,
         }
-        for f in rows
-        if f.id not in linked_ids
-    ][:5]
+        for f in db.scalars(query)
+    ]
 
 
 def _similar_corpus(db: Session, org_id: str, query: str) -> list[dict]:
@@ -266,43 +267,15 @@ def draft_triage(
     db.add(draft)
     db.flush()
 
-    call_number = 0
-    for meta in attempts_meta:
-        attempt = RemediationAttempt(
-            case_id=case_id,
-            stage="triage",
-            triage_draft_id=draft.id,
-            attempt_number=meta["attempt_number"],
-            prompt_version=REMEDIATION_PROMPT_VERSION,
-            parsed_ok=meta["parsed_ok"],
-            verifier_errors=meta["validation_errors"] or None,
-            finished_at=_now(),
-        )
-        db.add(attempt)
-        db.flush()
-        for attempt_number, call in calls:
-            if attempt_number != meta["attempt_number"]:
-                continue
-            call_number += 1
-            db.add(
-                RemediationLlmCall(
-                    remediation_attempt_id=attempt.id,
-                    call_number=call_number,
-                    prompt_version=REMEDIATION_PROMPT_VERSION,
-                    provider=call.provider,
-                    requested_model=call.requested_model,
-                    status=call.status,
-                    reported_model=call.reported_model,
-                    http_status=call.http_status,
-                    error=call.error,
-                    raw_response=call.raw_response,
-                    request_messages=call.request_messages,
-                    response_format=call.response_format,
-                    temperature=call.temperature,
-                    started_at=_parse_ts(call.started_at) or _now(),
-                    finished_at=_parse_ts(call.finished_at),
-                )
-            )
+    persist_attempt_calls(
+        db,
+        case_id=case_id,
+        stage="triage",
+        triage_draft_id=draft.id,
+        attempts_meta=attempts_meta,
+        calls=calls,
+        prompt_version=REMEDIATION_PROMPT_VERSION,
+    )
     append_event(
         db, case_id, "triage_drafted",
         {

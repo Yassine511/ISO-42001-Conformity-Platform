@@ -152,7 +152,7 @@ def test_index_preserves_history_and_reaps_stale_points(client):
 
     from app.services.retrieval import _scroll_org_points
 
-    remaining = {canonical for canonical, _ in _scroll_org_points(org_id).values()}
+    remaining = {canonical for canonical, *_ in _scroll_org_points(org_id).values()}
     assert not (old_point_keys & remaining), "superseded points not reaped"
     assert cand_point_keys <= remaining, "recoverable candidate points were reaped"
 

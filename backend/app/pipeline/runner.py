@@ -274,9 +274,11 @@ def launch(session_factory: SessionFactory, assessment_id: str) -> bool:
                 except Exception:
                     pass
             finally:
+                # both registries cleaned under the lock: a concurrent launch()
+                # observing a dead thread must never see its stale progress
                 with _LOCK:
                     _THREADS.pop(assessment_id, None)
-                PROGRESS.pop(assessment_id, None)
+                    PROGRESS.pop(assessment_id, None)
 
         thread = threading.Thread(
             target=_target, daemon=True, name=f"assessment-{assessment_id}"

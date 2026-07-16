@@ -43,7 +43,7 @@ DECISION + ACTIVATION (decide_patch / recover_patch_activation):
 import hashlib
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 from sqlalchemy import select, update
@@ -57,11 +57,12 @@ from app.models import (
     PatchDecision,
     PatchProposal,
     RemediationAction,
-    RemediationAttempt,
     RemediationCase,
-    RemediationLlmCall,
 )
 from app.pipeline import llm as llm_service
+from app.remediation.common import aware as _aware
+from app.remediation.common import now as _now
+from app.remediation.common import persist_attempt_calls
 from app.remediation.actions import _operable_action
 from app.remediation.prompts import (
     PATCH_PROMPT_VERSION,
@@ -110,25 +111,6 @@ STALE_INPUT_FR = (
     "Contexte périmé : l'action, le plan actif ou les preuves du cas ont "
     "changé depuis la création de la proposition. Redemandez un correctif."
 )
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if value is not None and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
-
-
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 # --------------------------------------------------------------- drafting
@@ -447,43 +429,15 @@ def draft_patch_proposal(
             actor_label,
         )
 
-    call_number = 0
-    for meta in attempts_meta:
-        attempt = RemediationAttempt(
-            case_id=case_id,
-            stage="patch",
-            patch_proposal_id=proposal.id,
-            attempt_number=meta["attempt_number"],
-            prompt_version=PATCH_PROMPT_VERSION,
-            parsed_ok=meta["parsed_ok"],
-            verifier_errors=meta["validation_errors"] or None,
-            finished_at=_now(),
-        )
-        db.add(attempt)
-        db.flush()
-        for attempt_number, call in calls:
-            if attempt_number != meta["attempt_number"]:
-                continue
-            call_number += 1
-            db.add(
-                RemediationLlmCall(
-                    remediation_attempt_id=attempt.id,
-                    call_number=call_number,
-                    prompt_version=PATCH_PROMPT_VERSION,
-                    provider=call.provider,
-                    requested_model=call.requested_model,
-                    status=call.status,
-                    reported_model=call.reported_model,
-                    http_status=call.http_status,
-                    error=call.error,
-                    raw_response=call.raw_response,
-                    request_messages=call.request_messages,
-                    response_format=call.response_format,
-                    temperature=call.temperature,
-                    started_at=_parse_ts(call.started_at) or _now(),
-                    finished_at=_parse_ts(call.finished_at),
-                )
-            )
+    persist_attempt_calls(
+        db,
+        case_id=case_id,
+        stage="patch",
+        patch_proposal_id=proposal.id,
+        attempts_meta=attempts_meta,
+        calls=calls,
+        prompt_version=PATCH_PROMPT_VERSION,
+    )
     db.commit()
     return proposal
 
@@ -1366,43 +1320,15 @@ def draft_artifact(
             actor_label,
         )
 
-    call_number = 0
-    for meta in attempts_meta:
-        attempt = RemediationAttempt(
-            case_id=case_id,
-            stage="artifact",
-            remediation_artifact_id=artifact.id,
-            attempt_number=meta["attempt_number"],
-            prompt_version=PATCH_PROMPT_VERSION,
-            parsed_ok=meta["parsed_ok"],
-            verifier_errors=meta["validation_errors"] or None,
-            finished_at=_now(),
-        )
-        db.add(attempt)
-        db.flush()
-        for attempt_number, call in calls:
-            if attempt_number != meta["attempt_number"]:
-                continue
-            call_number += 1
-            db.add(
-                RemediationLlmCall(
-                    remediation_attempt_id=attempt.id,
-                    call_number=call_number,
-                    prompt_version=PATCH_PROMPT_VERSION,
-                    provider=call.provider,
-                    requested_model=call.requested_model,
-                    status=call.status,
-                    reported_model=call.reported_model,
-                    http_status=call.http_status,
-                    error=call.error,
-                    raw_response=call.raw_response,
-                    request_messages=call.request_messages,
-                    response_format=call.response_format,
-                    temperature=call.temperature,
-                    started_at=_parse_ts(call.started_at) or _now(),
-                    finished_at=_parse_ts(call.finished_at),
-                )
-            )
+    persist_attempt_calls(
+        db,
+        case_id=case_id,
+        stage="artifact",
+        remediation_artifact_id=artifact.id,
+        attempts_meta=attempts_meta,
+        calls=calls,
+        prompt_version=PATCH_PROMPT_VERSION,
+    )
     db.commit()
     return artifact
 

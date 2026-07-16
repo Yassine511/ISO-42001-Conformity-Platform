@@ -40,7 +40,7 @@ Activation rules (active_plan_id is the sole authority):
 import json
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from pydantic import ValidationError
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
@@ -49,12 +49,13 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     RemediationAction,
-    RemediationAttempt,
     RemediationCase,
-    RemediationLlmCall,
     RemediationPlan,
 )
 from app.pipeline import llm as llm_service
+from app.remediation.common import aware as _aware
+from app.remediation.common import now as _now
+from app.remediation.common import persist_attempt_calls
 from app.pipeline.verifier import find_quote_in_retrieved
 from app.remediation.prompts import (
     REMEDIATION_PROMPT_VERSION,
@@ -97,26 +98,6 @@ LEASE_LOST_FR = (
     "Rédaction interrompue : le renouvellement du verrou a échoué en cours de "
     "route ; le résultat a été écarté. Relancez la rédaction du plan."
 )
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    """SQLite returns naive datetimes; lease arithmetic needs aware ones."""
-    if value is not None and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 def _next_sequence(db: Session, case_id: str) -> int:
@@ -552,43 +533,15 @@ def draft_plan(
             )
 
     # provenance pair
-    call_number = 0
-    for meta in attempts_meta:
-        attempt = RemediationAttempt(
-            case_id=case_id,
-            stage="plan",
-            plan_id=plan.id,
-            attempt_number=meta["attempt_number"],
-            prompt_version=REMEDIATION_PROMPT_VERSION,
-            parsed_ok=meta["parsed_ok"],
-            verifier_errors=meta["validation_errors"] or None,
-            finished_at=_now(),
-        )
-        db.add(attempt)
-        db.flush()
-        for attempt_number, call in calls:
-            if attempt_number != meta["attempt_number"]:
-                continue
-            call_number += 1
-            db.add(
-                RemediationLlmCall(
-                    remediation_attempt_id=attempt.id,
-                    call_number=call_number,
-                    prompt_version=REMEDIATION_PROMPT_VERSION,
-                    provider=call.provider,
-                    requested_model=call.requested_model,
-                    status=call.status,
-                    reported_model=call.reported_model,
-                    http_status=call.http_status,
-                    error=call.error,
-                    raw_response=call.raw_response,
-                    request_messages=call.request_messages,
-                    response_format=call.response_format,
-                    temperature=call.temperature,
-                    started_at=_parse_ts(call.started_at) or _now(),
-                    finished_at=_parse_ts(call.finished_at),
-                )
-            )
+    persist_attempt_calls(
+        db,
+        case_id=case_id,
+        stage="plan",
+        plan_id=plan.id,
+        attempts_meta=attempts_meta,
+        calls=calls,
+        prompt_version=REMEDIATION_PROMPT_VERSION,
+    )
 
     # ---- activation / supersession (completed outcomes only here) ----
     activated = False

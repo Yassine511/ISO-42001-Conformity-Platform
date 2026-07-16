@@ -505,7 +505,10 @@ def ask(
             }
             claims_payload.append(entry)
             if not failed:  # ALL citations must verify — partial support never survives
-                surviving.append(entry)
+                # copy: the persisted claims payload and the answer-assembly
+                # list must never alias the same dict (a future edit to one
+                # would silently rewrite the other)
+                surviving.append(dict(entry))
 
         if not surviving:
             abstain_reason = AbstainReason.VERIFICATION_FAILED.value
@@ -587,19 +590,9 @@ def ask(
                 request_messages=call.request_messages,
                 response_format=call.response_format,
                 temperature=call.temperature,
-                started_at=_parse_ts(call.started_at) or _now(),
-                finished_at=_parse_ts(call.finished_at),
+                started_at=llm_service.parse_call_ts(call.started_at) or _now(),
+                finished_at=llm_service.parse_call_ts(call.finished_at),
             )
         )
     db.commit()
     return message
-
-
-def _parse_ts(value: str | None) -> datetime | None:
-    """LLMCall timestamps default to "" — never let fromisoformat crash the flow."""
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None

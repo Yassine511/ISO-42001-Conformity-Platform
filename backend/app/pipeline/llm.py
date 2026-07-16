@@ -116,6 +116,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_call_ts(value: str | None) -> datetime | None:
+    """Parse an LLMCall timestamp. They default to "" (the Protocol permits
+    providers that leave them unset) — never let fromisoformat crash a caller.
+    Single shared implementation for every module that persists call rows."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _backoff_delay(resp: httpx.Response, backoff_round: int) -> float:
     """Retry-After when present, else exponential; always in [0, cap].
 

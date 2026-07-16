@@ -43,17 +43,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_ts(value: str | None) -> datetime | None:
-    """LLMCall timestamps default to "" (the Protocol permits providers that
-    leave them unset): never let fromisoformat crash the judge node."""
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
 def _audit(node: str, event: str, **details) -> dict:
     return {"node": node, "event": event, "at": utcnow_iso(), **details}
 
@@ -227,8 +216,8 @@ def make_judge_node(session_factory: SessionFactory):
                         request_messages=call.request_messages,
                         response_format=call.response_format,
                         temperature=call.temperature,
-                        started_at=_parse_ts(call.started_at) or started,
-                        finished_at=_parse_ts(call.finished_at),
+                        started_at=llm_service.parse_call_ts(call.started_at) or started,
+                        finished_at=llm_service.parse_call_ts(call.finished_at),
                     )
                 )
             db.commit()

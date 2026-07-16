@@ -9,7 +9,7 @@ Service exceptions map: NotFound -> 404, Conflict -> 409, Invalid -> 422.
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import SessionLocal, get_db
 from app.models import (
@@ -17,6 +17,7 @@ from app.models import (
     PatchProposal,
     RemediationArtifact,
     RemediationCase,
+    RemediationPlan,
 )
 from app.remediation import actions, patcher, planner, reassessment, service, triage
 from app.services.run_guard import RUNNING_CONFLICT_FR
@@ -185,8 +186,15 @@ def create_case(
 @router.get("/organizations/{org_id}/remediation-cases")
 def list_cases(org_id: str, db: Session = Depends(get_db)):
     _get_org(db, org_id)
+    # Eager-load what _case_payload/workflow_summary walk per case
+    # (finding_links, plans -> actions): without this the list endpoint is an
+    # N+1 — three lazy queries per case.
     cases = db.scalars(
         select(RemediationCase)
+        .options(
+            selectinload(RemediationCase.finding_links),
+            selectinload(RemediationCase.plans).selectinload(RemediationPlan.actions),
+        )
         .where(RemediationCase.organization_id == org_id)
         .order_by(RemediationCase.created_at.desc())
     ).all()

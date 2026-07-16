@@ -19,7 +19,7 @@ DB cannot express).
 from datetime import datetime, timezone
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models import (
     Finding,
@@ -352,8 +352,22 @@ def link_suggestions(db: Session, org_id: str, case_id: str) -> list[dict]:
     domains = {l.finding_domain for l in case.finding_links if l.finding_domain}
     from app.models import Assessment  # local import to avoid cycle noise
 
+    # only the columns the suggestion payload needs: the full Finding row
+    # carries large JSON provenance (retrieved/audit_log) that must not be
+    # hydrated to list candidates
     rows = db.scalars(
         select(Finding)
+        .options(
+            load_only(
+                Finding.id,
+                Finding.assessment_id,
+                Finding.requirement_id,
+                Finding.requirement_fr,
+                Finding.domain,
+                Finding.human_verdict,
+                Finding.human_rationale,
+            )
+        )
         .join(Assessment, Finding.assessment_id == Assessment.id)
         .where(
             Assessment.organization_id == org_id,

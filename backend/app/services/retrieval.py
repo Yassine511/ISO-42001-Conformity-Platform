@@ -12,6 +12,8 @@ discards unknown ids, so orphan vectors can never surface.
 """
 
 import json
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,13 +181,31 @@ def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
     # from crashes or manual writes): scroll this org's policy points. Points
     # are keyed by their ACTUAL point id — an orphan's id is arbitrary and
     # cannot be recomputed from its (possibly absent) result_id.
-    org_points = _scroll_org_points(org_id)  # actual_point_id -> result_id | None
+    org_points = _scroll_org_points(org_id)  # actual_point_id -> payload tuple
 
-    # 1) embed + upsert desired points (wait=True) BEFORE touching PG
-    if desired:
-        vectors = embed_texts([row.text for row in desired])
+    # 1) embed + upsert desired points (wait=True) BEFORE touching PG.
+    # Re-embedding is skipped for points that already exist in CANONICAL,
+    # FULLY-PAYLOADED form: chunk ids are content-addressed (version + parser +
+    # chunker + offsets) and the embedding model is pinned to the collection
+    # name, so an existing canonical point's vector is already correct. This
+    # keeps the org-lock window of assessment creation to the genuinely new
+    # chunks (the common case is zero). Points with an incomplete or
+    # mismatched payload (e.g. pre-M7b rows missing document_version_id) are
+    # NOT skipped — /index stays the repair path that re-upserts them whole.
+    desired_by_id = {row.id: row for row in desired}
+    present_canonical = {
+        rid
+        for raw_id, (canonical_key, rid, doc_id, version_id) in org_points.items()
+        if rid in desired_by_id
+        and canonical_key == qdrant.point_id(rid)
+        and doc_id == desired_by_id[rid].document_id
+        and version_id == desired_by_id[rid].document_version_id
+    }
+    to_upsert = [row for row in desired if row.id not in present_canonical]
+    if to_upsert:
+        vectors = embed_texts([row.text for row in to_upsert])
         qdrant.upsert_points(
-            [_chunk_point(row, org_id, vec) for row, vec in zip(desired, vectors)]
+            [_chunk_point(row, org_id, vec) for row, vec in zip(to_upsert, vectors)]
         )
 
     # 2) compute stale points BY ACTUAL POINT ID (raw int|UUID — never stringified
@@ -195,7 +215,7 @@ def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
     #     differs from UUID5(result_id)) — otherwise it duplicates candidates.
     stale_point_ids: list = [
         raw_id
-        for raw_id, (canonical_key, rid) in org_points.items()
+        for raw_id, (canonical_key, rid, _doc_id, _version_id) in org_points.items()
         if rid is None or rid not in keep_ids or canonical_key != qdrant.point_id(rid)
     ]
 
@@ -231,7 +251,8 @@ def _chunk_point(row: Chunk, org_id: str, vector: list[float]) -> qm.PointStruct
 
 
 def _scroll_points(conditions: list) -> dict:
-    """raw point id -> (str(id) for canonical comparison, payload result_id | None)."""
+    """raw point id -> (str(id) for canonical comparison, payload result_id | None,
+    payload document_id | None, payload document_version_id | None)."""
     client = qdrant.get_client()
     points_map: dict = {}
     offset = None
@@ -241,11 +262,17 @@ def _scroll_points(conditions: list) -> dict:
             scroll_filter=qm.Filter(must=conditions),
             limit=256,
             offset=offset,
-            with_payload=["result_id"],
+            with_payload=["result_id", "document_id", "document_version_id"],
             with_vectors=False,
         )
         for p in points:
-            points_map[p.id] = (str(p.id), (p.payload or {}).get("result_id"))
+            payload = p.payload or {}
+            points_map[p.id] = (
+                str(p.id),
+                payload.get("result_id"),
+                payload.get("document_id"),
+                payload.get("document_version_id"),
+            )
         if offset is None:
             break
     return points_map
@@ -289,7 +316,7 @@ def index_kb() -> dict:
     )
     stale = [
         raw_id
-        for raw_id, (canonical_key, rid) in kb_points.items()
+        for raw_id, (canonical_key, rid, _doc_id, _version_id) in kb_points.items()
         if rid is None or rid not in desired_rids or canonical_key != qdrant.point_id(rid)
     ]
     qdrant.delete_points_by_ids(stale)
@@ -399,6 +426,45 @@ def _bm25_entries(
     return entries
 
 
+# BM25 index cache, keyed on CONTENT identity — never on time or org alone:
+# the policy arm is identified by the frozenset of current version ids (a
+# version's chunk set is write-once, so the same id set always yields the
+# same entries) and the KB arm by a fingerprint of the loaded KB texts
+# (load_kb() re-reads the file per request, so version alone would not detect
+# an edited file in tests/dev). A snapshot retry naturally gets its own key.
+_BM25_CACHE: "OrderedDict[tuple, Bm25Index]" = OrderedDict()
+_BM25_CACHE_MAX = 8
+_BM25_CACHE_LOCK = threading.Lock()
+
+
+def _kb_fingerprint(kb: dict) -> tuple:
+    return (
+        kb["corpus_version"],
+        hash(tuple(sorted((e["id"], e["requirement_fr"], " ".join(e.get("keywords_fr", []))) for e in kb["by_id"].values()))),
+    )
+
+
+def _bm25_for(
+    db: Session, scope: str, kb: dict | None, current_version_ids: list[str]
+) -> Bm25Index:
+    key = (
+        frozenset(current_version_ids) if scope in ("policy", "both") else None,
+        _kb_fingerprint(kb) if kb is not None and scope in ("kb", "both") else None,
+    )
+    with _BM25_CACHE_LOCK:
+        cached = _BM25_CACHE.get(key)
+        if cached is not None:
+            _BM25_CACHE.move_to_end(key)
+            return cached
+    index = Bm25Index(_bm25_entries(db, scope, kb, current_version_ids))
+    with _BM25_CACHE_LOCK:
+        _BM25_CACHE[key] = index
+        _BM25_CACHE.move_to_end(key)
+        while len(_BM25_CACHE) > _BM25_CACHE_MAX:
+            _BM25_CACHE.popitem(last=False)
+    return index
+
+
 def hybrid_search(db: Session, org_id: str, query: str, k: int, scope: str = "policy") -> list[RetrievedItem]:
     """Snapshot-consistent hybrid retrieval. One {document: current version}
     snapshot per attempt feeds the vector filter, the BM25 corpus AND
@@ -436,7 +502,7 @@ def _hybrid_attempt(
     vector_ids = _vector_arm(
         query_vec, scope, org_id, kb["corpus_version"] if kb else "", arm_top, current_ids
     )
-    bm25_hits = Bm25Index(_bm25_entries(db, scope, kb, current_ids)).search(query, arm_top)
+    bm25_hits = _bm25_for(db, scope, kb, current_ids).search(query, arm_top)
 
     vector_rank = {rid: i + 1 for i, rid in enumerate(vector_ids)}
     bm25_rank = {rid: i + 1 for i, (rid, _) in enumerate(bm25_hits)}

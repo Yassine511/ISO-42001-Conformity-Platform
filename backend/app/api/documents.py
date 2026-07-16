@@ -28,6 +28,7 @@ from app.services.chunking import CHUNKER_VERSION
 from app.services import qdrant
 from app.services.run_guard import RUNNING_CONFLICT_FR, lock_organization, running_assessment_id
 from app.services.parsing import (
+    CANONICAL_FORMATS,
     PARSER_VERSION,
     SUPPORTED_EXTENSIONS,
     DocumentTooLarge,
@@ -106,9 +107,12 @@ def _activation_json(result: dict):
 def _canonical_format(filename: str) -> str:
     """Server-derived format from the (already validated) extension — the
     client-controlled multipart content_type is NEVER trusted for routing.
-    txt and md are one parse/patch family but keep their own labels."""
-    ext = filename.lower().rsplit(".", 1)[-1]
-    return {"pdf": "pdf", "docx": "docx", "txt": "txt", "md": "md"}[ext]
+    txt and md are one parse/patch family but keep their own labels. The map
+    is parsing.CANONICAL_FORMATS (the same source SUPPORTED_EXTENSIONS is
+    derived from), so a newly supported extension can never reach here
+    without a format label."""
+    ext = "." + filename.lower().rsplit(".", 1)[-1]
+    return CANONICAL_FORMATS[ext]
 
 
 async def _read_capped(file: UploadFile, cap: int) -> bytes:
@@ -143,32 +147,47 @@ async def upload_document(
     PENDING_INDEX -> ACTIVE protocol — the only way a PDF/DOCX gets a new
     version. `remediation_artifact_id` optionally records the
     corrective-action lineage (validated, never assumed)."""
-    # Org row lock + RUNNING check: a document added mid-run would change what
-    # later requirements retrieve, silently invalidating the assessment's
-    # frozen document manifest.
-    org = lock_organization(db, org_id)
-    if not org:
+    # Cheap existence check WITHOUT the lock: reading the multipart body and
+    # parsing a 20 MB PDF must not hold the org-wide mutual-exclusion row lock
+    # (it serializes every upload/index/assessment/patch-activation of the org).
+    if db.get(Organization, org_id) is None:
         raise HTTPException(404, "Organisation introuvable.")
-    if running_assessment_id(db, org_id):
-        raise HTTPException(409, RUNNING_CONFLICT_FR)
     filename = file.filename or "document"
     if not any(filename.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
         raise HTTPException(415, f"Type de fichier non supporté. Formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
 
     data = await _read_capped(file, MAX_FILE_SIZE)
 
-    if supersedes_version_id is not None:
-        try:
-            pages = parse_document(filename, data)
-        except UnsupportedFileType as exc:
-            raise HTTPException(415, str(exc))
-        except DocumentTooLarge as exc:
-            raise HTTPException(413, str(exc))
-        except (EmptyDocument, InvalidEncoding) as exc:
-            raise HTTPException(422, str(exc))
-        except Exception as exc:
+    # Parse BEFORE taking the org lock: parsing is pure (bytes -> pages) and
+    # needs no database state, so doing it outside the critical section keeps
+    # the lock window to the DB writes alone. On the plain path a generic
+    # parse failure still becomes a FAILED document row (recorded below).
+    parse_error: str | None = None
+    pages: list[str] = []
+    try:
+        pages = parse_document(filename, data)
+    except UnsupportedFileType as exc:
+        raise HTTPException(415, str(exc))
+    except DocumentTooLarge as exc:
+        raise HTTPException(413, str(exc))
+    except (EmptyDocument, InvalidEncoding) as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        if supersedes_version_id is not None:
             # a failed superseding parse persists NOTHING — no version row
             raise HTTPException(422, f"Échec de l'analyse : {exc}")
+        parse_error = f"Échec de l'analyse : {exc}"
+
+    # Org row lock + RUNNING check: a document added mid-run would change what
+    # later requirements retrieve, silently invalidating the assessment's
+    # frozen document manifest.
+    org = lock_organization(db, org_id)
+    if not org:  # deleted while we were reading/parsing
+        raise HTTPException(404, "Organisation introuvable.")
+    if running_assessment_id(db, org_id):
+        raise HTTPException(409, RUNNING_CONFLICT_FR)
+
+    if supersedes_version_id is not None:
         result = _run_versioning(
             patcher.supersede_upload,
             db,
@@ -204,17 +223,9 @@ async def upload_document(
         filename=filename,
         content_type=file.content_type or "application/octet-stream",
     )
-    try:
-        pages = parse_document(filename, data)
-    except UnsupportedFileType as exc:
-        raise HTTPException(415, str(exc))
-    except DocumentTooLarge as exc:
-        raise HTTPException(413, str(exc))
-    except (EmptyDocument, InvalidEncoding) as exc:
-        raise HTTPException(422, str(exc))
-    except Exception as exc:
+    if parse_error is not None:  # parsed (and failed) before the lock
         doc.status = DocumentStatus.FAILED.value
-        doc.error = f"Échec de l'analyse : {exc}"
+        doc.error = parse_error
     else:
         doc.status = DocumentStatus.PARSED.value
         doc.page_count = len(pages)

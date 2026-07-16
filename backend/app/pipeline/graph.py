@@ -213,17 +213,8 @@ def create_assessment(
     finally:
         db.close()
     # After the commit: a failure here is reconciliation debt, never a failed
-    # creation (see drop_stale_points docstring).
-    try:
-        drop_stale_points(stale_point_ids)
-    except Exception:  # pragma: no cover - best-effort cleanup
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "stale-point cleanup failed after assessment creation; "
-            "next /index will reconcile",
-            exc_info=True,
-        )
+    # creation — drop_stale_points itself swallows and logs (see its docstring).
+    drop_stale_points(stale_point_ids)
     return assessment_id
 
 

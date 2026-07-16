@@ -628,15 +628,19 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
     drafts_with_unsupported = 0
     classified_with_codes = 0
     if included:
-        for attempt in db.scalars(
-            select(AssessmentAttempt).where(AssessmentAttempt.assessment_id.in_(included))
+        # column select, not full ORM rows: attempts carry no large JSON, but
+        # the pattern stays uniform with the finding/chat scans below
+        for assessment_id, requirement_id, attempt_outcome, codes in db.execute(
+            select(
+                AssessmentAttempt.assessment_id,
+                AssessmentAttempt.requirement_id,
+                AssessmentAttempt.attempt_outcome,
+                AssessmentAttempt.verifier_error_codes,
+            ).where(AssessmentAttempt.assessment_id.in_(included))
         ):
-            if attempt.requirement_id not in manifests.get(attempt.assessment_id, ()):
+            if requirement_id not in manifests.get(assessment_id, ()):
                 continue
-            outcome_counts[attempt.attempt_outcome] = (
-                outcome_counts.get(attempt.attempt_outcome, 0) + 1
-            )
-            codes = attempt.verifier_error_codes
+            outcome_counts[attempt_outcome] = outcome_counts.get(attempt_outcome, 0) + 1
             if codes is None:
                 continue  # legacy or not yet completed by the verify node
             classified_with_codes += 1
@@ -686,15 +690,15 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
                     override_events += 1
 
     drafts_total = sum(outcome_counts.values())
-    # chat rows are owned by conversations (no assessment/org column) — join
-    chat_messages = list(
-        db.scalars(
-            select(ChatMessage)
-            .join(Conversation, ChatMessage.conversation_id == Conversation.id)
-            .where(Conversation.organization_id == scope.organization_id)
-        )
-    )
-    stripped_count = sum(len(m.stripped_citations or []) for m in chat_messages)
+    # chat rows are owned by conversations (no assessment/org column) — join.
+    # Only the two columns the metrics need: a full ChatMessage row drags the
+    # complete retrieval/claims/raw-call JSON into memory per message.
+    chat_rows = db.execute(
+        select(ChatMessage.status, ChatMessage.stripped_citations)
+        .join(Conversation, ChatMessage.conversation_id == Conversation.id)
+        .where(Conversation.organization_id == scope.organization_id)
+    ).all()
+    stripped_count = sum(len(stripped or []) for _, stripped in chat_rows)
 
     return {
         "gate": {
@@ -732,9 +736,9 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
         },
         "chat": {
             "metric_scope": "organization",  # chat has no assessment binding
-            "messages": len(chat_messages),
-            "answered": sum(1 for m in chat_messages if m.status == "ANSWERED"),
-            "abstained": sum(1 for m in chat_messages if m.status == "ABSTAINED"),
+            "messages": len(chat_rows),
+            "answered": sum(1 for status, _ in chat_rows if status == "ANSWERED"),
+            "abstained": sum(1 for status, _ in chat_rows if status == "ABSTAINED"),
             "stripped_citation_count": stripped_count,
         },
     }

@@ -1,9 +1,11 @@
 """BM25 lexical search with a French analyzer.
 
 Analyzer: NFC -> casefold -> strip accents -> \\w+ tokens -> drop French
-stopwords -> Snowball French stemming. The index is rebuilt per request —
-the corpus is tiny, and any cache keyed on something weaker than content
-would risk serving a stale index.
+stopwords -> Snowball French stemming. Bm25Index instances are immutable
+after construction; the retrieval layer caches them keyed on CONTENT identity
+(current version-id set + KB fingerprint — see services/retrieval._bm25_for).
+Any cache keyed on something weaker than content would risk serving a stale
+index.
 """
 
 import re
