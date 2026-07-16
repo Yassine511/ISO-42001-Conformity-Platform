@@ -194,6 +194,32 @@ means **citation/schema-verified via an EXACT match after normalization** (quote
 clause matches, schema valid) — never "verdict proven correct"; a fuzzy near-match only earns a
 repair retry then `ABSTAINED(fuzzy_citation)` for human review; verdict accuracy is measured in M6,
 human review (M5) produces CONFIRMED.
+**M10 (organization auth + public landing) is done** — the project's first identity layer
+(migration `0019`: `users`, `organization_members` link table [no role column yet, by design],
+`auth_sessions`, `invitations`). Self-hosted email/password (`bcrypt` direct — passlib is
+unmaintained; 72-byte cap enforced upfront). Sessions are **opaque tokens in an httpOnly
+`int102_session` SameSite=Lax cookie; the DB stores sha256(token) only — no JWT, no signing
+secret**; deployment is same-origin in dev (Vite proxy) and prod (nginx), so the ~80 fetch
+wrappers needed no changes. Signup creates user+org+membership atomically; invites are
+single-use hash-stored links (raw token shown exactly once, 7-day TTL, no e-mail server).
+Enforcement: `api/deps.py` — `require_org_member` at APIRouter level for uniform org-scoped
+routers (chat/remediation/reporting/assessments), per-route for mixed ones
+(documents/retrieval); the org-UNSCOPED `/api/documents/{id}` family resolves doc→org→
+membership (`require_document_access`); membership failure is **404, never 403** (no org
+existence leak); `/api/kb/*` reads are authenticated-any-user. `GET /api/organizations`
+returns only the caller's orgs; `POST` grants the creator membership — which is also what
+keeps the pre-M10 API tests passing under the autouse conftest `bypass_auth` override
+(tests seeding Organization rows directly call `seed_membership(db, org_id)`;
+`tests/test_auth.py` removes the override and exercises the real flow incl. cross-org
+isolation). Frontend: `src/auth.tsx` (AuthProvider bootstraps from `/api/auth/me`;
+`RequireAuth` guards `/organizations/*`; any API 401 fires `int102:unauthorized` → back to
+/login), public routes `/` (LandingPage), `/login`, `/signup`, `/invitation/:token`;
+HomePage (org picker) was deleted — login lands on `homeOf(organizations)`. Sidebar footer
+has the account menu (invite dialog + logout). Attribution `*_label` columns are STILL
+free-text (M11 candidate: bind them to the authenticated user). Pre-M10 orgs have no
+members: `scripts/create_user.py` attaches an operator account. Known pre-production TODOs
+(documented in README, deliberately out of scope): login rate limiting, password reset,
+CSRF double-submit.
 
 User-facing text (UI, API error messages, corpus, gold labels) is **French**. Code, comments and
 commits are English.

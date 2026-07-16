@@ -64,8 +64,8 @@ Commits follow a clear, descriptive format tied to the project milestones:
 
 - **`Mx`** — the milestone the work belongs to (`M1a` foundation, `M1b` corpus, `M2` RAG, `M3` pipeline,
   `M4` chat, `M5` frontend/HITL, `M6` evaluation, `M7a` remediation planning agent, `M7b` document-editing
-  tool, `M8` artifacts, `M9` deliverables). Omitted for cross-cutting fixes. (Commits older than the
-  M7a/M7b introduction use the pre-renumbering `M7`/`M8` meanings.)
+  tool, `M8` artifacts, `M9` deliverables, `M10` auth + landing). Omitted for cross-cutting fixes.
+  (Commits older than the M7a/M7b introduction use the pre-renumbering `M7`/`M8` meanings.)
 - **`area`** — `backend`, `frontend`, `infra`, `corpus`, `eval`, or `docs`.
 - Summary in the imperative mood ("add citation verifier", not "added"), ≤ 72 characters.
 
@@ -106,9 +106,26 @@ M7b document-editing tool (anchored patches, versioning; originals immutable) �
 M8 scoring & artifacts (this state: deterministic Node ⑤ scoring over human-confirmed
 findings, conformity dashboard + trust panel, derived risk register with versioned severity
 policy, per-control SoA, WeasyPrint PDF report, chat finding drill-down) →
-M9 deliverables. Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
+M9 deliverables → M10 SaaS-readiness (organization auth + public landing page).
+Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
 Note: the PDF export needs WeasyPrint's native Pango/Cairo libraries — available in the
 Docker image (CI-validated); on a bare Windows host venv the endpoint returns a clean 503.
+
+## Authentication (M10)
+
+Self-hosted email/password auth with org-scoped access. Signing up creates the user AND
+their organization; teammates join via single-use invite links (7-day expiry, no e-mail
+server needed). Sessions are opaque tokens in an httpOnly `SameSite=Lax` cookie; the DB
+stores only `sha256(token)` (no JWT, no signing secret). Every business route requires
+membership of the addressed organization (404, never 403 — org existence is not leaked),
+including the org-unscoped `/api/documents/{id}` family. Public: the landing page, signup,
+login, invitation lookup/accept, `/api/health`.
+
+Pre-M10 organizations have no members — attach an operator account with
+`python scripts/create_user.py --email you@x.fr --name "Vous" --org "Lumen AI"` (password
+prompted). CLI/eval scripts talk to the runner/services directly and are unaffected.
+Pre-production TODOs (documented, out of scope): login rate limiting, password reset
+(needs e-mail infra), CSRF double-submit hardening.
 
 ## Evaluation (M6)
 
