@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from app import models  # noqa: F401 — register tables on Base metadata
 from app.api import (
     assessments,
+    auth,
     chat,
     documents,
     organizations,
@@ -98,15 +99,21 @@ async def reject_oversized_upload(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # session cookies: deployment is same-origin (nginx/vite proxy), but a
+    # separately-configured origin must be able to send credentials
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(auth.org_router)
 app.include_router(organizations.router)
 app.include_router(documents.router)
 app.include_router(retrieval.router)
 app.include_router(chat.router)
 app.include_router(assessments.router)
+app.include_router(assessments.kb_router)
 app.include_router(remediation.router)
 app.include_router(reporting.router)
 

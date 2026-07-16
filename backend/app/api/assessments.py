@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime, timezone
 
+from app.api.deps import get_current_user, require_org_member
 from app.db import SessionLocal, get_db
 from app.models import Assessment, AssessmentAttempt, Finding, FindingReview, Organization
 from app.pipeline import runner
@@ -44,7 +45,17 @@ from app.schemas import (
 from app.services.provenance import source_slice
 from app.services.retrieval import load_kb
 
-router = APIRouter(prefix="/api", tags=["assessments"])
+# Every route here is org-scoped: membership enforced once at router level
+# (M10). /kb/requirements has no org in its path -> lives on kb_router below.
+router = APIRouter(
+    prefix="/api",
+    tags=["assessments"],
+    dependencies=[Depends(require_org_member)],
+)
+# KB content is app data, not org data: any authenticated user may read it.
+kb_router = APIRouter(
+    prefix="/api", tags=["assessments"], dependencies=[Depends(get_current_user)]
+)
 
 QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
 
@@ -465,7 +476,7 @@ def review_finding(
     return _finding_detail(db, finding)
 
 
-@router.get("/kb/requirements", response_model=list[KbRequirementOut])
+@kb_router.get("/kb/requirements", response_model=list[KbRequirementOut])
 def list_kb_requirements():
     """The 51 dev-split requirements, in frozen manifest order. The 14 M6
     holdout requirements are deliberately not exposed (their membership is

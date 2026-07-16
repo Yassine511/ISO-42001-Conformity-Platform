@@ -12,6 +12,7 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_org_member
 from app.chat import service
 from app.db import get_db
 from app.models import ChatMessage, Conversation, Organization
@@ -19,7 +20,9 @@ from app.pipeline.state import is_infrastructure_failure
 from app.schemas import ChatAsk, ChatMessageOut, ConversationOut
 from app.services.retrieval import CorpusChangedError
 
-router = APIRouter(prefix="/api", tags=["chat"])
+router = APIRouter(
+    prefix="/api", tags=["chat"], dependencies=[Depends(require_org_member)]
+)
 
 QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
 

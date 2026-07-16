@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, require_org_member
 from app.db import get_db
 from app.models import Organization
 from app.schemas import IndexReport, KbIndexReport, SearchRequest, SearchResult
@@ -14,7 +15,11 @@ router = APIRouter(prefix="/api", tags=["retrieval"])
 QDRANT_ERRORS = (ResponseHandlingException, UnexpectedResponse, ConnectionError)
 
 
-@router.post("/organizations/{org_id}/index", response_model=IndexReport)
+@router.post(
+    "/organizations/{org_id}/index",
+    response_model=IndexReport,
+    dependencies=[Depends(require_org_member)],
+)
 def index_organization(org_id: str, db: Session = Depends(get_db)):
     # Org row lock + RUNNING check: re-indexing mid-run would change the chunk
     # set later requirements retrieve from (frozen-manifest invariant).
@@ -29,7 +34,10 @@ def index_organization(org_id: str, db: Session = Depends(get_db)):
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
 
 
-@router.post("/kb/index", response_model=KbIndexReport)
+# KB reindex touches shared app data only — authenticated, not org-scoped.
+@router.post(
+    "/kb/index", response_model=KbIndexReport, dependencies=[Depends(get_current_user)]
+)
 def index_kb():
     try:
         return retrieval.index_kb()
@@ -39,7 +47,11 @@ def index_kb():
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
 
 
-@router.post("/organizations/{org_id}/search", response_model=list[SearchResult])
+@router.post(
+    "/organizations/{org_id}/search",
+    response_model=list[SearchResult],
+    dependencies=[Depends(require_org_member)],
+)
 def search(org_id: str, body: SearchRequest, db: Session = Depends(get_db)):
     if not db.get(Organization, org_id):
         raise HTTPException(404, "Organisation introuvable.")

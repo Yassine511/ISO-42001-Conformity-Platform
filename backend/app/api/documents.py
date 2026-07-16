@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_document_access, require_org_member
 from app.db import get_db
 from app.remediation import patcher
 from app.models import (
@@ -132,7 +133,12 @@ async def _read_capped(file: UploadFile, cap: int) -> bytes:
     return b"".join(chunks)
 
 
-@router.post("/organizations/{org_id}/documents", response_model=None, status_code=201)
+@router.post(
+    "/organizations/{org_id}/documents",
+    response_model=None,
+    status_code=201,
+    dependencies=[Depends(require_org_member)],
+)
 async def upload_document(
     org_id: str,
     file: UploadFile,
@@ -294,7 +300,11 @@ async def upload_document(
     )
 
 
-@router.get("/organizations/{org_id}/documents", response_model=list[DocumentOut])
+@router.get(
+    "/organizations/{org_id}/documents",
+    response_model=list[DocumentOut],
+    dependencies=[Depends(require_org_member)],
+)
 def list_documents(org_id: str, db: Session = Depends(get_db)):
     if not db.get(Organization, org_id):
         raise HTTPException(404, "Organisation introuvable.")
@@ -303,7 +313,11 @@ def list_documents(org_id: str, db: Session = Depends(get_db)):
     ).all()
 
 
-@router.get("/documents/{document_id}/pages", response_model=list[DocumentPageOut])
+@router.get(
+    "/documents/{document_id}/pages",
+    response_model=list[DocumentPageOut],
+    dependencies=[Depends(require_document_access)],
+)
 def get_document_pages(document_id: str, db: Session = Depends(get_db)):
     """Pages of the CURRENT version (a failed document has none). Historical
     versions get their own endpoint in M7b commit 3."""
@@ -319,7 +333,11 @@ def get_document_pages(document_id: str, db: Session = Depends(get_db)):
     ).all()
 
 
-@router.get("/documents/{document_id}/versions", response_model=list[DocumentVersionOut])
+@router.get(
+    "/documents/{document_id}/versions",
+    response_model=list[DocumentVersionOut],
+    dependencies=[Depends(require_document_access)],
+)
 def list_document_versions(document_id: str, db: Session = Depends(get_db)):
     if not db.get(Document, document_id):
         raise HTTPException(404, "Document introuvable.")
@@ -340,6 +358,7 @@ def _get_version(db: Session, document_id: str, version_id: str) -> DocumentVers
 @router.get(
     "/documents/{document_id}/versions/{version_id}/pages",
     response_model=list[DocumentPageOut],
+    dependencies=[Depends(require_document_access)],
 )
 def get_version_pages(document_id: str, version_id: str, db: Session = Depends(get_db)):
     """Historical source inspection: the exact text a finding was made
@@ -352,7 +371,10 @@ def get_version_pages(document_id: str, version_id: str, db: Session = Depends(g
     ).all()
 
 
-@router.get("/documents/{document_id}/versions/{version_id}/download")
+@router.get(
+    "/documents/{document_id}/versions/{version_id}/download",
+    dependencies=[Depends(require_document_access)],
+)
 def download_version(document_id: str, version_id: str, db: Session = Depends(get_db)):
     """TXT/MD only (PDF/DOCX bytes are never stored — only parsed text; a
     reconstructed file would be a lie). Patch-born versions are byte-faithful
@@ -385,7 +407,10 @@ def download_version(document_id: str, version_id: str, db: Session = Depends(ge
     )
 
 
-@router.post("/documents/{document_id}/versions/{version_id}/recover")
+@router.post(
+    "/documents/{document_id}/versions/{version_id}/recover",
+    dependencies=[Depends(require_document_access)],
+)
 def recover_version(
     document_id: str,
     version_id: str,
@@ -402,7 +427,11 @@ def recover_version(
     return _activation_json(result)
 
 
-@router.delete("/documents/{document_id}", status_code=204)
+@router.delete(
+    "/documents/{document_id}",
+    status_code=204,
+    dependencies=[Depends(require_document_access)],
+)
 def delete_document(document_id: str, db: Session = Depends(get_db)):
     # Lock the ORGANIZATION row first (consistent lock order with upload/index/
     # assessment creation), then the document row: the citation check and the

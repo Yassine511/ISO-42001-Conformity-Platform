@@ -16,6 +16,7 @@ bump can never silently rescore an old report.
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_org_member
 from app.db import SessionLocal, get_db
 from app.models import Organization
 from app.schemas import SoaDecisionBody
@@ -24,7 +25,10 @@ from app.services import scoring
 from app.services import soa as soa_service
 from app.services.scoring_policy import SCORING_POLICIES
 
-router = APIRouter(prefix="/api", tags=["reporting"])
+router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(require_org_member)],
+    tags=["reporting"])
 
 
 def get_reporting_db():

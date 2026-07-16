@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.deps import require_org_member
 from app.db import SessionLocal, get_db
 from app.models import (
     Organization,
@@ -51,7 +52,10 @@ from app.schemas import (
     RemediationTriageDraftOut,
 )
 
-router = APIRouter(prefix="/api", tags=["remediation"])
+router = APIRouter(
+    prefix="/api",
+    dependencies=[Depends(require_org_member)],
+    tags=["remediation"])
 
 
 def get_session_factory():
