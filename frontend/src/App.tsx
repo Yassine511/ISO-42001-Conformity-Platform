@@ -1,10 +1,14 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
+import { RequireAuth } from "./auth";
 
 // Route-level code splitting: each page (and its heavy deps — recharts on the
 // dashboard, the remediation workflow) loads on demand instead of in one bundle.
-const HomePage = lazy(() => import("./pages/HomePage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const SignupPage = lazy(() => import("./pages/SignupPage"));
+const InviteAcceptPage = lazy(() => import("./pages/InviteAcceptPage"));
 const OrganizationPage = lazy(() => import("./pages/OrganizationPage"));
 const ReviewWorkspacePage = lazy(() => import("./pages/ReviewWorkspacePage"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
@@ -31,8 +35,21 @@ export default function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/organizations/:orgId" element={<AppShell />}>
+        {/* public */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/invitation/:token" element={<InviteAcceptPage />} />
+
+        {/* authenticated app */}
+        <Route
+          path="/organizations/:orgId"
+          element={
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
+          }
+        >
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<LegacyDashboardRedirect />} />
           <Route path="evaluations" element={<OrganizationPage />} />
