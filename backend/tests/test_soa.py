@@ -15,6 +15,8 @@ from app.models import Assessment, Finding, Organization, SoaControl, SoaDecisio
 from app.services import scoring
 from app.services import soa as soa_service
 
+from tests.conftest import seed_membership
+
 NOW = datetime(2026, 7, 12, 12, 0, 0, tzinfo=timezone.utc)
 
 
@@ -48,6 +50,7 @@ def _org(db) -> str:
     org = Organization(name=f"SoA SA {next(_ORG_SEQ)}")
     db.add(org)
     db.commit()
+    seed_membership(db, org.id)
     return org.id
 
 

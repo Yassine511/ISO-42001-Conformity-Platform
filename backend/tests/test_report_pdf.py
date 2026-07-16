@@ -19,6 +19,8 @@ from app.main import app
 from app.models import Assessment, Finding, Organization
 from app.services import report_pdf, scoring
 
+from tests.conftest import seed_membership
+
 NOW = datetime(2026, 7, 12, 12, 0, 0, tzinfo=timezone.utc)
 
 
@@ -57,6 +59,7 @@ def _seed(db) -> tuple[str, str]:
     org = Organization(name="PDF SA")
     db.add(org)
     db.commit()
+    seed_membership(db, org.id)
     a = Assessment(
         organization_id=org.id, corpus_version="1.3.0", status="COMPLETED",
         requirement_ids=["A.9.2", "A.7.4"],

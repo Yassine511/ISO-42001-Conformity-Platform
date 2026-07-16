@@ -94,3 +94,39 @@ def fake_vector_stack():
     yield
     embeddings.set_provider(None)
     qdrant.set_client(None)
+
+
+# --- M10 auth bypass -------------------------------------------------------
+# Pre-M10 tests exercise business routes without authenticating. The autouse
+# override injects a stub current user; because POST /api/organizations now
+# grants the creator a membership row (user_id = this stub's id), every test
+# that creates its org through the API passes the membership guard unchanged.
+# SQLite tests run with FKs off, so the stub needs no users row. Tests that
+# seed an Organization row directly in the DB call seed_membership(db, org_id).
+# tests/test_auth.py removes the override to exercise the real login flow.
+
+TEST_USER_ID = "00000000-0000-0000-0000-0000000000aa"
+
+
+def seed_membership(db, org_id: str) -> None:
+    from app.models import OrganizationMember
+
+    db.add(OrganizationMember(organization_id=org_id, user_id=TEST_USER_ID))
+    db.commit()
+
+
+@pytest.fixture(autouse=True)
+def bypass_auth():
+    from app.api.deps import get_current_user
+    from app.main import app
+    from app.models import User
+
+    stub = User(
+        id=TEST_USER_ID,
+        email="test@int102.local",
+        password_hash="!",
+        display_name="Test harness",
+    )
+    app.dependency_overrides[get_current_user] = lambda: stub
+    yield
+    app.dependency_overrides.pop(get_current_user, None)

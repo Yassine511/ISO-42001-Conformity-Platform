@@ -140,12 +140,13 @@ def test_cited_document_cannot_be_deleted(client):
     """Audit-trail guard: a document cited by a finding must not be deletable —
     its removal would leave the citation dangling."""
     from app.models import Assessment, Chunk, Finding, Organization
-    from tests.conftest import seed_parsed_document
+    from tests.conftest import seed_membership, seed_parsed_document
 
     db = client.session_factory()
     org = Organization(name="Cite SA")
     db.add(org)
     db.commit()
+    seed_membership(db, org.id)
     doc = seed_parsed_document(db, org.id, "p.txt", ["x" * 50], checksum="c1")
     db.add(
         Chunk(

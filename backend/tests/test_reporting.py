@@ -29,6 +29,8 @@ from app.models import (
 from app.services import scoring
 from app.services import scoring_policy as sp
 
+from tests.conftest import seed_membership
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 7, 12, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -60,6 +62,7 @@ def _org(db, name="Lumen AI") -> str:
     org = Organization(name=name)
     db.add(org)
     db.commit()
+    seed_membership(db, org.id)
     return org.id
 
 
