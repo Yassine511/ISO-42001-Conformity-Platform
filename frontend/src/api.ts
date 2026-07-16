@@ -44,6 +44,8 @@ export interface Assessment {
   status: AssessmentStatus;
   requirement_ids: string[] | null;
   retrieval_k: number;
+  // M7b: chunker provenance is recorded PER DOCUMENT VERSION (a mixed
+  // v2/v3 corpus has no honest global chunker_version claim).
   document_manifest: {
     documents: {
       document_id: string;
@@ -51,8 +53,13 @@ export interface Assessment {
       checksum: string | null;
       parser_version: string;
       page_count: number;
+      document_version_id?: string | null;
+      version_number?: number | null;
+      source_checksum?: string | null;
+      text_checksum?: string | null;
+      chunker_version?: string | null;
+      chunk_id_scheme?: string | null;
     }[];
-    chunker_version: string;
     chunk_count: number;
     indexed_at: string;
   } | null;

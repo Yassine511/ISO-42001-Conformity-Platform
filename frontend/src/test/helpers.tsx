@@ -54,7 +54,6 @@ export function makeAssessment(over: Partial<Assessment> = {}): Assessment {
     retrieval_k: 6,
     document_manifest: {
       documents: [],
-      chunker_version: "2",
       chunk_count: 12,
       indexed_at: "2026-07-06T10:00:00Z",
     },
