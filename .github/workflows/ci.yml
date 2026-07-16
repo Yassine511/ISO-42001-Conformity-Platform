@@ -5,6 +5,14 @@ on:
     branches: [master]
   pull_request:
 
+# NOTE — retrieval quality gates are NOT run here: scripts/retrieval_sanity.py
+# needs a live Qdrant plus the real embedding model (~220 MB) and the indexed
+# six-document baseline. After ANY retrieval change (BM25 analyzer, fusion,
+# chunking, embedding, Qdrant filters), run it manually against the clean eval
+# org before merging:
+#   backend/.venv/Scripts/python scripts/retrieval_sanity.py --org "Lumen AI (eval M6)"
+# Gates: doc R@5 >= 0.85, anchor R@5 >= 0.70, anchor R@10 >= 0.85, KB R@5 >= 0.60.
+
 jobs:
   backend:
     runs-on: ubuntu-latest
