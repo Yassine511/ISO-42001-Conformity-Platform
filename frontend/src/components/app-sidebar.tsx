@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Building2,
   Check,
@@ -7,15 +8,19 @@ import {
   FileText,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   MessageSquareText,
   ShieldAlert,
   UserCheck,
+  UserPlus,
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { useAuth } from "../auth";
+import { InviteDialog } from "@/components/invite-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -132,6 +137,9 @@ export function AppSidebar() {
   const { orgId = "" } = useParams<{ orgId: string }>();
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [inviteOpen, setInviteOpen] = useState(false);
   const orgs = useQuery({ queryKey: ["organizations"], queryFn: api.listOrganizations });
   // Revue humaine resolves to the latest assessment that has findings to
   // review; the list is already needed elsewhere so this stays cheap.
@@ -241,7 +249,50 @@ export function AppSidebar() {
         <p className="px-3 py-2 text-xs leading-relaxed text-muted-foreground group-data-[collapsible=icon]:hidden">
           L'IA propose, le code vérifie chaque citation, un humain confirme chaque verdict.
         </p>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip="Compte"
+                  aria-label="Menu du compte"
+                  className="border border-sidebar-border bg-background/60"
+                >
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold uppercase">
+                    {(user?.display_name ?? "?").slice(0, 1)}
+                  </div>
+                  <div className="grid flex-1 leading-tight">
+                    <span className="truncate text-sm font-medium">
+                      {user?.display_name ?? "Compte"}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4 opacity-60" aria-hidden="true" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="w-60">
+                <DropdownMenuItem onSelect={() => setInviteOpen(true)}>
+                  <UserPlus className="size-4" aria-hidden="true" />
+                  Inviter un membre
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={async () => {
+                    await logout();
+                    navigate("/login", { replace: true });
+                  }}
+                >
+                  <LogOut className="size-4" aria-hidden="true" />
+                  Se déconnecter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
+
+      <InviteDialog orgId={orgId} open={inviteOpen} onOpenChange={setInviteOpen} />
     </Sidebar>
   );
 }

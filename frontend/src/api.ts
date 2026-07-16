@@ -4,6 +4,34 @@ export interface Organization {
   created_at: string;
 }
 
+// ------------------------------------------------------------ auth (M10)
+
+export interface User {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export interface SessionInfo {
+  user: User;
+  organizations: Organization[];
+}
+
+export interface InvitationCreated {
+  invite_token: string; // raw token — shown once, never retrievable again
+  email: string;
+  expires_at: string;
+}
+
+export interface InvitationPublic {
+  organization_name: string;
+  email: string;
+  expired: boolean;
+}
+
+/** Fired on any 401 API response so the auth provider can drop the session. */
+export const UNAUTHORIZED_EVENT = "int102:unauthorized";
+
 export interface Doc {
   id: string;
   organization_id: string;
@@ -790,6 +818,12 @@ export const isInfraAbstain = (reason: string | null) =>
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    if (res.status === 401) {
+      // session expired/revoked: the AuthProvider listens and clears the
+      // user, which sends the guard back to /login (harmless on the login
+      // form itself, where the user is already null)
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `Erreur ${res.status}`);
   }
@@ -814,6 +848,26 @@ const post = (url: string, body?: unknown) =>
   });
 
 export const api = {
+  // -- auth (M10). Cookies ride along automatically (same-origin fetch).
+  me: () => fetch("/api/auth/me").then((r) => json<SessionInfo>(r)),
+  login: (email: string, password: string) =>
+    post("/api/auth/login", { email, password }).then((r) => json<SessionInfo>(r)),
+  signup: (body: {
+    email: string;
+    password: string;
+    display_name: string;
+    organization_name: string;
+  }) => post("/api/auth/signup", body).then((r) => json<SessionInfo>(r)),
+  logout: () => post("/api/auth/logout").then((r) => json<void>(r)),
+  createInvitation: (orgId: string, email: string) =>
+    post(`/api/organizations/${orgId}/invitations`, { email }).then((r) =>
+      json<InvitationCreated>(r),
+    ),
+  invitationInfo: (token: string) =>
+    fetch(`/api/auth/invitations/${token}`).then((r) => json<InvitationPublic>(r)),
+  acceptInvitation: (token: string, body: { password: string; display_name: string }) =>
+    post(`/api/auth/invitations/${token}/accept`, body).then((r) => json<SessionInfo>(r)),
+
   listOrganizations: () => fetch("/api/organizations").then((r) => json<Organization[]>(r)),
   createOrganization: (name: string) =>
     post("/api/organizations", { name }).then((r) => json<Organization>(r)),
