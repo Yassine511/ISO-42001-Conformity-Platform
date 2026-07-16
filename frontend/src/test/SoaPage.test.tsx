@@ -92,7 +92,10 @@ describe("SoaPage", () => {
     renderPage();
     expect(await screen.findByText("A.9.2")).toBeInTheDocument();
     expect(screen.getAllByText("(par défaut)")).toHaveLength(2);
-    expect(screen.getByText("écart")).toBeInTheDocument();
+    // evaluation status renders in user language, never the raw enum value
+    expect(screen.getByText("Écart confirmé")).toBeInTheDocument();
+    // « applicable » (SoA) must never be presented as « conforme »
+    expect(screen.getAllByText("applicable").length).toBeGreaterThan(0);
     expect(screen.getByText("Texte du constat A.9.4")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Constat associé" }).getAttribute("href")).toContain(
       "/assessments/aid-1",

@@ -119,15 +119,21 @@ describe("review action rules", () => {
     // select the abstained finding in the list
     await userEvent.click(await screen.findByRole("button", { name: /A\.4\.5/ }));
     const actions = await screen.findByRole("group", { name: "Actions de revue" });
-    expect(within(actions).getByRole("button", { name: "Approuver" })).toBeDisabled();
-    expect(within(actions).getByRole("button", { name: "Modifier" })).toBeDisabled();
-    expect(within(actions).getByRole("button", { name: "Remplacer" })).toBeEnabled();
+    expect(within(actions).getByRole("button", { name: /Confirmer le verdict IA/ })).toBeDisabled();
+    expect(
+      within(actions).getByRole("button", { name: "Modifier la justification" }),
+    ).toBeDisabled();
+    expect(
+      within(actions).getByRole("button", { name: "Choisir un autre verdict" }),
+    ).toBeEnabled();
     expect(screen.getByText(/le verdict vous appartient/)).toBeInTheDocument();
   });
 
   it("requires a rationale before submitting an edit", async () => {
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Modifier" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Modifier la justification" }),
+    );
     const submit = screen.getByRole("button", { name: "Enregistrer la décision" });
     expect(submit).toBeDisabled();
     await userEvent.type(screen.getByLabelText(/Justification/), "Nuance apportée.");
@@ -139,7 +145,9 @@ describe("review action rules", () => {
       makeFindingDetail({ review_status: "CONFIRMED", review_action: "override" }),
     );
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Remplacer" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Choisir un autre verdict" }),
+    );
     await userEvent.selectOptions(screen.getByLabelText(/Votre verdict/), "partial");
     await userEvent.type(screen.getByLabelText(/Justification/), "Couverture partielle.");
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer la décision" }));

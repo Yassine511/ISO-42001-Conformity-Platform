@@ -116,9 +116,12 @@ describe("RiskRegisterPage", () => {
     mocked.getRiskRegister.mockResolvedValue(makeRegister([makeRow()]));
     mocked.createCase.mockResolvedValue({ id: "case-new" });
     renderPage();
-    const btn = await screen.findByRole("button", { name: "Ouvrir un cas de remédiation" });
-    expect(screen.getByText(/triage assisté par IA/)).toBeInTheDocument();
-    await userEvent.click(btn);
+    // the dominant next-action panel AND the row both offer the action
+    const buttons = await screen.findAllByRole("button", {
+      name: "Ouvrir un cas de remédiation",
+    });
+    expect(screen.getAllByText(/triage assisté par IA/).length).toBeGreaterThan(0);
+    await userEvent.click(buttons[0]);
     await waitFor(() =>
       expect(mocked.createCase).toHaveBeenCalledWith("org-1", { finding_id: "fid-1" }),
     );

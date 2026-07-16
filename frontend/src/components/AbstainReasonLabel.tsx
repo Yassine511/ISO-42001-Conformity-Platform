@@ -6,8 +6,8 @@ const REASON_LABELS: Record<string, string> = {
   verification_failed: "Citations non vérifiables",
   fuzzy_citation: "Citation approximative — vérification humaine prioritaire",
   low_confidence: "Confiance insuffisante",
-  llm_error: "Échec technique du fournisseur LLM",
-  rate_limited: "Fournisseur LLM saturé (réessayez)",
+  llm_error: "Échec technique du service IA",
+  rate_limited: "Service IA saturé (réessayez)",
 };
 
 /**

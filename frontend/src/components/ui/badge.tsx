@@ -24,6 +24,8 @@ const badgeVariants = cva(
         danger:
           "border-destructive/25 bg-destructive/10 text-destructive dark:bg-destructive/15",
         neutral: "border-border bg-muted text-muted-foreground",
+        // in-flight / informational — the restrained cobalt accent
+        info: "border-primary/25 bg-primary/10 text-primary dark:bg-primary/15",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
       },

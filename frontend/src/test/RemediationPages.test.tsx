@@ -105,6 +105,7 @@ const ACTION = {
   owner_role: null,
   success_criterion: null,
   priority: null,
+  due_date: null,
   review_note: null,
   reviewer_label: null,
   reviewed_at: null,
@@ -162,9 +163,23 @@ function makeCase(over: Partial<RemediationCaseDetail> = {}): RemediationCaseDet
     evidence_revision: 0,
     closed_at: null,
     close_note: null,
+    owner_role: null,
+    due_date: null,
+    closure_criterion: null,
+    planning_revision: 0,
+    planning_updated_at: null,
+    planning_editor_label: null,
     created_at: "2026-07-10T09:00:00Z",
     updated_at: "2026-07-10T09:00:00Z",
     finding_links: [LINK],
+    workflow: {
+      active_plan_status: null,
+      blocker_reason: null,
+      pending_action_count: 0,
+      open_action_count: 0,
+      next_action_key: "review_triage",
+      closure: { recommended_ready: false, recommendations: [] },
+    },
     triage_drafts: [TRIAGE_DRAFT],
     plans: [],
     events: [
@@ -312,8 +327,9 @@ describe("patch flow", () => {
     mocked.getPatchProposal.mockResolvedValue(abstained);
 
     renderCase();
+    // translated abstention reason — the raw enum stays in the technical disclosure
     expect(
-      await screen.findByText(/Correctif en abstention \(anchor_ambiguous\)/),
+      await screen.findByText(/Correctif en abstention — Point d'insertion ambigu/),
     ).toBeInTheDocument();
     // no diff and no patch-decision controls for an abstained proposal
     expect(screen.queryByText("Diff proposé")).not.toBeInTheDocument();
@@ -443,14 +459,23 @@ describe("patch flow", () => {
 });
 
 describe("RemediationListPage", () => {
-  it("lists cases with status badges", async () => {
+  it("lists cases with human-readable titles and translated phases", async () => {
     mocked.listCases.mockResolvedValue([makeCase()]);
     renderWithProviders(<RemediationListPage />, {
       route: "/organizations/org-1/remediation",
       path: "/organizations/:orgId/remediation",
     });
-    expect(await screen.findByText("Remédiation A.9.2 — partial")).toBeInTheDocument();
-    expect(screen.getByText("Triage")).toBeInTheDocument();
+    // the raw backend title « Remédiation A.9.2 — partial » never renders
+    expect(
+      (
+        await screen.findAllByText("Remédiation de l'exigence A.9.2 — partiellement conforme")
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Remédiation A.9.2 — partial")).toBeNull();
+    expect(screen.getAllByText("Qualification de l'écart").length).toBeGreaterThan(0);
+    // honest missing operational fields, never fabricated
+    expect(screen.getAllByText("Non attribué").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("À définir").length).toBeGreaterThan(0);
   });
 });
 
@@ -482,7 +507,11 @@ describe("triage panel", () => {
       }),
     );
     renderCase();
-    expect(await screen.findByText(/retrieval_error/)).toBeInTheDocument();
+    // operational abort rendered neutrally, in user language — never the raw enum
+    expect(
+      await screen.findByText(/Recherche documentaire interrompue/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/retrieval_error/)).toBeNull();
   });
 });
 
@@ -746,8 +775,96 @@ describe("reassessments", () => {
     renderCase();
     expect(await screen.findByText(/Exigences réévaluées : A\.9\.2/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Exclues \(réservées au jeu de test M6, jamais réévaluées ici\) : A\.8\.1/),
+      screen.getByText(
+        /Exclues \(réservées au jeu de test de référence, jamais réévaluées ici\) : A\.8\.1/,
+      ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("case planning (0018)", () => {
+  it("edits owner / deadline / closure criterion with the read revision", async () => {
+    mocked.getCase.mockResolvedValue(makeCase({ planning_revision: 2 }));
+    mocked.updateCasePlanning = vi.fn().mockResolvedValue(
+      makeCase({ owner_role: "RSSI", planning_revision: 3 }),
+    );
+    (api as Record<string, unknown>).updateCasePlanning = mocked.updateCasePlanning;
+    renderCase();
+    // honest missing state before any edit
+    expect((await screen.findAllByText("Non attribué")).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Modifier" }));
+    await userEvent.type(screen.getByLabelText("Responsable (rôle)"), "RSSI");
+    await userEvent.type(
+      screen.getByLabelText("Critère de clôture"),
+      "Réévaluation conforme.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer le pilotage" }));
+    await waitFor(() =>
+      expect(mocked.updateCasePlanning).toHaveBeenCalledWith("org-1", "case-1", {
+        expected_revision: 2,
+        owner_role: "RSSI",
+        due_date: null,
+        closure_criterion: "Réévaluation conforme.",
+        editor_label: null,
+      }),
+    );
+  });
+
+  it("surfaces the stale-revision conflict instead of silently overwriting", async () => {
+    mocked.getCase.mockResolvedValue(makeCase());
+    mocked.updateCasePlanning = vi
+      .fn()
+      .mockRejectedValue(new Error("Le pilotage du cas a été modifié entre-temps"));
+    (api as Record<string, unknown>).updateCasePlanning = mocked.updateCasePlanning;
+    renderCase();
+    await userEvent.click(await screen.findByRole("button", { name: "Modifier" }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer le pilotage" }));
+    expect(
+      await screen.findByText(/modifié entre-temps/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("launch gate (0018)", () => {
+  it("surfaces the server validation when starting an action without deadline", async () => {
+    mocked.getCase.mockResolvedValue(inProgressCaseWithApprovedAction());
+    mocked.changeLifecycle.mockRejectedValue(
+      new Error("Impossible de démarrer l'action — champs requis manquants : échéance."),
+    );
+    renderCase();
+    await userEvent.click(await screen.findByRole("button", { name: "Démarrer" }));
+    expect(await screen.findByText(/champs requis manquants : échéance/)).toBeInTheDocument();
+  });
+});
+
+describe("workflow summary display", () => {
+  it("shows the translated next action and closure recommendations, never raw keys", async () => {
+    mocked.listCases.mockResolvedValue([
+      makeCase({
+        status: "IN_PROGRESS",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "r",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        workflow: {
+          active_plan_status: "VERIFIED",
+          blocker_reason: null,
+          pending_action_count: 0,
+          open_action_count: 1,
+          next_action_key: "launch_actions",
+          closure: { recommended_ready: false, recommendations: ["open_actions"] },
+        },
+      }),
+    ]);
+    renderWithProviders(<RemediationListPage />, {
+      route: "/organizations/org-1/remediation",
+      path: "/organizations/:orgId/remediation",
+    });
+    expect(
+      (await screen.findAllByText("Lancer les actions validées")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("launch_actions")).toBeNull();
   });
 });
 

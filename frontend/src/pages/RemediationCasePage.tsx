@@ -5,7 +5,6 @@ import {
   api,
   OPERATIONAL_ABORT_REASONS,
   type Classification,
-  type DocumentVersionSummary,
   type RemediationArtifactView,
   type RemediationAction,
   type RemediationCaseDetail,
@@ -13,121 +12,94 @@ import {
   type RemediationScope,
   type TriageDraft,
 } from "../api";
+import {
+  abstainReasonDisplay,
+  actionLifecycleDisplay,
+  actionTypeLabel,
+  caseDisplayTitle,
+  caseStatusDisplay,
+  classificationDisplay,
+  CLOSURE_RECOMMENDATIONS,
+  effectivenessDisplay,
+  eventTypeLabel,
+  MISSING,
+  priorityDisplay,
+  remediationScopeDisplay,
+  verdictDisplay,
+  versionStateDisplay,
+} from "@/lib/labels";
 import { CaseStatusBadge } from "./RemediationListPage";
-import { ArrowLeft, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowLeft } from "lucide-react";
+import { NextActionPanel } from "@/components/next-action-panel";
+import { SectionHeading } from "@/components/section-heading";
+import { StatusLabel } from "@/components/status-label";
+import { TechnicalDisclosure, TechnicalRow } from "@/components/technical-disclosure";
+import { WorkflowStrip, type WorkflowStep } from "@/components/workflow-strip";
 
-// ------------------------------------------------------ lifecycle stepper
-
-const LIFECYCLE_STEPS = ["Triage", "Plan", "Exécution", "Efficacité", "Clôture"] as const;
-
-function stepIndex(status: RemediationCaseDetail["status"]): number {
-  switch (status) {
-    case "TRIAGE":
-      return 0;
-    case "TRIAGE_APPROVED":
-    case "PLANNING":
-    case "PLAN_READY":
-      return 1;
-    case "IN_PROGRESS":
-      return 2;
-    case "CLOSED":
-      return 4;
-    default:
-      return 0;
-  }
-}
-
-function LifecycleStepper({ status }: { status: RemediationCaseDetail["status"] }) {
-  const current = stepIndex(status);
-  return (
-    <ol
-      aria-label="Cycle de vie du cas"
-      className="flex flex-wrap items-center gap-y-2 text-xs font-medium"
-    >
-      {LIFECYCLE_STEPS.map((step, i) => (
-        <li key={step} className="flex items-center">
-          <span
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors",
-              i < current
-                ? "border-transparent bg-muted text-muted-foreground"
-                : i === current
-                  ? "border-transparent bg-primary text-primary-foreground shadow-sm"
-                  : "border-border text-muted-foreground/70",
-            )}
-            aria-current={i === current ? "step" : undefined}
-          >
-            {i < current && <Check className="size-3" aria-hidden="true" />}
-            {step}
-          </span>
-          {i < LIFECYCLE_STEPS.length - 1 && (
-            <span aria-hidden className="mx-1.5 h-px w-4 bg-border sm:w-6" />
-          )}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-// user-facing labels for raw backend reassessment states
-const REASSESSMENT_STATUS_LABELS: Record<string, string> = {
-  PENDING: "En attente de lancement",
-  LAUNCHED: "Lancée",
-  FAILED: "Échec du lancement",
-};
-
-// one-line "next decision" hint per case status
-const NEXT_DECISION: Record<RemediationCaseDetail["status"], string | null> = {
-  TRIAGE: "Prochaine décision : approuver ou corriger le triage proposé par l'IA.",
-  TRIAGE_APPROVED: "Prochaine décision : demander un plan d'actions correctives à l'agent.",
-  PLANNING: "Rédaction du plan en cours…",
-  PLAN_READY: "Prochaine décision : approuver, modifier ou rejeter chaque action du plan.",
-  IN_PROGRESS:
-    "Prochaine étape : exécuter les actions approuvées, enregistrer leur efficacité, puis clôturer.",
-  CLOSED: null,
-};
-
-const CLASSIFICATION_LABELS: Record<Classification, string> = {
-  evidence_gap: "Lacune de preuve",
-  observation: "Observation",
-  improvement_opportunity: "Piste d'amélioration",
-  nonconformity: "Non-conformité",
-};
-
-const SCOPE_LABELS: Record<RemediationScope, string> = {
-  local: "Local",
-  related_requirements: "Exigences liées",
-  organization_wide: "Toute l'organisation",
-};
-
-const ACTION_TYPE_LABELS: Record<RemediationAction["action_type"], string> = {
-  document_amendment: "Amendement documentaire",
-  new_document: "Nouveau document",
-  process_change: "Changement de processus",
-  training: "Formation",
-  risk_treatment_update: "Mise à jour du traitement des risques",
-  other: "Autre",
-};
-
-const LIFECYCLE_LABELS: Record<RemediationAction["lifecycle"], string> = {
-  PROPOSED: "Proposée",
-  APPROVED: "Approuvée",
-  REJECTED: "Rejetée",
-  IN_PROGRESS: "En cours",
-  DONE: "Terminée",
-  CANCELLED: "Annulée",
-};
-
-const EFFECTIVENESS_LABELS: Record<RemediationAction["effectiveness"], string> = {
-  NOT_CHECKED: "Non vérifiée",
-  EFFECTIVE: "Efficace",
-  PARTIALLY_EFFECTIVE: "Partiellement efficace",
-  INEFFECTIVE: "Inefficace",
-};
+const CLASSIFICATION_OPTIONS: Classification[] = [
+  "evidence_gap",
+  "observation",
+  "improvement_opportunity",
+  "nonconformity",
+];
+const SCOPE_OPTIONS: RemediationScope[] = [
+  "local",
+  "related_requirements",
+  "organization_wide",
+];
 
 const isOperationalAbort = (reason: string | null) =>
   reason !== null && (OPERATIONAL_ABORT_REASONS as readonly string[]).includes(reason);
+
+// ------------------------------------------------------ lifecycle stepper
+
+function lifecycleSteps(c: RemediationCaseDetail, activePlan: RemediationPlan | null): WorkflowStep[] {
+  const planBlocked = activePlan?.status === "ABSTAINED";
+  const actions = activePlan?.status === "VERIFIED" ? activePlan.actions : [];
+  const started = actions.some((a) => ["IN_PROGRESS", "DONE"].includes(a.lifecycle));
+  const checked = actions.some((a) => a.effectiveness !== "NOT_CHECKED");
+  const closed = c.status === "CLOSED";
+  const triageDone = c.triage_approved_at !== null;
+  const planDone = activePlan?.status === "VERIFIED" && c.status === "IN_PROGRESS";
+
+  return [
+    {
+      key: "triage",
+      label: "Triage",
+      state: triageDone ? "done" : "current",
+      caption: triageDone ? "Validé" : "À valider",
+    },
+    {
+      key: "plan",
+      label: "Plan",
+      state: planDone
+        ? "done"
+        : planBlocked
+          ? "blocked"
+          : triageDone && !closed
+            ? "current"
+            : closed
+              ? "done"
+              : "todo",
+      caption: planBlocked ? "Non vérifié" : undefined,
+    },
+    {
+      key: "execution",
+      label: "Exécution",
+      state: closed ? "done" : started ? "current" : c.status === "IN_PROGRESS" ? "current" : "todo",
+    },
+    {
+      key: "effectiveness",
+      label: "Efficacité",
+      state: closed ? "done" : checked ? "current" : "todo",
+    },
+    {
+      key: "closure",
+      label: "Clôture",
+      state: closed ? "done" : "todo",
+    },
+  ];
+}
 
 export default function RemediationCasePage() {
   const { orgId, caseId } = useParams<{ orgId: string; caseId: string }>();
@@ -138,6 +110,11 @@ export default function RemediationCasePage() {
   });
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["remediation-case", orgId, caseId] });
+
+  const draftPlan = useMutation({
+    mutationFn: () => api.draftPlan(orgId!, caseId!),
+    onSuccess: invalidate,
+  });
 
   if (detail.isError) {
     return <p className="text-sm text-destructive">{(detail.error as Error).message}</p>;
@@ -150,30 +127,36 @@ export default function RemediationCasePage() {
 
   return (
     <div className="space-y-6">
-      <div className="sticky top-0 z-10 -mx-4 space-y-3 border-b bg-background/90 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:-mx-8 md:px-8">
+      <div className="space-y-3 border-b pb-4">
         <Link
           to={`/organizations/${orgId}/remediation`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="inline-flex min-h-9 items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Cas de remédiation
+          Gestion des remédiations
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{c.title}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-balance md:text-2xl">
+            {caseDisplayTitle(c)}
+          </h1>
           <CaseStatusBadge status={c.status} />
         </div>
-        <LifecycleStepper status={c.status} />
-        {NEXT_DECISION[c.status] && (
-          <p className="text-xs text-muted-foreground">{NEXT_DECISION[c.status]}</p>
-        )}
+        <WorkflowStrip steps={lifecycleSteps(c, activePlan)} ariaLabel="Cycle de vie du cas" />
       </div>
 
-      <LinkedFindings orgId={orgId!} c={c} onChanged={invalidate} />
-      <TriagePanel orgId={orgId!} c={c} onChanged={invalidate} />
-      <PlanPanel orgId={orgId!} c={c} activePlan={activePlan} onChanged={invalidate} />
-      <ReassessmentPanel orgId={orgId!} c={c} activePlan={activePlan} onChanged={invalidate} />
-      <ClosurePanel orgId={orgId!} c={c} onChanged={invalidate} />
-      <EventsTimeline c={c} />
+      <CaseNextAction c={c} activePlan={activePlan} draftPlan={draftPlan} />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_290px] lg:items-start">
+        <div className="min-w-0 space-y-6">
+          <LinkedFindings orgId={orgId!} c={c} onChanged={invalidate} />
+          <TriagePanel orgId={orgId!} c={c} onChanged={invalidate} />
+          <PlanPanel c={c} orgId={orgId!} activePlan={activePlan} draftPlan={draftPlan} onChanged={invalidate} />
+          <ReassessmentPanel orgId={orgId!} c={c} activePlan={activePlan} onChanged={invalidate} />
+          <ClosurePanel orgId={orgId!} c={c} onChanged={invalidate} />
+          <EventsTimeline c={c} />
+        </div>
+        <PilotageRail orgId={orgId!} c={c} onChanged={invalidate} />
+      </div>
     </div>
   );
 }
@@ -181,6 +164,309 @@ export default function RemediationCasePage() {
 function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
   return <p className="text-sm text-destructive">{(error as Error).message}</p>;
+}
+
+// -------------------------------------------------------- next action panel
+
+function CaseNextAction({
+  c,
+  activePlan,
+  draftPlan,
+}: {
+  c: RemediationCaseDetail;
+  activePlan: RemediationPlan | null;
+  draftPlan: { mutate: () => void; isPending: boolean };
+}) {
+  const scrollTo = (id: string) => () =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  if (c.status === "CLOSED") {
+    return (
+      <NextActionPanel
+        tone="done"
+        eyebrow="État du cas"
+        title="Cas clôturé"
+        description={`Clôturé le ${c.closed_at ? new Date(c.closed_at).toLocaleDateString("fr-FR") : ""}. Le cas reste consultable ; vous pouvez le rouvrir si l'écart réapparaît.`}
+      />
+    );
+  }
+  if (c.status === "TRIAGE") {
+    const latest = c.triage_drafts[c.triage_drafts.length - 1];
+    const abstained = latest?.status === "ABSTAINED";
+    return (
+      <NextActionPanel
+        title={
+          abstained
+            ? "L'IA n'a pas pu qualifier l'écart — votre qualification est requise"
+            : "Valider la qualification proposée par l'IA"
+        }
+        description="La qualification (nature de l'écart, périmètre) reste une décision humaine ; la proposition de l'IA n'est qu'un point de départ."
+        actionLabel="Aller au triage"
+        onAction={scrollTo("triage")}
+      />
+    );
+  }
+  if (c.status === "TRIAGE_APPROVED") {
+    return (
+      <NextActionPanel
+        title="Lancer la rédaction du plan d'actions"
+        description="L'IA rédige un plan dont chaque citation et chaque exigence visée sont vérifiées par le code avant de vous être présentées."
+        actionLabel={draftPlan.isPending ? "Rédaction en cours…" : "Lancer la rédaction du plan"}
+        onAction={() => draftPlan.mutate()}
+        actionDisabled={draftPlan.isPending}
+      />
+    );
+  }
+  if (c.status === "PLANNING") {
+    return (
+      <NextActionPanel
+        title="Rédaction du plan en cours"
+        description="Le plan sera vérifié par le code avant de vous être présenté."
+      />
+    );
+  }
+  if (activePlan?.status === "ABSTAINED") {
+    return (
+      <NextActionPanel
+        tone="attention"
+        title="Plan non vérifié"
+        description="La dernière rédaction n'a pas passé la vérification — aucune action n'en est issue. Une nouvelle rédaction est requise."
+        actionLabel={draftPlan.isPending ? "Rédaction en cours…" : "Relancer la rédaction du plan"}
+        onAction={() => draftPlan.mutate()}
+        actionDisabled={draftPlan.isPending}
+      />
+    );
+  }
+  if (c.status === "PLAN_READY") {
+    const pending = (activePlan?.actions ?? []).filter((a) => a.review_status === "PENDING").length;
+    return (
+      <NextActionPanel
+        title={
+          pending > 0
+            ? `Examiner ${pending} action${pending > 1 ? "s" : ""} proposée${pending > 1 ? "s" : ""}`
+            : "Examiner le plan proposé"
+        }
+        description="Chaque action doit être approuvée, modifiée ou écartée par vous — avec une priorité obligatoire."
+        actionLabel="Aller au plan"
+        onAction={scrollTo("plan")}
+      />
+    );
+  }
+  // IN_PROGRESS — refine from the actions themselves
+  const actions = activePlan?.status === "VERIFIED" ? activePlan.actions : [];
+  const proposed = actions.filter((a) => a.lifecycle === "PROPOSED").length;
+  const approved = actions.filter((a) => a.lifecycle === "APPROVED").length;
+  const running = actions.filter((a) => a.lifecycle === "IN_PROGRESS").length;
+  const done = actions.filter((a) => a.lifecycle === "DONE");
+  const unchecked = done.filter((a) => a.effectiveness === "NOT_CHECKED").length;
+  let title = "Faire avancer les actions";
+  let description = "Suivez l'exécution des actions validées.";
+  if (proposed > 0) {
+    title = `Examiner ${proposed} action${proposed > 1 ? "s" : ""} en attente de décision`;
+    description = "Des actions proposées par l'IA attendent votre validation.";
+  } else if (approved > 0) {
+    title = `Lancer ${approved} action${approved > 1 ? "s" : ""} validée${approved > 1 ? "s" : ""}`;
+    description = "Des actions validées ne sont pas encore démarrées.";
+  } else if (running > 0) {
+    title = `Mener ${running} action${running > 1 ? "s" : ""} à terme`;
+    description = "Marquez chaque action terminée une fois réalisée.";
+  } else if (unchecked > 0) {
+    title = "Vérifier l'efficacité des actions terminées";
+    description =
+      "Enregistrez un verdict d'efficacité — idéalement appuyé par une réévaluation ciblée.";
+  } else if (done.length > 0) {
+    title = "Clôturer le cas";
+    description = "Les actions sont terminées et leur efficacité est enregistrée.";
+  }
+  return (
+    <NextActionPanel
+      title={title}
+      description={description}
+      actionLabel="Aller au plan"
+      onAction={scrollTo("plan")}
+    />
+  );
+}
+
+// ------------------------------------------------------------ pilotage rail
+
+/** Case-steering rail: human owner / deadline / closure criterion, editable
+    under an optimistic revision check (a concurrent edit is a 409, never a
+    silent overwrite). Absent values render honestly. */
+function PilotageRail({
+  orgId,
+  c,
+  onChanged,
+}: {
+  orgId: string;
+  c: RemediationCaseDetail;
+  onChanged: () => void;
+}) {
+  const primary = c.finding_links.find((l) => l.is_primary) ?? c.finding_links[0];
+  const [editing, setEditing] = useState(false);
+  const [ownerRole, setOwnerRole] = useState(c.owner_role ?? "");
+  const [dueDate, setDueDate] = useState(c.due_date ?? "");
+  const [criterion, setCriterion] = useState(c.closure_criterion ?? "");
+  const [editor, setEditor] = useState("");
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.updateCasePlanning(orgId, c.id, {
+        expected_revision: c.planning_revision,
+        owner_role: ownerRole.trim() || null,
+        due_date: dueDate || null,
+        closure_criterion: criterion.trim() || null,
+        editor_label: editor.trim() || null,
+      }),
+    onSuccess: () => {
+      setEditing(false);
+      onChanged();
+    },
+  });
+
+  return (
+    <aside
+      aria-label="Pilotage du cas"
+      className="space-y-3 rounded-lg border bg-card p-4 lg:sticky lg:top-4"
+    >
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+          Pilotage du cas
+        </h2>
+        {c.status !== "CLOSED" && (
+          <button
+            onClick={() => {
+              setOwnerRole(c.owner_role ?? "");
+              setDueDate(c.due_date ?? "");
+              setCriterion(c.closure_criterion ?? "");
+              setEditing((e) => !e);
+            }}
+            className="ml-auto min-h-9 rounded text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {editing ? "Annuler" : "Modifier"}
+          </button>
+        )}
+      </div>
+      <dl className="space-y-2.5 text-sm">
+        <RailRow label="Phase">
+          <StatusLabel display={caseStatusDisplay(c.status)} />
+        </RailRow>
+        {primary && (
+          <RailRow label="Écart principal">
+            <span className="font-mono text-[13px]">{primary.finding_requirement_id}</span>{" "}
+            <span className="text-muted-foreground">
+              {verdictDisplay(primary.finding_human_verdict).label}
+            </span>
+          </RailRow>
+        )}
+        {c.classification && (
+          <RailRow label="Nature de l'écart">
+            {classificationDisplay(c.classification).label}
+          </RailRow>
+        )}
+        {c.scope && (
+          <RailRow label="Périmètre">{remediationScopeDisplay(c.scope).label}</RailRow>
+        )}
+        {!editing && (
+          <>
+            <RailRow label="Responsable">
+              {c.owner_role ?? (
+                <span className="text-muted-foreground/80 italic">{MISSING.owner}</span>
+              )}
+            </RailRow>
+            <RailRow label="Échéance">
+              {c.due_date ? (
+                new Date(c.due_date).toLocaleDateString("fr-FR")
+              ) : (
+                <span className="text-muted-foreground/80 italic">{MISSING.deadline}</span>
+              )}
+            </RailRow>
+            <RailRow label="Critère de clôture">
+              {c.closure_criterion ?? (
+                <span className="text-muted-foreground/80 italic">{MISSING.value}</span>
+              )}
+            </RailRow>
+          </>
+        )}
+        <RailRow label="Ouvert le">{new Date(c.created_at).toLocaleDateString("fr-FR")}</RailRow>
+        <RailRow label="Mise à jour">
+          {new Date(c.updated_at).toLocaleDateString("fr-FR")}
+        </RailRow>
+      </dl>
+
+      {editing && (
+        <form
+          className="space-y-2 border-t pt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate();
+          }}
+        >
+          <label className="block text-xs">
+            <span className="text-muted-foreground">Responsable (rôle)</span>
+            <input
+              value={ownerRole}
+              onChange={(e) => setOwnerRole(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="text-muted-foreground">Échéance du cas</span>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="text-muted-foreground">Critère de clôture</span>
+            <textarea
+              value={criterion}
+              onChange={(e) => setCriterion(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-md border border-input px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="text-muted-foreground">Votre nom (facultatif, non vérifié)</span>
+            <input
+              value={editor}
+              onChange={(e) => setEditor(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input px-2 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={save.isPending}
+            className="min-h-10 w-full rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            Enregistrer le pilotage
+          </button>
+          {save.isError && (
+            <p className="text-xs text-destructive">{(save.error as Error).message}</p>
+          )}
+        </form>
+      )}
+
+      {c.planning_updated_at && !editing && (
+        <p className="border-t pt-2 text-xs leading-relaxed text-muted-foreground">
+          Dernière mise à jour du pilotage le{" "}
+          {new Date(c.planning_updated_at).toLocaleDateString("fr-FR")}
+          {c.planning_editor_label && <> par {c.planning_editor_label} (non vérifié)</>}.
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function RailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5">{children}</dd>
+    </div>
+  );
 }
 
 // -------------------------------------------------------- linked findings
@@ -213,10 +499,12 @@ function LinkedFindings({
   });
 
   return (
-    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        Constats liés
-      </h2>
+    <section className="space-y-3 rounded-lg border bg-card p-5">
+      <SectionHeading
+        as="h2"
+        title="Écart confirmé"
+        description="Les constats humains qui fondent ce cas."
+      />
       <ul className="space-y-2">
         {c.finding_links.map((l) => (
           <li
@@ -230,11 +518,11 @@ function LinkedFindings({
               </span>
             )}
             <span className="text-muted-foreground">{l.finding_requirement_fr}</span>
-            <span className="text-xs text-muted-foreground">verdict : {l.finding_human_verdict}</span>
+            <StatusLabel display={verdictDisplay(l.finding_human_verdict)} />
             {!l.is_primary && c.status === "TRIAGE" && (
               <button
                 onClick={() => unlink.mutate(l.finding_id)}
-                className="ml-auto text-xs text-destructive hover:underline"
+                className="ml-auto min-h-9 text-xs text-destructive hover:underline"
               >
                 Délier
               </button>
@@ -256,22 +544,20 @@ function LinkedFindings({
                 <span className="font-mono text-xs">{s.requirement_id}</span>
                 <span className="text-muted-foreground">{s.requirement_fr}</span>
                 {s.same_domain && (
-                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-700">
+                  <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-xs text-primary">
                     même domaine
                   </span>
                 )}
                 <span className="ml-auto flex gap-2">
                   <button
                     onClick={() => link.mutate({ finding_id: s.finding_id, decision: "link" })}
-                    className="text-xs font-medium text-primary hover:underline"
+                    className="min-h-9 text-xs font-medium text-primary hover:underline"
                   >
                     Lier
                   </button>
                   <button
-                    onClick={() =>
-                      link.mutate({ finding_id: s.finding_id, decision: "reject" })
-                    }
-                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => link.mutate({ finding_id: s.finding_id, decision: "reject" })}
+                    className="min-h-9 text-xs text-muted-foreground hover:underline"
                   >
                     Écarter
                   </button>
@@ -326,173 +612,161 @@ function TriagePanel({
   const approved = c.triage_approved_at !== null;
   const abstained = latest?.status === "ABSTAINED";
 
-  return (
-    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Triage</h2>
-        {approved ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
-            approuvé par un humain
-          </span>
+  const body = approved ? (
+    <dl className="grid gap-2 text-sm sm:grid-cols-2">
+      <div>
+        <dt className="text-xs text-muted-foreground">Qualification</dt>
+        <dd>{classificationDisplay(c.classification).label}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-muted-foreground">Périmètre</dt>
+        <dd>{remediationScopeDisplay(c.scope).label}</dd>
+      </div>
+      {c.correction_note && (
+        <div className="sm:col-span-2">
+          <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
+          <dd>{c.correction_note}</dd>
+        </div>
+      )}
+      <div className="sm:col-span-2">
+        <dt className="text-xs text-muted-foreground">Justification du périmètre</dt>
+        <dd>{c.scope_rationale}</dd>
+      </div>
+    </dl>
+  ) : latest ? (
+    <div className="space-y-3">
+      <div
+        className={`rounded-lg border p-4 text-sm ${
+          abstained
+            ? isOperationalAbort(latest.abstain_reason)
+              ? "border-border bg-muted/50"
+              : "border-warning/40 bg-warning/10"
+            : "border-primary/25 bg-accent"
+        }`}
+      >
+        <p className="text-xs font-semibold text-muted-foreground">
+          Proposition IA (brouillon n°{latest.sequence}) — à valider par un humain
+        </p>
+        {abstained ? (
+          <p className="mt-2">
+            L'agent s'est abstenu — {abstainReasonDisplay(latest.abstain_reason).label}.
+            Renseignez le triage vous-même ci-dessous, ou relancez la proposition.
+          </p>
         ) : (
-          <span className="rounded-full bg-amber-100 dark:bg-amber-400/15 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
-            en attente d'approbation humaine
-          </span>
+          <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Qualification proposée</dt>
+              <dd>{classificationDisplay(latest.ai_classification).label}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Périmètre proposé</dt>
+              <dd>{remediationScopeDisplay(latest.ai_scope).label}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
+              <dd>{latest.ai_correction_note}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Justification</dt>
+              <dd>{latest.ai_scope_rationale}</dd>
+            </div>
+          </dl>
         )}
       </div>
 
-      {approved ? (
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-xs text-muted-foreground">Qualification</dt>
-            <dd>{CLASSIFICATION_LABELS[c.classification!]}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Périmètre</dt>
-            <dd>{SCOPE_LABELS[c.scope!]}</dd>
-          </div>
-          {c.correction_note && (
-            <div className="sm:col-span-2">
-              <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
-              <dd>{c.correction_note}</dd>
-            </div>
-          )}
-          <div className="sm:col-span-2">
-            <dt className="text-xs text-muted-foreground">Justification du périmètre</dt>
-            <dd>{c.scope_rationale}</dd>
-          </div>
-        </dl>
-      ) : latest ? (
-        <div className="space-y-3">
-          <div
-            className={`rounded-lg border p-4 text-sm ${
-              abstained
-                ? isOperationalAbort(latest.abstain_reason)
-                  ? "border-border bg-muted/50"
-                  : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
-                : "border-primary/25 bg-accent"
-            }`}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-sm">
+          <span className="text-xs text-muted-foreground">
+            Qualification {abstained ? "(requise)" : "(laisser vide pour accepter)"}
+          </span>
+          <select
+            value={classification}
+            onChange={(e) => setClassification(e.target.value as Classification | "")}
+            className="mt-1 w-full rounded-md border border-input px-2 py-1.5"
           >
-            <p className="text-xs font-semibold text-muted-foreground">
-              Proposition IA (brouillon n°{latest.sequence}) — à valider par un humain
-            </p>
-            {abstained ? (
-              <p className="mt-2">
-                L'agent s'est abstenu ({latest.abstain_reason}) : renseignez le triage
-                vous-même ci-dessous, ou relancez la proposition.
-              </p>
-            ) : (
-              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs text-muted-foreground">Qualification proposée</dt>
-                  <dd>{CLASSIFICATION_LABELS[latest.ai_classification!]}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Périmètre proposé</dt>
-                  <dd>{SCOPE_LABELS[latest.ai_scope!]}</dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-xs text-muted-foreground">Correction immédiate</dt>
-                  <dd>{latest.ai_correction_note}</dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-xs text-muted-foreground">Justification</dt>
-                  <dd>{latest.ai_scope_rationale}</dd>
-                </div>
-              </dl>
-            )}
-          </div>
+            <option value="">— proposition IA —</option>
+            {CLASSIFICATION_OPTIONS.map((v) => (
+              <option key={v} value={v}>
+                {classificationDisplay(v).label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-xs text-muted-foreground">
+            Périmètre {abstained ? "(requis)" : "(laisser vide pour accepter)"}
+          </span>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as RemediationScope | "")}
+            className="mt-1 w-full rounded-md border border-input px-2 py-1.5"
+          >
+            <option value="">— proposition IA —</option>
+            {SCOPE_OPTIONS.map((v) => (
+              <option key={v} value={v}>
+                {remediationScopeDisplay(v).label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm sm:col-span-2">
+          <span className="text-xs text-muted-foreground">Correction immédiate (surcharge)</span>
+          <textarea
+            value={correctionNote}
+            onChange={(e) => setCorrectionNote(e.target.value)}
+            rows={2}
+            className="mt-1 w-full rounded-md border border-input px-2 py-1.5"
+          />
+        </label>
+        <label className="text-sm sm:col-span-2">
+          <span className="text-xs text-muted-foreground">
+            Justification du périmètre {abstained ? "(requise)" : "(surcharge)"}
+          </span>
+          <textarea
+            value={scopeRationale}
+            onChange={(e) => setScopeRationale(e.target.value)}
+            rows={2}
+            className="mt-1 w-full rounded-md border border-input px-2 py-1.5"
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => approve.mutate()}
+          disabled={approve.isPending}
+          className="min-h-10 rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-foreground hover:bg-success/90 disabled:opacity-50"
+        >
+          Approuver le triage
+        </button>
+        <button
+          onClick={() => redraft.mutate()}
+          disabled={redraft.isPending}
+          className="min-h-10 rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-accent disabled:opacity-50"
+        >
+          Relancer la proposition IA
+        </button>
+      </div>
+    </div>
+  ) : (
+    <p className="text-sm text-muted-foreground">Aucune proposition de triage.</p>
+  );
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="text-xs text-muted-foreground">
-                Qualification {abstained ? "(requise)" : "(laisser vide pour accepter)"}
-              </span>
-              <select
-                value={classification}
-                onChange={(e) => setClassification(e.target.value as Classification | "")}
-                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
-              >
-                <option value="">— proposition IA —</option>
-                {Object.entries(CLASSIFICATION_LABELS).map(([v, l]) => (
-                  <option key={v} value={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="text-xs text-muted-foreground">
-                Périmètre {abstained ? "(requis)" : "(laisser vide pour accepter)"}
-              </span>
-              <select
-                value={scope}
-                onChange={(e) => setScope(e.target.value as RemediationScope | "")}
-                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
-              >
-                <option value="">— proposition IA —</option>
-                {Object.entries(SCOPE_LABELS).map(([v, l]) => (
-                  <option key={v} value={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm sm:col-span-2">
-              <span className="text-xs text-muted-foreground">Correction immédiate (surcharge)</span>
-              <textarea
-                value={correctionNote}
-                onChange={(e) => setCorrectionNote(e.target.value)}
-                rows={2}
-                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm sm:col-span-2">
-              <span className="text-xs text-muted-foreground">
-                Justification du périmètre {abstained ? "(requise)" : "(surcharge)"}
-              </span>
-              <textarea
-                value={scopeRationale}
-                onChange={(e) => setScopeRationale(e.target.value)}
-                rows={2}
-                className="mt-1 w-full rounded-lg border border-input px-2 py-1.5"
-              />
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => approve.mutate()}
-              disabled={approve.isPending}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              Approuver le triage
-            </button>
-            <button
-              onClick={() => redraft.mutate()}
-              disabled={redraft.isPending}
-              className="rounded-lg border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-accent disabled:opacity-50"
-            >
-              Relancer la proposition IA
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Aucune proposition de triage.</p>
-      )}
-
+  const extras = (
+    <>
       {c.triage_drafts.length > 1 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
-            Historique des propositions ({c.triage_drafts.length})
-          </summary>
-          <ul className="mt-2 space-y-1">
+        <TechnicalDisclosure summary={`Historique des propositions (${c.triage_drafts.length})`}>
+          <ul className="space-y-1">
             {c.triage_drafts.map((d) => (
               <li key={d.id} className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">n°{d.sequence}</span>
-                <span>{d.status}</span>
-                {d.abstain_reason && <span>({d.abstain_reason})</span>}
+                <span>
+                  {d.status === "VERIFIED"
+                    ? "vérifiée"
+                    : `abstention — ${abstainReasonDisplay(d.abstain_reason).label}`}
+                </span>
+                {d.abstain_reason && <span className="font-mono">({d.abstain_reason})</span>}
                 {d.id === c.approved_triage_draft_id && (
-                  <span className="text-emerald-700 dark:text-emerald-300">approuvée</span>
+                  <span className="text-success">approuvée</span>
                 )}
                 <span className="text-muted-foreground/80">
                   {new Date(d.created_at).toLocaleString("fr-FR")}
@@ -500,18 +774,52 @@ function TriagePanel({
               </li>
             ))}
           </ul>
-        </details>
+        </TechnicalDisclosure>
       )}
       {approved && ["TRIAGE_APPROVED", "PLAN_READY"].includes(c.status) && (
         <button
           onClick={() => reopen.mutate()}
           disabled={reopen.isPending}
-          className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-700 dark:text-amber-300 hover:bg-amber-50 disabled:opacity-50"
+          className="min-h-10 rounded-md border border-warning/50 px-3 py-1.5 text-sm text-warning-foreground hover:bg-warning/10 disabled:opacity-50 dark:text-warning"
         >
           Rouvrir le triage
         </button>
       )}
       <ErrorText error={approve.error || redraft.error || reopen.error} />
+    </>
+  );
+
+  // once approved, triage collapses out of the way (spec §8.9)
+  if (approved) {
+    return (
+      <details id="triage" className="group rounded-lg border bg-card">
+        <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center gap-3 px-5 py-3.5 select-none [&::-webkit-details-marker]:hidden">
+          <h2 className="text-sm font-semibold">Triage</h2>
+          <span className="rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-xs text-success">
+            approuvé par un humain
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground group-open:hidden">
+            Afficher le détail
+          </span>
+        </summary>
+        <div className="space-y-3 border-t px-5 py-4">
+          {body}
+          {extras}
+        </div>
+      </details>
+    );
+  }
+
+  return (
+    <section id="triage" className="space-y-3 rounded-lg border bg-card p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-sm font-semibold">Triage</h2>
+        <span className="rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs text-warning-foreground dark:text-warning">
+          en attente d'approbation humaine
+        </span>
+      </div>
+      {body}
+      {extras}
     </section>
   );
 }
@@ -522,39 +830,40 @@ function PlanPanel({
   orgId,
   c,
   activePlan,
+  draftPlan,
   onChanged,
 }: {
   orgId: string;
   c: RemediationCaseDetail;
   activePlan: RemediationPlan | null;
+  draftPlan: { mutate: () => void; isPending: boolean; error: unknown };
   onChanged: () => void;
 }) {
-  const draft = useMutation({
-    mutationFn: () => api.draftPlan(orgId, c.id),
-    onSuccess: onChanged,
-  });
   const canDraft = ["TRIAGE_APPROVED", "PLAN_READY"].includes(c.status);
 
   return (
-    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Plan d'actions correctives
-        </h2>
-        {canDraft && (
-          <button
-            onClick={() => draft.mutate()}
-            disabled={draft.isPending}
-            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
-          >
-            {draft.isPending
-              ? "Rédaction en cours…"
-              : activePlan
-                ? "Redemander un plan"
-                : "Demander un plan à l'agent"}
-          </button>
-        )}
-      </div>
+    <section id="plan" className="space-y-3 rounded-lg border bg-card p-5">
+      <SectionHeading
+        as="h2"
+        title="Plan d'actions correctives"
+        actions={
+          canDraft ? (
+            <button
+              onClick={() => draftPlan.mutate()}
+              disabled={draftPlan.isPending}
+              className="min-h-10 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {draftPlan.isPending
+                ? "Rédaction en cours…"
+                : activePlan?.status === "ABSTAINED"
+                  ? "Relancer la rédaction du plan"
+                  : activePlan
+                    ? "Redemander un plan"
+                    : "Demander un plan à l'agent"}
+            </button>
+          ) : undefined
+        }
+      />
 
       {activePlan === null ? (
         <p className="text-sm text-muted-foreground">
@@ -565,18 +874,22 @@ function PlanPanel({
           className={`rounded-lg border p-4 text-sm ${
             isOperationalAbort(activePlan.abstain_reason)
               ? "border-border bg-muted/50"
-              : "border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10"
+              : "border-warning/40 bg-warning/10"
           }`}
         >
           <p className="font-medium">
             {isOperationalAbort(activePlan.abstain_reason)
               ? "Rédaction interrompue (incident technique)"
-              : "L'agent s'est abstenu"}
+              : "Plan non vérifié"}
           </p>
           <p className="mt-1 text-muted-foreground">
-            Motif : {activePlan.abstain_reason}. Relancez la rédaction ou traitez le cas
-            manuellement.
+            {abstainReasonDisplay(activePlan.abstain_reason).label}. Une nouvelle rédaction est
+            requise — aucune action n'est issue de ce plan.
           </p>
+          <TechnicalDisclosure summary="Détails techniques" className="mt-3">
+            <TechnicalRow label="Motif brut" value={activePlan.abstain_reason ?? "—"} />
+            <TechnicalRow label="Tentatives" value={String(activePlan.draft_attempts)} />
+          </TechnicalDisclosure>
         </div>
       ) : (
         <div className="space-y-4">
@@ -586,14 +899,20 @@ function PlanPanel({
             </p>
             <p className="mt-2">{activePlan.gap_restatement}</p>
             {activePlan.root_cause_hypotheses && (
-              <ul className="mt-2 space-y-1">
-                {activePlan.root_cause_hypotheses.map((h) => (
-                  <li key={h.label}>
-                    <span className="font-mono text-xs">{h.label}</span> (hypothèse) :{" "}
-                    {h.hypothesis}
-                  </li>
-                ))}
-              </ul>
+              <details className="mt-2" open={activePlan.root_cause_hypotheses.length <= 3 || undefined}>
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
+                  Afficher l'analyse complète ({activePlan.root_cause_hypotheses.length} hypothèse
+                  {activePlan.root_cause_hypotheses.length > 1 ? "s" : ""})
+                </summary>
+                <ul className="mt-2 space-y-1">
+                  {activePlan.root_cause_hypotheses.map((h) => (
+                    <li key={h.label}>
+                      <span className="font-mono text-xs">{h.label}</span> (hypothèse) :{" "}
+                      {h.hypothesis}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
           <ul className="space-y-3">
@@ -604,37 +923,38 @@ function PlanPanel({
         </div>
       )}
       {c.plans.length > (activePlan ? 1 : 0) && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
-            Historique des plans ({c.plans.length})
-          </summary>
-          <ul className="mt-2 space-y-1">
+        <TechnicalDisclosure summary={`Historique des plans (${c.plans.length})`}>
+          <ul className="space-y-1">
             {c.plans.map((p) => (
               <li key={p.id} className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">n°{p.sequence}</span>
-                <span>{p.status}</span>
-                {p.abstain_reason && <span>({p.abstain_reason})</span>}
+                <span>
+                  {p.status === "VERIFIED"
+                    ? "vérifié"
+                    : p.status === "SUPERSEDED"
+                      ? "remplacé"
+                      : `abstention — ${abstainReasonDisplay(p.abstain_reason).label}`}
+                </span>
+                {p.abstain_reason && <span className="font-mono">({p.abstain_reason})</span>}
                 {p.status === "SUPERSEDED" && (
-                  <span className="text-amber-700 dark:text-amber-300">
-                    remplacé
+                  <span className="text-warning-foreground dark:text-warning">
                     {p.superseded_by_plan_id
-                      ? ` par le plan ${
-                          c.plans.find((q) => q.id === p.superseded_by_plan_id)?.sequence ??
-                          "?"
+                      ? `par le plan ${
+                          c.plans.find((q) => q.id === p.superseded_by_plan_id)?.sequence ?? "?"
                         }`
-                      : " (réouverture du triage)"}
+                      : "(réouverture du triage)"}
                     {p.superseded_at
                       ? ` le ${new Date(p.superseded_at).toLocaleDateString("fr-FR")}`
                       : ""}
                   </span>
                 )}
-                {p.id === c.active_plan_id && <span className="text-emerald-700 dark:text-emerald-300">actif</span>}
+                {p.id === c.active_plan_id && <span className="text-success">actif</span>}
               </li>
             ))}
           </ul>
-        </details>
+        </TechnicalDisclosure>
       )}
-      <ErrorText error={draft.error} />
+      <ErrorText error={draftPlan.error} />
     </section>
   );
 }
@@ -659,6 +979,8 @@ function ActionCard({
     a.priority ?? a.suggested_priority ?? "normale",
   );
   const [description, setDescription] = useState("");
+  // human-set deadline (never LLM-proposed); prefilled with the recorded one
+  const [actionDueDate, setActionDueDate] = useState(a.due_date ?? "");
   // prefilled with the CURRENT effective scope: an untouched field re-submits
   // the human decision, never silently reverts to the AI proposal
   const [scopeIds, setScopeIds] = useState(
@@ -686,6 +1008,7 @@ function ActionCard({
       api.reviewAction(orgId, c.id, a.id, {
         action: reviewAction!,
         ...(reviewAction !== "reject" ? { priority } : {}),
+        ...(reviewAction !== "reject" && actionDueDate ? { due_date: actionDueDate } : {}),
         ...(reviewAction === "edit" && description.trim()
           ? { description: description.trim() }
           : {}),
@@ -715,34 +1038,51 @@ function ActionCard({
 
   const reviewable =
     a.lifecycle === "PROPOSED" || (a.review_status === "CONFIRMED" && a.lifecycle === "APPROVED");
+  const proposed = a.lifecycle === "PROPOSED";
 
   return (
-    <li className="space-y-3 rounded-lg border border-border p-4 text-sm">
+    <li
+      className={`space-y-3 rounded-lg border p-4 text-sm ${
+        proposed ? "border-warning/40 bg-warning/5" : "border-border bg-card"
+      }`}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-muted-foreground">#{a.position}</span>
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-          {ACTION_TYPE_LABELS[a.action_type]}
+          {actionTypeLabel(a.action_type)}
         </span>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-          {LIFECYCLE_LABELS[a.lifecycle]}
-        </span>
+        <StatusLabel display={actionLifecycleDisplay(a.lifecycle)} dot={false} />
         {a.priority && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-            priorité {a.priority}
+            {priorityDisplay(a.priority).label}
           </span>
         )}
         {a.effectiveness !== "NOT_CHECKED" && (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
-            {EFFECTIVENESS_LABELS[a.effectiveness]}
-          </span>
+          <StatusLabel display={effectivenessDisplay(a.effectiveness)} dot={false} />
         )}
       </div>
-      <p>{a.description ?? a.ai_description}</p>
-      <p className="text-xs text-muted-foreground">Justification IA : {a.ai_rationale}</p>
-      <p className="text-xs text-muted-foreground">
-        Rôle suggéré : {a.owner_role ?? a.ai_owner_role} · Critère de succès :{" "}
-        {a.success_criterion ?? a.ai_success_criterion}
+      <p className="leading-relaxed font-medium text-foreground">
+        {a.description ?? a.ai_description}
       </p>
+      <p className="text-xs text-muted-foreground">Justification IA : {a.ai_rationale}</p>
+      <dl className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>
+          <dt className="inline font-medium">Rôle responsable : </dt>
+          <dd className="inline">{a.owner_role ?? a.ai_owner_role}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">Échéance : </dt>
+          {a.due_date ? (
+            <dd className="inline">{new Date(a.due_date).toLocaleDateString("fr-FR")}</dd>
+          ) : (
+            <dd className="inline italic">{MISSING.deadline}</dd>
+          )}
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="inline font-medium">Critère de succès : </dt>
+          <dd className="inline">{a.success_criterion ?? a.ai_success_criterion}</dd>
+        </div>
+      </dl>
       {a.policy_quote &&
         (a.source_quote ? (
           <blockquote className="border-l-2 border-primary/40 pl-3 text-xs text-muted-foreground">
@@ -761,8 +1101,7 @@ function ActionCard({
         {a.effective_requirement_ids?.length > 0 && (
           <>
             {" "}
-            · Périmètre effectif (décision humaine) :{" "}
-            {a.effective_requirement_ids.join(", ")}
+            · Périmètre effectif (décision humaine) : {a.effective_requirement_ids.join(", ")}
           </>
         )}
       </p>
@@ -775,7 +1114,7 @@ function ActionCard({
                 key={ra}
                 onClick={() => setReviewAction(ra)}
                 aria-pressed={reviewAction === ra}
-                className={`rounded-lg border px-3 py-1 text-xs font-medium ${
+                className={`min-h-10 rounded-md border px-3 py-1 text-xs font-medium ${
                   reviewAction === ra
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-input hover:bg-muted/50"
@@ -792,7 +1131,7 @@ function ActionCard({
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as typeof priority)}
-                  className="mt-1 w-full rounded-lg border border-input px-2 py-1"
+                  className="mt-1 w-full rounded-md border border-input px-2 py-1"
                 >
                   <option value="haute">Haute</option>
                   <option value="normale">Normale</option>
@@ -800,10 +1139,21 @@ function ActionCard({
                 </select>
                 {a.suggested_priority && !a.priority && (
                   <span className="mt-1 block text-xs text-muted-foreground/80">
-                    Suggestion « {a.suggested_priority} » dérivée de la sévérité (politique{" "}
-                    {a.suggested_priority_policy_version}) — décision humaine requise.
+                    Suggestion « {a.suggested_priority} » dérivée de la sévérité — décision
+                    humaine requise.
                   </span>
                 )}
+              </label>
+              <label>
+                <span className="text-xs text-muted-foreground">
+                  Échéance (requise avant lancement)
+                </span>
+                <input
+                  type="date"
+                  value={actionDueDate}
+                  onChange={(e) => setActionDueDate(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input px-2 py-1"
+                />
               </label>
               {reviewAction === "edit" && (
                 <>
@@ -813,18 +1163,18 @@ function ActionCard({
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-lg border border-input px-2 py-1"
+                      className="mt-1 w-full rounded-md border border-input px-2 py-1"
                     />
                   </label>
                   <label className="sm:col-span-2">
                     <span className="text-xs text-muted-foreground">
-                      Exigences visées (ids séparés par des virgules — votre décision remplace
-                      la proposition IA)
+                      Exigences visées (ids séparés par des virgules — votre décision remplace la
+                      proposition IA)
                     </span>
                     <input
                       value={scopeIds}
                       onChange={(e) => setScopeIds(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-input px-2 py-1"
+                      className="mt-1 w-full rounded-md border border-input px-2 py-1"
                     />
                   </label>
                 </>
@@ -835,7 +1185,7 @@ function ActionCard({
             <button
               onClick={() => review.mutate()}
               disabled={review.isPending}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-emerald-700 disabled:opacity-50"
+              className="min-h-10 rounded-md bg-success px-3 py-1.5 text-xs font-medium text-success-foreground hover:bg-success/90 disabled:opacity-50"
             >
               Enregistrer la décision
             </button>
@@ -847,13 +1197,13 @@ function ActionCard({
         <div className="flex gap-2">
           <button
             onClick={() => lifecycle.mutate("IN_PROGRESS")}
-            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
+            className="min-h-10 rounded-md border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Démarrer
           </button>
           <button
             onClick={() => lifecycle.mutate("CANCELLED")}
-            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
+            className="min-h-10 rounded-md border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Annuler
           </button>
@@ -863,13 +1213,13 @@ function ActionCard({
         <div className="flex gap-2">
           <button
             onClick={() => lifecycle.mutate("DONE")}
-            className="rounded-lg border border-emerald-300 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50"
+            className="min-h-10 rounded-md border border-success/40 px-3 py-1 text-xs text-success hover:bg-success/10"
           >
             Marquer terminée
           </button>
           <button
             onClick={() => lifecycle.mutate("CANCELLED")}
-            className="rounded-lg border border-input px-3 py-1 text-xs hover:bg-muted/50"
+            className="min-h-10 rounded-md border border-input px-3 py-1 text-xs hover:bg-muted/50"
           >
             Annuler
           </button>
@@ -884,7 +1234,7 @@ function ActionCard({
             <select
               value={effVerdict}
               onChange={(e) => setEffVerdict(e.target.value as typeof effVerdict)}
-              className="rounded-lg border border-input px-2 py-1 text-xs"
+              className="rounded-md border border-input px-2 py-1 text-xs"
             >
               <option value="EFFECTIVE">Efficace</option>
               <option value="PARTIALLY_EFFECTIVE">Partiellement efficace</option>
@@ -895,7 +1245,7 @@ function ActionCard({
                 value={effReassessment}
                 onChange={(e) => setEffReassessment(e.target.value)}
                 aria-label="Réévaluation citée en preuve"
-                className="rounded-lg border border-input px-2 py-1 text-xs"
+                className="rounded-md border border-input px-2 py-1 text-xs"
               >
                 <option value="">Sans réévaluation (preuve externe)</option>
                 {citable.map((r) => (
@@ -910,12 +1260,12 @@ function ActionCard({
               value={effNote}
               onChange={(e) => setEffNote(e.target.value)}
               placeholder="Preuve / justification (requise)"
-              className="min-w-64 flex-1 rounded-lg border border-input px-2 py-1 text-xs"
+              className="min-w-64 flex-1 rounded-md border border-input px-2 py-1 text-xs"
             />
             <button
               onClick={() => effectiveness.mutate()}
               disabled={effectiveness.isPending || !effNote.trim()}
-              className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+              className="min-h-9 rounded-md bg-success px-3 py-1 text-xs font-medium text-success-foreground disabled:opacity-50"
             >
               Enregistrer
             </button>
@@ -931,14 +1281,6 @@ function ActionCard({
 }
 
 // ------------------------------------------------------------ M7b patches
-
-const VERSION_STATE_LABELS: Record<DocumentVersionSummary["state"], string> = {
-  PENDING_INDEX: "Indexation en cours",
-  ACTIVE: "Active",
-  SUPERSEDED: "Remplacée",
-  INDEX_FAILED: "Échec d'indexation",
-  ABANDONED: "Abandonnée",
-};
 
 function PatchPanel({
   orgId,
@@ -968,9 +1310,7 @@ function PatchPanel({
   const selected = parsed.find((d) => d.id === docId);
   // Route by the CURRENT version format (server-derived); fall back to the
   // filename extension until a version pointer exists.
-  const format = selected
-    ? (selected.filename.toLowerCase().split(".").pop() ?? "")
-    : "";
+  const format = selected ? (selected.filename.toLowerCase().split(".").pop() ?? "") : "";
   const isTextual = format === "txt" || format === "md";
 
   const propose = useMutation({
@@ -996,7 +1336,7 @@ function PatchPanel({
           value={docId}
           onChange={(e) => setDocId(e.target.value)}
           aria-label="Document cible"
-          className="rounded-lg border border-input px-2 py-1 text-xs"
+          className="min-h-9 rounded-md border border-input px-2 py-1 text-xs"
         >
           <option value="">Choisir le document cible…</option>
           {parsed.map((d) => (
@@ -1010,7 +1350,7 @@ function PatchPanel({
             <button
               onClick={() => propose.mutate()}
               disabled={propose.isPending}
-              className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="min-h-9 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               Proposer un correctif
             </button>
@@ -1018,7 +1358,7 @@ function PatchPanel({
             <button
               onClick={() => proposeArtifact.mutate()}
               disabled={proposeArtifact.isPending}
-              className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="min-h-9 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               Proposer une rédaction (PDF/DOCX)
             </button>
@@ -1071,8 +1411,7 @@ function ArtifactCard({
   // against and records the artifact as lineage (action -> artifact -> file ->
   // version).
   const supersede = useMutation({
-    mutationFn: (f: File) =>
-      api.supersedeUpload(orgId, f, art.document_version_id, art.id),
+    mutationFn: (f: File) => api.supersedeUpload(orgId, f, art.document_version_id, art.id),
     onSuccess: () => {
       setFile(null);
       refresh();
@@ -1101,16 +1440,12 @@ function ArtifactCard({
       <p className="font-medium text-foreground/90">
         Proposition de rédaction ({art.canonical_format.toUpperCase()})
       </p>
-      <a
-        href={api.artifactDownloadUrl(orgId, c.id, art.id)}
-        className="text-primary underline"
-      >
+      <a href={api.artifactDownloadUrl(orgId, c.id, art.id)} className="text-primary underline">
         Télécharger le brouillon Markdown
       </a>
       <p className="text-muted-foreground/80">
-        Brouillon IA — préparez le fichier {art.canonical_format.toUpperCase()} révisé,
-        puis téléversez-le ici pour créer la nouvelle version (le document original reste
-        inchangé).
+        Brouillon IA — préparez le fichier {art.canonical_format.toUpperCase()} révisé, puis
+        téléversez-le ici pour créer la nouvelle version (le document original reste inchangé).
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -1123,47 +1458,49 @@ function ArtifactCard({
         <button
           onClick={() => file && supersede.mutate(file)}
           disabled={!file || supersede.isPending}
-          className="rounded-lg bg-primary px-3 py-1 font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+          className="min-h-9 rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Téléverser la version révisée
         </button>
       </div>
       {(outcome === "activated" || outcome === "already_active") && (
-        <p className="text-emerald-700 dark:text-emerald-300">
+        <p className="text-success">
           Nouvelle version créée et activée à partir de votre fichier révisé.
         </p>
       )}
       {outcome === "index_failed" && (
-        <p className="text-amber-700 dark:text-amber-300">
+        <p className="text-warning-foreground dark:text-warning">
           Indexation vectorielle échouée ; la version est conservée et peut être reprise.
         </p>
       )}
       {outcome === "pending" && (
-        <p className="text-amber-700 dark:text-amber-300">Activation en attente ; vous pouvez la reprendre.</p>
+        <p className="text-warning-foreground dark:text-warning">
+          Activation en attente ; vous pouvez la reprendre.
+        </p>
       )}
       {outcome === "assessment_conflict" && (
-        <p className="text-amber-700 dark:text-amber-300">
+        <p className="text-warning-foreground dark:text-warning">
           Une évaluation est en cours ; réessayez la reprise une fois qu'elle est terminée.
         </p>
       )}
       {outcome.startsWith("abandoned:") && (
         <p className="text-destructive">
-          Activation abandonnée ({outcome.split(":")[1]}) : retéléversez la version révisée.
+          Activation abandonnée — proposition périmée : retéléversez la version révisée.
         </p>
       )}
       {/* stranded on load (survives a refresh), when no in-session outcome shows it */}
       {!inSessionRecoverable && stranded && (
-        <p className="text-amber-700 dark:text-amber-300">
-          Une activation de version ({stranded.state === "INDEX_FAILED"
-            ? "échec d'indexation"
-            : "en attente"}) est restée inachevée ; vous pouvez la reprendre.
+        <p className="text-warning-foreground dark:text-warning">
+          Une activation de version (
+          {stranded.state === "INDEX_FAILED" ? "échec d'indexation" : "en attente"}) est restée
+          inachevée ; vous pouvez la reprendre.
         </p>
       )}
       {recoverVersionId && (
         <button
           onClick={() => recover.mutate(recoverVersionId)}
           disabled={recover.isPending}
-          className="rounded-lg border border-primary/40 px-3 py-1 text-primary hover:bg-accent disabled:opacity-50"
+          className="min-h-9 rounded-md border border-primary/40 px-3 py-1 text-primary hover:bg-accent disabled:opacity-50"
         >
           Reprendre l'activation
         </button>
@@ -1172,6 +1509,12 @@ function ArtifactCard({
     </div>
   );
 }
+
+const PATCH_DECISION_LABELS: Record<string, string> = {
+  approve: "approuvé",
+  edit: "approuvé après relecture",
+  reject: "rejeté",
+};
 
 function PatchProposalCard({
   orgId,
@@ -1218,11 +1561,17 @@ function PatchProposalCard({
 
   if (p.status === "ABSTAINED") {
     return (
-      <div className="rounded-lg border border-amber-600/30 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-400/10 p-3 text-xs text-amber-800 dark:text-amber-200">
-        <p className="font-medium">Correctif en abstention ({p.abstain_reason})</p>
+      <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground dark:text-warning">
+        <p className="font-medium">
+          Correctif en abstention — {abstainReasonDisplay(p.abstain_reason).label}
+        </p>
         <p className="mt-1">
           L'agent n'a pas pu ancrer un correctif fiable ; rédigez la modification manuellement.
         </p>
+        <TechnicalDisclosure summary="Détails techniques" className="mt-2">
+          <TechnicalRow label="Motif brut" value={p.abstain_reason ?? "—"} />
+          {p.verifier_errors?.map((e, i) => <TechnicalRow key={i} label="Vérification" value={e} />)}
+        </TechnicalDisclosure>
       </div>
     );
   }
@@ -1241,11 +1590,11 @@ function PatchProposalCard({
         Diff proposé ({p.operation === "replace" ? "remplacement" : "insertion"})
       </p>
       {/* Server-derived source slice at the resolved anchor — never the model quote */}
-      <div className="rounded bg-muted/50 p-2 font-mono text-xs leading-relaxed">
+      <div className="rounded bg-muted/50 p-3 font-mono text-[13px] leading-relaxed">
         <span className="text-muted-foreground/80">{p.context_before}</span>
-        <mark className="bg-amber-200">{p.anchor_slice}</mark>
+        <mark className="bg-warning/30 text-foreground">{p.anchor_slice}</mark>
         {p.operation === "insert_after" && (
-          <ins className="bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200 no-underline">
+          <ins className="bg-success/15 text-success no-underline dark:text-success">
             {"\n\n"}
             {editing ? finalText || p.new_text_fr : p.new_text_fr}
           </ins>
@@ -1256,7 +1605,7 @@ function PatchProposalCard({
         <span className="text-muted-foreground/80">{p.context_after}</span>
       </div>
       {p.operation === "replace" && (
-        <div className="rounded bg-emerald-50 p-2 font-mono text-xs text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200">
+        <div className="rounded bg-success/10 p-3 font-mono text-[13px] text-success">
           → {editing ? finalText || p.new_text_fr : p.new_text_fr}
         </div>
       )}
@@ -1265,10 +1614,9 @@ function PatchProposalCard({
       {p.decision ? (
         <div className="rounded bg-muted/50 p-2">
           <p className="font-medium text-muted-foreground">
-            Décision : {p.decision.decision}
-            {resultVersion && ` → version ${resultVersion.version_number} (${
-              VERSION_STATE_LABELS[resultVersion.state]
-            })`}
+            Décision : {PATCH_DECISION_LABELS[p.decision.decision] ?? p.decision.decision}
+            {resultVersion &&
+              ` → version ${resultVersion.version_number} (${versionStateDisplay(resultVersion.state).label})`}
           </p>
           {resultVersion?.state === "ACTIVE" &&
             (resultVersion.canonical_format === "txt" ||
@@ -1284,7 +1632,7 @@ function PatchProposalCard({
             <button
               onClick={() => recover.mutate()}
               disabled={recover.isPending}
-              className="mt-1 rounded-lg border border-primary/40 px-2 py-0.5 text-primary hover:bg-accent disabled:opacity-50"
+              className="mt-1 min-h-9 rounded-md border border-primary/40 px-2 py-0.5 text-primary hover:bg-accent disabled:opacity-50"
             >
               Reprendre l'activation
             </button>
@@ -1296,16 +1644,16 @@ function PatchProposalCard({
             <textarea
               value={finalText}
               onChange={(e) => setFinalText(e.target.value)}
-              rows={3}
+              rows={4}
               placeholder="Texte final (votre rédaction sera appliquée telle quelle)"
-              className="w-full rounded-lg border border-input px-2 py-1"
+              className="w-full rounded-md border border-input px-2 py-1 text-sm"
             />
           )}
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => decide.mutate({ decision: "approve" })}
               disabled={decide.isPending}
-              className="rounded-lg bg-emerald-600 px-3 py-1 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="min-h-9 rounded-md bg-success px-3 py-1 font-medium text-success-foreground hover:bg-success/90 disabled:opacity-50"
             >
               Approuver le correctif
             </button>
@@ -1313,7 +1661,7 @@ function PatchProposalCard({
               <button
                 onClick={() => decide.mutate({ decision: "edit", final_text_fr: finalText })}
                 disabled={decide.isPending || !finalText.trim()}
-                className="rounded-lg bg-primary px-3 py-1 font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+                className="min-h-9 rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 Appliquer ma rédaction
               </button>
@@ -1323,7 +1671,7 @@ function PatchProposalCard({
                   setFinalText(p.new_text_fr ?? "");
                   setEditing(true);
                 }}
-                className="rounded-lg border border-input px-3 py-1 hover:bg-muted/50"
+                className="min-h-9 rounded-md border border-input px-3 py-1 hover:bg-muted/50"
               >
                 Modifier le texte
               </button>
@@ -1331,7 +1679,7 @@ function PatchProposalCard({
             <button
               onClick={() => decide.mutate({ decision: "reject" })}
               disabled={decide.isPending}
-              className="rounded-lg border border-input px-3 py-1 hover:bg-muted/50"
+              className="min-h-9 rounded-md border border-input px-3 py-1 hover:bg-muted/50"
             >
               Rejeter le correctif
             </button>
@@ -1344,6 +1692,12 @@ function PatchProposalCard({
 }
 
 // ---------------------------------------------------------- reassessments
+
+const REASSESSMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "En attente de lancement",
+  LAUNCHED: "Réévaluation lancée",
+  LAUNCH_FAILED: "Échec du lancement",
+};
 
 function ReassessmentPanel({
   orgId,
@@ -1371,15 +1725,19 @@ function ReassessmentPanel({
     },
   });
 
+  if (doneActions.length === 0 && (reassessments.data?.length ?? 0) === 0) return null;
+
   return (
-    <section className="space-y-3 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        Réévaluations ciblées (preuve d'efficacité)
-      </h2>
+    <section className="space-y-3 rounded-lg border bg-card p-5">
+      <SectionHeading
+        as="h2"
+        title="Réévaluations ciblées"
+        description="Une réévaluation confirmée est la meilleure preuve d'efficacité d'une action."
+      />
       {doneActions.length > 0 && c.status === "IN_PROGRESS" && (
         <div className="space-y-2 text-sm">
           {doneActions.map((a) => (
-            <label key={a.id} className="flex items-center gap-2">
+            <label key={a.id} className="flex min-h-9 items-center gap-2">
               <input
                 type="checkbox"
                 checked={selected.includes(a.id)}
@@ -1397,7 +1755,7 @@ function ReassessmentPanel({
           <button
             onClick={() => launch.mutate()}
             disabled={launch.isPending || selected.length === 0}
-            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+            className="min-h-10 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             Lancer une réévaluation
           </button>
@@ -1409,7 +1767,7 @@ function ReassessmentPanel({
             <li key={r.id} className="rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                  {REASSESSMENT_STATUS_LABELS[r.status] ?? r.status}
+                  {REASSESSMENT_STATUS_LABELS[r.status] ?? "Réévaluation"}
                 </span>
                 {r.assessment_id && (
                   <Link
@@ -1427,8 +1785,8 @@ function ReassessmentPanel({
                 Exigences réévaluées : {r.included_requirement_ids.join(", ") || "—"}
               </p>
               {r.excluded_holdout_ids.length > 0 && (
-                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                  Exclues (réservées au jeu de test M6, jamais réévaluées ici) :{" "}
+                <p className="mt-1 text-xs text-warning-foreground dark:text-warning">
+                  Exclues (réservées au jeu de test de référence, jamais réévaluées ici) :{" "}
                   {r.excluded_holdout_ids.join(", ")}
                 </p>
               )}
@@ -1465,10 +1823,8 @@ function ClosurePanel({
 
   if (c.status === "CLOSED") {
     return (
-      <section className="space-y-2 rounded-2xl border bg-card p-6 shadow-xs">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Clôture
-        </h2>
+      <section className="space-y-2 rounded-lg border bg-card p-5">
+        <SectionHeading as="h2" title="Clôture" />
         <p className="text-sm">
           Clôturé le {c.closed_at ? new Date(c.closed_at).toLocaleString("fr-FR") : ""} —{" "}
           {c.close_note}
@@ -1476,7 +1832,7 @@ function ClosurePanel({
         <button
           onClick={() => reopen.mutate()}
           disabled={reopen.isPending}
-          className="rounded-lg border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
+          className="min-h-10 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
         >
           Rouvrir le cas
         </button>
@@ -1485,20 +1841,40 @@ function ClosurePanel({
     );
   }
   if (!["TRIAGE_APPROVED", "PLAN_READY", "IN_PROGRESS"].includes(c.status)) return null;
+
+  // Server-derived closure-readiness RECOMMENDATIONS — advisory only, the
+  // backend does not enforce them at closure (and the UI must not claim so).
+  const recommendations = (c.workflow?.closure.recommendations ?? []).filter(
+    // keep the plan-level blocker to the plan panel; the closure hints focus
+    // on actions and effectiveness
+    (k) => k in CLOSURE_RECOMMENDATIONS,
+  );
+
   return (
-    <section className="space-y-2 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Clôture</h2>
+    <section className="space-y-3 rounded-lg border bg-card p-5">
+      <SectionHeading as="h2" title="Clôture" />
+      {c.closure_criterion && (
+        <p className="text-xs text-muted-foreground">
+          Critère de clôture défini : {c.closure_criterion}
+        </p>
+      )}
+      {recommendations.length > 0 && (
+        <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground dark:text-warning">
+          Recommandé avant clôture (non bloquant) :{" "}
+          {recommendations.map((k) => CLOSURE_RECOMMENDATIONS[k]).join(" · ")}.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Note de clôture (requise)"
-          className="min-w-64 flex-1 rounded-lg border border-input px-2 py-1.5 text-sm"
+          className="min-h-10 min-w-64 flex-1 rounded-md border border-input px-2 py-1.5 text-sm"
         />
         <button
           onClick={() => close.mutate()}
           disabled={close.isPending || !note.trim()}
-          className="rounded-lg border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
+          className="min-h-10 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
         >
           Clôturer le cas
         </button>
@@ -1512,30 +1888,38 @@ function ClosurePanel({
 
 function EventsTimeline({ c }: { c: RemediationCaseDetail }) {
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Journal d'audit
-      </h2>
+    <section className="space-y-4 rounded-lg border bg-card p-5">
+      <SectionHeading
+        as="h2"
+        title="Journal d'audit"
+        description="Chaque étape du cas, dans l'ordre — rien ne s'efface."
+      />
       <ol className="relative space-y-4 border-l border-border pl-5">
         {[...c.events].reverse().map((e) => (
           <li key={e.sequence} className="relative text-xs text-muted-foreground">
             <span
               aria-hidden
-              className="absolute -left-[calc(1.25rem+3.5px)] top-1 size-2 rounded-full border border-background bg-foreground/70"
+              className="absolute top-1 -left-[calc(1.25rem+3.5px)] size-2 rounded-full border border-background bg-primary/70"
             />
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <span className="font-medium text-foreground">{e.event_type}</span>
+              <span className="font-medium text-foreground">{eventTypeLabel(e.event_type)}</span>
               <span>{new Date(e.created_at).toLocaleString("fr-FR")}</span>
-              <span className="font-mono text-muted-foreground/70">#{e.sequence}</span>
               {e.actor_label && (
-                <span className="text-muted-foreground/80">
-                  par {e.actor_label} (non vérifié)
-                </span>
+                <span className="text-muted-foreground/80">par {e.actor_label} (non vérifié)</span>
               )}
             </div>
           </li>
         ))}
       </ol>
+      <TechnicalDisclosure summary="Détails techniques du journal">
+        <ul className="space-y-1">
+          {[...c.events].reverse().map((e) => (
+            <li key={e.sequence} className="font-mono text-xs">
+              #{e.sequence} {e.event_type} (v{e.payload_version})
+            </li>
+          ))}
+        </ul>
+      </TechnicalDisclosure>
     </section>
   );
 }

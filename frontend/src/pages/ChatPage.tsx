@@ -18,27 +18,15 @@ import {
   type AnswerSegment,
   type ChatCitation,
   type ChatMessage,
-  type Doc,
   type RetrievedItem,
 } from "../api";
+import { docStatusDisplay, evidenceScopeLabel, verdictDisplay } from "@/lib/labels";
 import HighlightedText from "../components/HighlightedText";
+import { StatusLabel } from "@/components/status-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-
-const DOC_STATUS_LABELS: Record<Doc["status"], string> = {
-  parsed: "Analysé",
-  uploaded: "Téléversé",
-  failed: "Échec",
-};
-
-const DOC_STATUS_CLASSES: Record<Doc["status"], string> = {
-  parsed:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300",
-  uploaded: "bg-amber-100 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-400/10 dark:text-red-300",
-};
 
 const SUGGESTIONS = [
   "Gérons-nous les risques liés aux fournisseurs d'IA ?",
@@ -46,6 +34,9 @@ const SUGGESTIONS = [
   "Quelles exigences de la norme couvrent la supervision humaine ?",
 ];
 
+/** Copilote — a source-conscious AI workspace (spec §8.5): only the global
+    sidebar remains; history opens in a drawer; each answer is a structured
+    AI draft with numbered located citations and explicit limitations. */
 export default function ChatPage() {
   const { orgId, conversationId } = useParams<{
     orgId: string;
@@ -54,12 +45,13 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  // M8 drill-down: ?finding=<id> anchors the next question on one finding
+  // drill-down: ?finding=<id> anchors the next question on one finding
   const findingId = searchParams.get("finding");
   const [question, setQuestion] = useState("");
   const [askError, setAskError] = useState<string | null>(null);
   // «Norme seule» skips the policy retrieval arm server-side (kb_only)
   const [kbOnly, setKbOnly] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
   const conversations = useQuery({
@@ -101,6 +93,8 @@ export default function ChatPage() {
   }, [messages.data, ask.isPending]);
 
   const hasThread = !!conversationId;
+  const activeConversation = conversations.data?.find((c) => c.id === conversationId);
+  const lastMessage = messages.data?.[messages.data.length - 1];
 
   const composer = (
     <div className="space-y-2">
@@ -126,39 +120,39 @@ export default function ChatPage() {
           e.preventDefault();
           submit();
         }}
-        className="rounded-3xl border bg-card p-1.5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition-shadow duration-300 focus-within:border-ring/60 focus-within:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.18)]"
+        className="rounded-xl border bg-card p-1.5 transition-colors focus-within:border-ring/60"
       >
-        <div className="rounded-[calc(1.5rem-0.375rem)] bg-background/40">
-          <label className="block">
-            <span className="sr-only">Votre question</span>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              rows={2}
-              disabled={ask.isPending}
-              placeholder="Votre question…"
-              className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-            />
-          </label>
-          <div className="flex items-center gap-2 px-2.5 pb-2.5">
-            <DocumentsPopover orgId={orgId!} />
-            <ModeToggle kbOnly={kbOnly} onChange={setKbOnly} />
-            <Button
-              type="submit"
-              size="icon"
-              aria-label="Envoyer"
-              disabled={ask.isPending || !question.trim()}
-              className="ml-auto size-11 rounded-full transition-transform duration-200 active:scale-95"
-            >
-              <ArrowUp className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
+        <label className="block">
+          <span className="px-3 pt-2 text-xs font-medium text-muted-foreground">
+            Votre question
+          </span>
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            rows={2}
+            disabled={ask.isPending}
+            placeholder="Votre question…"
+            className="block max-h-48 w-full resize-none bg-transparent px-3 pt-1.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+          />
+        </label>
+        <div className="flex items-center gap-2 px-1.5 pb-1.5">
+          <DocumentsPopover orgId={orgId!} />
+          <ModeToggle kbOnly={kbOnly} onChange={setKbOnly} />
+          <Button
+            type="submit"
+            size="icon"
+            aria-label="Envoyer"
+            disabled={ask.isPending || !question.trim()}
+            className="ml-auto size-10 rounded-full"
+          >
+            <ArrowUp className="size-4" aria-hidden="true" />
+          </Button>
         </div>
       </form>
       {askError && <p className="text-sm text-destructive">{askError}</p>}
@@ -170,145 +164,129 @@ export default function ChatPage() {
     </div>
   );
 
+  const historyList = (
+    <div className="space-y-1">
+      <Link
+        to={`/organizations/${orgId}/chat`}
+        onClick={() => setHistoryOpen(false)}
+        className="block rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        + Nouvelle conversation
+      </Link>
+      {conversations.data?.map((c) => (
+        <Link
+          key={c.id}
+          to={`/organizations/${orgId}/chat/${c.id}`}
+          aria-current={c.id === conversationId}
+          onClick={() => setHistoryOpen(false)}
+          className={cn(
+            "block rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+            c.id === conversationId
+              ? "bg-accent font-medium text-accent-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+        >
+          {c.title}
+        </Link>
+      ))}
+      {conversations.data?.length === 0 && (
+        <p className="px-3 py-2 text-sm text-muted-foreground">Aucune conversation.</p>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex h-full min-h-0">
-      {/* conversations rail (desktop) */}
-      <aside className="hidden w-72 shrink-0 flex-col border-r bg-sidebar/50 lg:flex">
-        <div className="space-y-2 p-4">
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Conversations
-          </p>
-          <Button asChild variant="outline" className="w-full justify-start rounded-xl">
-            <Link to={`/organizations/${orgId}/chat`}>+ Nouvelle conversation</Link>
-          </Button>
-        </div>
-        <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 pb-4" aria-label="Conversations">
-          {conversations.data?.map((c) => (
-            <li key={c.id}>
-              <Link
-                to={`/organizations/${orgId}/chat/${c.id}`}
-                aria-current={c.id === conversationId}
-                className={cn(
-                  "block truncate rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-                  c.id === conversationId
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {c.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      {/* utility row: history drawer + full conversation title */}
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" className="min-h-10 shrink-0">
+              <History className="size-4" aria-hidden="true" />
+              Historique
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-80 overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Conversations</SheetTitle>
+            </SheetHeader>
+            <div className="px-4 pb-4">{historyList}</div>
+          </SheetContent>
+        </Sheet>
+        <p className="min-w-0 text-sm font-medium break-words" title={activeConversation?.title}>
+          {activeConversation?.title ?? "Nouvelle conversation"}
+        </p>
+      </div>
 
-      {/* main column */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* mobile: conversations in a sheet */}
-        <div className="flex items-center gap-2 border-b px-4 py-2 lg:hidden">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="min-h-11">
-                <History className="size-4" aria-hidden="true" />
-                Conversations
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-80">
-              <SheetHeader>
-                <SheetTitle>Conversations</SheetTitle>
-              </SheetHeader>
-              <div className="space-y-1 overflow-y-auto px-4 pb-4">
-                <Link
-                  to={`/organizations/${orgId}/chat`}
-                  className="block rounded-lg border px-3 py-2 text-sm font-medium"
-                >
-                  + Nouvelle conversation
-                </Link>
-                {conversations.data?.map((c) => (
-                  <Link
-                    key={c.id}
-                    to={`/organizations/${orgId}/chat/${c.id}`}
-                    className="block truncate rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
-                  >
-                    {c.title}
-                  </Link>
-                ))}
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
+      {/* screen-reader announcement of newly arrived answers */}
+      <p aria-live="polite" className="sr-only">
+        {lastMessage
+          ? lastMessage.status === "ANSWERED"
+            ? "Nouvelle réponse du copilote disponible."
+            : "Le copilote n'a pas pu produire de réponse citée."
+          : ""}
+      </p>
 
-        {hasThread ? (
-          <>
-            <div ref={streamRef} className="min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
-                <p className="text-center text-xs text-muted-foreground">
-                  Les réponses sont des brouillons IA : chaque citation est localisée dans vos
-                  documents par du code déterministe — sa pertinence reste à confirmer par vous.
-                </p>
-                {messages.data?.map((m) => (
-                  <MessageThread key={m.id} message={m} />
-                ))}
-              </div>
-            </div>
-            <div className="shrink-0 border-t bg-background/80 backdrop-blur">
-              <div className="mx-auto w-full max-w-3xl px-4 py-3">{composer}</div>
-            </div>
-          </>
-        ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4">
-            <div className="w-full max-w-2xl space-y-8 py-10">
-              <div className="space-y-3 text-center">
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                  Copilote — questions sur vos politiques
-                </h1>
-                <p className="mx-auto max-w-lg text-sm leading-relaxed text-muted-foreground">
-                  Les réponses sont des brouillons IA : chaque citation est localisée dans vos
-                  documents par du code déterministe — sa pertinence reste à confirmer par vous.
-                </p>
-              </div>
-              {composer}
-              <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setQuestion(s)}
-                    className="min-h-11 rounded-full border px-4 text-xs text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+      {hasThread ? (
+        <>
+          <div ref={streamRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+              <p className="text-center text-xs text-muted-foreground">
+                Les réponses sont des brouillons IA : chaque citation est localisée dans vos
+                documents par du code déterministe — sa pertinence reste à confirmer par vous.
+              </p>
+              {messages.data?.map((m) => (
+                <MessageThread key={m.id} message={m} onFollowUp={setQuestion} />
+              ))}
             </div>
           </div>
-        )}
-      </div>
+          <div className="shrink-0 border-t bg-background">
+            <div className="mx-auto w-full max-w-3xl px-4 py-3">{composer}</div>
+          </div>
+        </>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4">
+          <div className="w-full max-w-2xl space-y-8 py-10">
+            <div className="space-y-3 text-center">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                Copilote — questions sur vos politiques
+              </h1>
+              <p className="mx-auto max-w-lg text-sm leading-relaxed text-muted-foreground">
+                Les réponses sont des brouillons IA : chaque citation est localisée dans vos
+                documents par du code déterministe — sa pertinence reste à confirmer par vous.
+              </p>
+            </div>
+            {composer}
+            <div className="flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setQuestion(s)}
+                  className="min-h-10 rounded-full border px-4 text-xs text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /** «Documents + norme» / «Norme seule» — the requested mode; the badge on each
     answer still reflects what actually survived verification. */
-function ModeToggle({
-  kbOnly,
-  onChange,
-}: {
-  kbOnly: boolean;
-  onChange: (v: boolean) => void;
-}) {
+function ModeToggle({ kbOnly, onChange }: { kbOnly: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div
-      role="group"
-      aria-label="Mode de réponse"
-      className="flex rounded-full border p-0.5 text-xs"
-    >
+    <div role="group" aria-label="Mode de réponse" className="flex rounded-md border p-0.5 text-xs">
       <button
         type="button"
         aria-pressed={!kbOnly}
         onClick={() => onChange(false)}
         className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+          "flex min-h-9 items-center gap-1 rounded px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
           !kbOnly ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground",
         )}
       >
@@ -320,7 +298,7 @@ function ModeToggle({
         aria-pressed={kbOnly}
         onClick={() => onChange(true)}
         className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+          "flex min-h-9 items-center gap-1 rounded px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring",
           kbOnly ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground",
         )}
       >
@@ -368,7 +346,7 @@ function DocumentsPopover({ orgId }: { orgId: string }) {
           variant="outline"
           size="icon"
           aria-label="Ajouter des documents"
-          className="size-11 rounded-full"
+          className="size-10 rounded-full"
         >
           <Plus className="size-4" aria-hidden="true" />
         </Button>
@@ -416,21 +394,14 @@ function DocumentsPopover({ orgId }: { orgId: string }) {
             <li key={doc.id} className="flex items-center gap-2 text-xs">
               <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{doc.filename}</span>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-1.5 py-0.5 font-medium",
-                  DOC_STATUS_CLASSES[doc.status],
-                )}
-              >
-                {DOC_STATUS_LABELS[doc.status]}
-              </span>
+              <StatusLabel display={docStatusDisplay(doc.status)} dot={false} className="shrink-0" />
             </li>
           ))}
         </ul>
         <p className="border-t pt-2 text-xs text-muted-foreground">
           Gestion complète (suppression, indexation) :{" "}
           <Link to={`/organizations/${orgId}/evaluations`} className="text-primary hover:underline">
-            Évaluations & documents
+            Preuves et évaluations
           </Link>
         </p>
       </PopoverContent>
@@ -438,17 +409,25 @@ function DocumentsPopover({ orgId }: { orgId: string }) {
   );
 }
 
-function MessageThread({ message: m }: { message: ChatMessage }) {
+function MessageThread({
+  message: m,
+  onFollowUp,
+}: {
+  message: ChatMessage;
+  onFollowUp: (q: string) => void;
+}) {
   return (
     <div className="space-y-3">
       {m.finding_context && (
         <div className="ml-auto w-fit max-w-[85%] rounded-full border border-primary/25 bg-accent px-3 py-1 text-xs text-accent-foreground">
           Constat {m.finding_context.requirement_id}
-          {m.finding_context.human_verdict && <> — {m.finding_context.human_verdict}</>} (contexte
-          transmis au copilote, non citable)
+          {m.finding_context.human_verdict && (
+            <> — {verdictDisplay(m.finding_context.human_verdict).label}</>
+          )}{" "}
+          (contexte transmis au copilote, non citable)
         </div>
       )}
-      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-ink px-4 py-2.5 text-sm text-ink-foreground">
         {m.question}
       </div>
       {m.status === "ANSWERED" ? (
@@ -456,7 +435,7 @@ function MessageThread({ message: m }: { message: ChatMessage }) {
       ) : isInfraAbstain(m.abstain_reason) ? (
         <InfraNotice message={m} />
       ) : (
-        <PotentialGapCard message={m} />
+        <PotentialGapCard message={m} onFollowUp={onFollowUp} />
       )}
     </div>
   );
@@ -469,28 +448,23 @@ function footnoteIndex(citations: ChatCitation[]): Map<string, number> {
   return map;
 }
 
-const SCOPE_LABELS: Record<string, string> = {
-  policy: "Documents",
-  kb_only: "Norme seule",
-  mixed: "Documents + norme",
-};
-
 function AnswerCard({ message: m }: { message: ChatMessage }) {
   const [openCitation, setOpenCitation] = useState<string | null>(null);
   const footnotes = useMemo(() => footnoteIndex(m.answer_citations), [m.answer_citations]);
 
   return (
-    <div className="max-w-[95%] space-y-3 rounded-2xl rounded-bl-sm border bg-card p-4 shadow-sm">
+    <div className="max-w-[95%] space-y-3 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Brouillon IA — citations localisées, pertinence à confirmer
-        </p>
-        {m.evidence_scope && SCOPE_LABELS[m.evidence_scope] && (
+        <p className="text-sm font-semibold">Réponse IA</p>
+        {m.evidence_scope && (
           <span className="ml-auto rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-            {SCOPE_LABELS[m.evidence_scope]}
+            {evidenceScopeLabel(m.evidence_scope)}
           </span>
         )}
       </div>
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        Brouillon IA — citations localisées, pertinence à confirmer
+      </p>
 
       <div className="space-y-2 text-sm leading-relaxed">
         {m.answer_segments.map((seg, i) => (
@@ -501,27 +475,40 @@ function AnswerCard({ message: m }: { message: ChatMessage }) {
             onCitationClick={(id) => setOpenCitation(openCitation === id ? null : id)}
           />
         ))}
-        {m.answer_caveat && (
-          <p className="border-l-2 border-border pl-3 text-xs italic text-muted-foreground">
-            {m.answer_caveat}
-          </p>
-        )}
       </div>
 
       {m.answer_citations.length > 0 && (
-        <ol className="space-y-2 border-t pt-3" aria-label="Sources">
-          {m.answer_citations.map((c) => (
-            <Footnote
-              key={c.id}
-              citation={c}
-              index={footnotes.get(c.id)!}
-              open={openCitation === c.id}
-              onToggle={() => setOpenCitation(openCitation === c.id ? null : c.id)}
-              searched={m.searched}
-            />
-          ))}
-        </ol>
+        <div className="border-t pt-3">
+          <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Sources citées
+          </p>
+          <ol className="mt-2 space-y-2" aria-label="Sources">
+            {m.answer_citations.map((c) => (
+              <Footnote
+                key={c.id}
+                citation={c}
+                index={footnotes.get(c.id)!}
+                open={openCitation === c.id}
+                onToggle={() => setOpenCitation(openCitation === c.id ? null : c.id)}
+                searched={m.searched}
+              />
+            ))}
+          </ol>
+        </div>
       )}
+
+      <div className="border-t pt-3">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Limites de cette réponse
+        </p>
+        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+          {m.answer_caveat && <p className="italic">{m.answer_caveat}</p>}
+          <p>
+            Chaque passage cité est localisé mot pour mot dans sa source ; sa pertinence pour
+            votre question n'est pas vérifiée automatiquement.
+          </p>
+        </div>
+      </div>
 
       <ProvenanceDetails message={m} />
     </div>
@@ -584,7 +571,7 @@ function Footnote({
               « {c.source_quote} » —{" "}
               <span className="text-muted-foreground/80">
                 {c.filename}
-                {c.page_number ? `, p.${c.page_number}` : ""}
+                {c.page_number ? `, p.${c.page_number}` : ""} · passage localisé
               </span>
             </>
           ) : (
@@ -600,12 +587,12 @@ function Footnote({
         )}
       </button>
       {open && c.type === "policy" && source && (
-        <div className="mt-2 rounded-lg border border-emerald-600/20 bg-emerald-50/60 p-3 dark:border-emerald-400/20 dark:bg-emerald-400/5">
+        <div className="mt-2 rounded-lg border border-success/25 bg-success/5 p-3">
           <p className="font-medium text-muted-foreground">
             {c.filename}
             {c.page_number ? `, p.${c.page_number}` : ""} — passage en contexte
           </p>
-          <p className="mt-1 whitespace-pre-wrap leading-relaxed text-foreground">
+          <p className="mt-1 leading-relaxed whitespace-pre-wrap text-foreground">
             <HighlightedText
               text={source.text}
               start={
@@ -631,27 +618,46 @@ function Footnote({
   );
 }
 
-function PotentialGapCard({ message: m }: { message: ChatMessage }) {
+function PotentialGapCard({
+  message: m,
+  onFollowUp,
+}: {
+  message: ChatMessage;
+  onFollowUp: (q: string) => void;
+}) {
   return (
-    <div className="max-w-[95%] space-y-3 rounded-2xl rounded-bl-sm border border-amber-600/40 bg-amber-50 p-4 dark:border-amber-400/30 dark:bg-amber-400/10">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+    <div className="max-w-[95%] space-y-3 rounded-lg border border-amber-600/40 bg-amber-50 p-4 dark:border-amber-400/30 dark:bg-amber-400/10">
+      <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-amber-800 uppercase dark:text-amber-200">
         <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
         Écart potentiel — aucune citation vérifiable
       </p>
-      <p className="whitespace-pre-wrap text-sm text-foreground">{m.answer}</p>
+      <p className="text-sm whitespace-pre-wrap text-foreground">{m.answer}</p>
       {m.suggested_clause && (
-        <p className="text-sm">
-          <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-400/20 dark:text-amber-200">
-            Clause à examiner : {m.suggested_clause.requirement_id}
-          </span>
-          <span className="ml-2 text-xs text-muted-foreground">
-            {m.suggested_clause.requirement_fr}
-          </span>
-        </p>
+        <div className="space-y-1.5 text-sm">
+          <p>
+            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-400/20 dark:text-amber-200">
+              Clause à examiner : {m.suggested_clause.requirement_id}
+            </span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {m.suggested_clause.requirement_fr}
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              onFollowUp(
+                `Que demande l'exigence ${m.suggested_clause!.requirement_id} de la norme ?`,
+              )
+            }
+            className="min-h-9 rounded-md border px-3 text-xs font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            Poser la question sur cette exigence
+          </button>
+        </div>
       )}
       {(m.retrieval_notes?.length ?? 0) > 0 && (
         <details>
-          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
             Passages examinés ({m.retrieval_notes!.length}) — commentaires du modèle, non
             vérifiés
           </summary>
@@ -667,10 +673,7 @@ function PotentialGapCard({ message: m }: { message: ChatMessage }) {
                     <p className="text-foreground">
                       {source.filename}
                       {source.page_number ? `, p.${source.page_number}` : ""} : «{" "}
-                      {source.text.length > 220
-                        ? source.text.slice(0, 220) + "…"
-                        : source.text}{" "}
-                      »
+                      {source.text.length > 220 ? source.text.slice(0, 220) + "…" : source.text} »
                     </p>
                   )}
                   <p className="mt-1 text-muted-foreground">
@@ -689,12 +692,12 @@ function PotentialGapCard({ message: m }: { message: ChatMessage }) {
 
 function InfraNotice({ message: m }: { message: ChatMessage }) {
   return (
-    <div className="max-w-[95%] rounded-2xl rounded-bl-sm border bg-muted p-4">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="max-w-[95%] rounded-lg border bg-muted p-4">
+      <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         <Settings2 className="size-3.5 shrink-0" aria-hidden="true" />
         Service indisponible
       </p>
-      <p className="mt-2 whitespace-pre-wrap text-sm">{m.answer}</p>
+      <p className="mt-2 text-sm whitespace-pre-wrap">{m.answer}</p>
     </div>
   );
 }
@@ -704,8 +707,8 @@ function ProvenanceDetails({ message: m }: { message: ChatMessage }) {
   if (m.stripped_citations.length === 0 && dropped.length === 0) return null;
   return (
     <details className="text-xs text-muted-foreground">
-      <summary className="cursor-pointer font-medium">
-        Provenance — éléments écartés ({m.stripped_citations.length + dropped.length})
+      <summary className="cursor-pointer font-medium select-none [&::-webkit-details-marker]:hidden">
+        Détails techniques — éléments écartés ({m.stripped_citations.length + dropped.length})
       </summary>
       <div className="mt-2 space-y-2">
         {dropped.map((claim, i) => (

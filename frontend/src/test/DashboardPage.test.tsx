@@ -16,6 +16,7 @@ vi.mock("../api", async (importOriginal) => {
       getTrustPanel: vi.fn(),
       getRiskRegister: vi.fn(),
       listCases: vi.fn(),
+      listDocuments: vi.fn(),
     },
   };
 });
@@ -27,6 +28,7 @@ const mocked = api as unknown as {
   getTrustPanel: ReturnType<typeof vi.fn>;
   getRiskRegister: ReturnType<typeof vi.fn>;
   listCases: ReturnType<typeof vi.fn>;
+  listDocuments: ReturnType<typeof vi.fn>;
 };
 
 function makeConformity(over: Partial<ConformityReport> = {}): ConformityReport {
@@ -119,6 +121,7 @@ beforeEach(() => {
     { id: "c1", status: "IN_PROGRESS" },
     { id: "c2", status: "CLOSED" },
   ]);
+  mocked.listDocuments.mockResolvedValue([{ id: "d1", status: "parsed" }]);
 });
 
 describe("DashboardPage", () => {
@@ -132,19 +135,20 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/75% — 2\/4 confirmées/)).toBeTruthy();
   });
 
-  it("renders the KPI row from its four distinct sources", async () => {
+  it("renders the score ledger from its distinct sources with distinct denominators", async () => {
     renderPage();
     expect((await screen.findAllByText("75%")).length).toBeGreaterThan(0);
-    // constats confirmés = scored/total_in_scope from the conformity report
+    // couverture du périmètre = scored/total_in_scope from the conformity report
     expect(screen.getByText("2/4")).toBeTruthy();
-    // écarts ouverts = risk register row count, unfiltered by treatment
-    const gaps = screen.getByText("Écarts ouverts");
-    expect(within(gaps.parentElement!.parentElement as HTMLElement).getByText("3")).toBeTruthy();
-    // cas actifs = non-CLOSED cases only (org-wide endpoint)
+    // couverture de la norme = total_in_scope / kb_total_requirements — a third,
+    // distinct denominator (75% évalué must never read as 75% of the standard)
+    expect(screen.getByText("4/65")).toBeTruthy();
+    // écarts confirmés = risk register row count, unfiltered by treatment
+    const gaps = screen.getByText("Écarts confirmés");
+    expect(within(gaps.parentElement as HTMLElement).getByText("3")).toBeTruthy();
+    // cas actifs = non-CLOSED cases only (org-wide endpoint), labelled as such
     const activeCases = screen.getByText("Cas de remédiation actifs");
-    expect(
-      within(activeCases.parentElement!.parentElement as HTMLElement).getByText("1"),
-    ).toBeTruthy();
+    expect(within(activeCases.parentElement as HTMLElement).getByText("1")).toBeTruthy();
   });
 
   it("KPI cards degrade to an unavailable label on source failure", async () => {

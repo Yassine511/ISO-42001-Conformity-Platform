@@ -4,14 +4,16 @@ import {
   ChevronsUpDown,
   ClipboardList,
   FileCheck2,
+  FileText,
   LayoutDashboard,
   ListChecks,
   MessageSquareText,
   ShieldAlert,
-  ShieldCheck,
+  UserCheck,
   Wrench,
 } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import type { LucideIcon } from "lucide-react";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import {
@@ -35,30 +37,122 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export const NAV_ITEMS = [
-  { segment: "", label: "Tableau de bord", icon: LayoutDashboard, group: "Pilotage" },
-  { segment: "evaluations", label: "Évaluations & documents", icon: ListChecks, group: "Pilotage" },
-  { segment: "chat", label: "Copilote", icon: MessageSquareText, group: "Assistant" },
-  { segment: "risk-register", label: "Registre des risques", icon: ShieldAlert, group: "Gouvernance" },
-  { segment: "soa", label: "Déclaration d'applicabilité", icon: ClipboardList, group: "Gouvernance" },
-  { segment: "remediation", label: "Remédiation", icon: Wrench, group: "Gouvernance" },
-] as const;
+export interface NavItem {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  group: string;
+  /** Build the target path for an org. */
+  to: (orgId: string) => string;
+}
 
-const NAV_GROUPS = ["Pilotage", "Assistant", "Gouvernance"] as const;
+/** The stable product navigation — the mental model, not the route tree.
+    Preuves and Évaluations share the frozen /evaluations route via query
+    state; Revue humaine resolves at click time to the latest reviewable
+    assessment (or to évaluations with an explanatory state). */
+export const NAV_ITEMS: NavItem[] = [
+  {
+    key: "overview",
+    label: "Vue d'ensemble",
+    icon: LayoutDashboard,
+    group: "Piloter",
+    to: (orgId) => `/organizations/${orgId}`,
+  },
+  {
+    key: "preuves",
+    label: "Preuves",
+    icon: FileText,
+    group: "Évaluer",
+    to: (orgId) => `/organizations/${orgId}/evaluations?vue=preuves`,
+  },
+  {
+    key: "evaluations",
+    label: "Évaluations",
+    icon: ListChecks,
+    group: "Évaluer",
+    to: (orgId) => `/organizations/${orgId}/evaluations`,
+  },
+  {
+    key: "review",
+    label: "Revue humaine",
+    icon: UserCheck,
+    group: "Évaluer",
+    to: (orgId) => `/organizations/${orgId}/evaluations?vue=revue`,
+  },
+  {
+    key: "risks",
+    label: "Risques",
+    icon: ShieldAlert,
+    group: "Traiter",
+    to: (orgId) => `/organizations/${orgId}/risk-register`,
+  },
+  {
+    key: "remediation",
+    label: "Remédiation",
+    icon: Wrench,
+    group: "Traiter",
+    to: (orgId) => `/organizations/${orgId}/remediation`,
+  },
+  {
+    key: "soa",
+    label: "Déclaration d'applicabilité",
+    icon: ClipboardList,
+    group: "Gouverner",
+    to: (orgId) => `/organizations/${orgId}/soa`,
+  },
+  {
+    key: "chat",
+    label: "Copilote",
+    icon: MessageSquareText,
+    group: "Gouverner",
+    to: (orgId) => `/organizations/${orgId}/chat`,
+  },
+];
 
-function isActive(pathname: string, orgId: string, segment: string): boolean {
+const NAV_GROUPS = ["Piloter", "Évaluer", "Traiter", "Gouverner"] as const;
+
+export function activeNavKey(pathname: string, search: string, orgId: string): string | null {
   const base = `/organizations/${orgId}`;
-  if (segment === "") return pathname === base || pathname === `${base}/`;
-  // review workspace belongs to the évaluations section
-  if (segment === "evaluations" && pathname.startsWith(`${base}/assessments`)) return true;
-  return pathname.startsWith(`${base}/${segment}`);
+  if (pathname === base || pathname === `${base}/`) return "overview";
+  if (pathname.startsWith(`${base}/assessments`)) return "review";
+  if (pathname.startsWith(`${base}/evaluations`)) {
+    const vue = new URLSearchParams(search).get("vue");
+    if (vue === "preuves") return "preuves";
+    if (vue === "revue") return "review";
+    return "evaluations";
+  }
+  if (pathname.startsWith(`${base}/risk-register`)) return "risks";
+  if (pathname.startsWith(`${base}/remediation`)) return "remediation";
+  if (pathname.startsWith(`${base}/soa`)) return "soa";
+  if (pathname.startsWith(`${base}/chat`)) return "chat";
+  return null;
 }
 
 export function AppSidebar() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId = "" } = useParams<{ orgId: string }>();
   const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
   const orgs = useQuery({ queryKey: ["organizations"], queryFn: api.listOrganizations });
+  // Revue humaine resolves to the latest assessment that has findings to
+  // review; the list is already needed elsewhere so this stays cheap.
+  const assessments = useQuery({
+    queryKey: ["assessments", orgId],
+    queryFn: () => api.listAssessments(orgId),
+    enabled: !!orgId,
+  });
   const currentOrg = orgs.data?.find((o) => o.id === orgId);
+  const activeKey = activeNavKey(pathname, searchParams.toString(), orgId);
+
+  const latestReviewable = assessments.data
+    ?.filter((a) => a.findings_done > 0)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+
+  const resolveTarget = (item: NavItem): string => {
+    if (item.key === "review" && latestReviewable) {
+      return `/organizations/${orgId}/assessments/${latestReviewable.id}`;
+    }
+    return item.to(orgId);
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -67,14 +161,16 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild tooltip="Accueil">
               <Link to="/">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink text-ink-foreground">
                   <FileCheck2 className="size-4" aria-hidden="true" />
                 </div>
                 <div className="grid flex-1 leading-tight">
                   <span className="truncate text-sm font-semibold tracking-tight">
                     Copilote ISO 42001
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">INT102 · Teamwill</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Gouvernance de l'IA
+                  </span>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -85,12 +181,10 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   tooltip="Organisation"
                   aria-label="Changer d'organisation"
-                  className="border border-sidebar-border bg-background/60 shadow-xs"
+                  className="border border-sidebar-border bg-background/60"
                 >
                   <Building2 className="size-4" aria-hidden="true" />
-                  <span className="truncate font-medium">
-                    {currentOrg?.name ?? "Organisation"}
-                  </span>
+                  <span className="truncate font-medium">{currentOrg?.name ?? "Organisation"}</span>
                   <ChevronsUpDown className="ml-auto size-4 opacity-60" aria-hidden="true" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
@@ -117,28 +211,22 @@ export function AppSidebar() {
       <SidebarContent>
         {NAV_GROUPS.map((group) => (
           <SidebarGroup key={group} className="py-1">
-            <SidebarGroupLabel className="text-[11px] uppercase tracking-[0.14em]">
+            <SidebarGroupLabel className="text-[11px] tracking-[0.14em] uppercase">
               {group}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {NAV_ITEMS.filter((item) => item.group === group).map((item) => (
-                  <SidebarMenuItem key={item.segment}>
+                  <SidebarMenuItem key={item.key}>
                     <SidebarMenuButton
                       asChild
-                      isActive={isActive(pathname, orgId ?? "", item.segment)}
+                      isActive={activeKey === item.key}
                       tooltip={item.label}
-                      className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                      className="data-[active=true]:bg-ink data-[active=true]:font-medium data-[active=true]:text-ink-foreground"
                     >
-                      <Link
-                        to={
-                          item.segment
-                            ? `/organizations/${orgId}/${item.segment}`
-                            : `/organizations/${orgId}`
-                        }
-                      >
+                      <Link to={resolveTarget(item)}>
                         <item.icon aria-hidden="true" />
-                        <span>{item.label}</span>
+                        <span className="whitespace-normal">{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -150,16 +238,9 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="rounded-lg border border-sidebar-border bg-background/50 px-3 py-2.5 group-data-[collapsible=icon]:hidden">
-          <p className="flex items-center gap-1.5 text-xs font-medium">
-            <ShieldCheck className="size-3.5" aria-hidden="true" />
-            Couche de confiance
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Chaque citation est vérifiée par du code déterministe ; chaque verdict est confirmé par
-            un humain.
-          </p>
-        </div>
+        <p className="px-3 py-2 text-xs leading-relaxed text-muted-foreground group-data-[collapsible=icon]:hidden">
+          L'IA propose, le code vérifie chaque citation, un humain confirme chaque verdict.
+        </p>
       </SidebarFooter>
     </Sidebar>
   );

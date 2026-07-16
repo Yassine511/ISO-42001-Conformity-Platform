@@ -383,6 +383,9 @@ export interface RemediationAction {
   owner_role: string | null;
   success_criterion: string | null;
   priority: "haute" | "normale" | "basse" | null;
+  // 0018: human-set deadline (ISO date) — required before IN_PROGRESS,
+  // never proposed by the LLM planner
+  due_date: string | null;
   review_note: string | null;
   reviewer_label: string | null;
   reviewed_at: string | null;
@@ -441,6 +444,23 @@ export interface RemediationEvent {
   created_at: string;
 }
 
+/** Compact workflow summary computed server-side (0018). The frontend
+    translates next_action_key / recommendations through lib/labels — raw
+    keys never render. */
+export interface CaseWorkflowSummary {
+  active_plan_status: "VERIFIED" | "ABSTAINED" | "SUPERSEDED" | null;
+  blocker_reason: string | null;
+  pending_action_count: number;
+  open_action_count: number;
+  next_action_key: string;
+  closure: {
+    // a recommendation, never an enforced gate — the backend does not yet
+    // require effectiveness at closure
+    recommended_ready: boolean;
+    recommendations: string[];
+  };
+}
+
 export interface RemediationCase {
   id: string;
   organization_id: string;
@@ -457,9 +477,17 @@ export interface RemediationCase {
   evidence_revision: number;
   closed_at: string | null;
   close_note: string | null;
+  // ---- case planning (0018): human fields, honestly null until set
+  owner_role: string | null;
+  due_date: string | null; // ISO date
+  closure_criterion: string | null;
+  planning_revision: number;
+  planning_updated_at: string | null;
+  planning_editor_label: string | null; // free text, explicitly unverified
   created_at: string;
   updated_at: string;
   finding_links: CaseFindingLink[];
+  workflow: CaseWorkflowSummary;
 }
 
 export interface RemediationCaseDetail extends RemediationCase {
@@ -920,6 +948,7 @@ export const api = {
       owner_role?: string;
       success_criterion?: string;
       priority?: "haute" | "normale" | "basse";
+      due_date?: string; // ISO date — omitted keeps the current value
       impacted_requirement_ids?: string[];
       review_note?: string;
       reviewer_label?: string;
@@ -969,6 +998,24 @@ export const api = {
     post(`/api/organizations/${orgId}/remediation-cases/${caseId}/reopen`, {}).then((r) =>
       json<RemediationCaseDetail>(r),
     ),
+  // 0018 human case-planning update under an optimistic revision check
+  // (a stale expected_revision is a 409, never a silent overwrite)
+  updateCasePlanning: (
+    orgId: string,
+    caseId: string,
+    body: {
+      expected_revision: number;
+      owner_role?: string | null;
+      due_date?: string | null;
+      closure_criterion?: string | null;
+      editor_label?: string | null;
+    },
+  ) =>
+    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}/planning`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => json<RemediationCaseDetail>(r)),
 
   // M7b document versions + patch flow
   listDocumentVersions: (docId: string) =>

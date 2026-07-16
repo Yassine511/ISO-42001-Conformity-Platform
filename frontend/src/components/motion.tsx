@@ -18,9 +18,9 @@ export function PageFade({ children, className }: { children: ReactNode; classNa
   return (
     <m.div
       className={className}
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: EASE }}
+      transition={{ duration: 0.28, ease: EASE }}
     >
       {children}
     </m.div>

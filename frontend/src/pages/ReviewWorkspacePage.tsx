@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListChecks, MessageSquareText } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -10,13 +10,17 @@ import {
   type ReviewAction,
   type Verdict,
 } from "../api";
+import { reviewActionDisplay, verdictDisplay } from "@/lib/labels";
 import AbstainReasonLabel from "../components/AbstainReasonLabel";
 import HighlightedText from "../components/HighlightedText";
-import { AssessmentStatusBadge, ReviewStatusBadge } from "../components/StatusBadge";
+import { ReviewStatusBadge } from "../components/StatusBadge";
 import VerdictBadge from "../components/VerdictBadge";
 import OpenRemediationCaseButton from "../components/OpenRemediationCaseButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "pending" | "abstained" | "confirmed";
@@ -28,29 +32,25 @@ const FILTER_LABELS: Record<Filter, string> = {
   confirmed: "Confirmés",
 };
 
-const ACTION_LABELS: Record<ReviewAction, string> = {
-  approve: "Approuvé",
-  edit: "Modifié",
-  override: "Remplacé",
-};
+const VERDICT_OPTIONS: { value: Verdict; label: string }[] = (
+  ["compliant", "partial", "non_compliant", "missing"] as Verdict[]
+).map((v) => ({ value: v, label: verdictDisplay(v).label }));
 
-const VERDICT_OPTIONS: { value: Verdict; label: string }[] = [
-  { value: "compliant", label: "Conforme" },
-  { value: "partial", label: "Partiel" },
-  { value: "non_compliant", label: "Non conforme" },
-  { value: "missing", label: "Preuve insuffisante" },
-];
-
+/** Revue humaine — desktop: finding queue | AI proposal | evidence, with a
+    sticky decision dock always in view; mobile: queue drawer + proposal /
+    evidence tabs (spec §8.4). The AI draft is immutable; the human decision
+    is recorded beside it, never in its place. */
 export default function ReviewWorkspacePage() {
   const { orgId, assessmentId } = useParams<{ orgId: string; assessmentId: string }>();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const detail = useQuery({
     queryKey: ["assessment", orgId, assessmentId],
     queryFn: () => api.getAssessment(orgId!, assessmentId!),
-    refetchInterval: (query) =>
-      query.state.data?.status === "RUNNING" ? 2000 : false,
+    refetchInterval: (query) => (query.state.data?.status === "RUNNING" ? 2000 : false),
   });
 
   const findings = detail.data?.findings ?? [];
@@ -70,6 +70,12 @@ export default function ReviewWorkspacePage() {
     (selectedId && filtered.find((f) => f.id === selectedId)) || filtered[0] || null;
   const selectedIndex = selected ? filtered.findIndex((f) => f.id === selected.id) : -1;
 
+  const finding = useQuery({
+    queryKey: ["finding", orgId, assessmentId, selected?.id],
+    queryFn: () => api.getFinding(orgId!, assessmentId!, selected!.id),
+    enabled: !!selected,
+  });
+
   if (detail.isError) {
     return <p className="text-sm text-destructive">{(detail.error as Error).message}</p>;
   }
@@ -79,12 +85,33 @@ export default function ReviewWorkspacePage() {
   const a = detail.data;
   const reviewPct = a.total > 0 ? Math.round((a.reviewed_count / a.total) * 100) : 0;
 
+  const selectFinding = (id: string) => {
+    setSelectedId(id);
+    setQueueOpen(false); // drawers close after navigation
+  };
+
+  const statusBadge =
+    a.status === "RUNNING" ? (
+      <Badge variant="info" className="gap-1.5">
+        <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+        En cours
+      </Badge>
+    ) : a.status === "COMPLETED" ? (
+      <Badge variant="success">Terminée</Badge>
+    ) : (
+      <Badge variant="danger">Échouée</Badge>
+    );
+
+  const queue = (
+    <FindingList findings={filtered} selectedId={selected?.id ?? null} onSelect={selectFinding} />
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3 border-b pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Espace de revue</h1>
-        <AssessmentStatusBadge status={a.status} />
-        <span aria-live="polite" className="text-sm text-muted-foreground">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3 border-b pb-4">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Revue humaine</h1>
+        {statusBadge}
+        <span aria-live="polite" className="text-sm text-muted-foreground tabular-nums">
           {a.reviewed_count} / {a.total} confirmés
         </span>
         <div
@@ -93,7 +120,7 @@ export default function ReviewWorkspacePage() {
           aria-hidden="true"
         >
           <div
-            className="h-full rounded-full bg-foreground transition-[width] duration-500"
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
             style={{ width: `${reviewPct}%` }}
           />
         </div>
@@ -104,66 +131,121 @@ export default function ReviewWorkspacePage() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filtres">
-        {(Object.keys(FILTER_LABELS) as Filter[]).map((key) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            aria-pressed={filter === key}
-            className={cn(
-              "min-h-9 rounded-full px-4 text-xs font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
-              filter === key
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "border border-input bg-card text-muted-foreground hover:bg-muted/60",
-            )}
-          >
-            {FILTER_LABELS[key]}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filtres">
+          {(Object.keys(FILTER_LABELS) as Filter[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              aria-pressed={filter === key}
+              className={cn(
+                "min-h-10 rounded-md px-4 text-xs font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-ring",
+                filter === key
+                  ? "bg-ink text-ink-foreground"
+                  : "border border-input bg-card text-muted-foreground hover:bg-muted/60",
+              )}
+            >
+              {FILTER_LABELS[key]}
+            </button>
+          ))}
+        </div>
+        {/* mobile: the finding queue lives in a drawer */}
+        <Sheet open={queueOpen} onOpenChange={setQueueOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" className="ml-auto min-h-10 lg:hidden">
+              <ListChecks className="size-3.5" aria-hidden="true" />
+              Constats ({filtered.length})
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-[300px] overflow-y-auto p-4">
+            <SheetHeader className="p-0 pb-3">
+              <SheetTitle>Constats</SheetTitle>
+            </SheetHeader>
+            {queue}
+          </SheetContent>
+        </Sheet>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr] lg:items-start">
-        <FindingList
-          findings={filtered}
-          selectedId={selected?.id ?? null}
-          onSelect={setSelectedId}
-        />
+      {/* announce selection changes for screen readers */}
+      <p aria-live="polite" className="sr-only">
+        {selected
+          ? `Constat sélectionné : exigence ${selected.requirement_id}`
+          : "Aucun constat sélectionné"}
+      </p>
+
+      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+        <div className="hidden lg:block">{queue}</div>
+
         {selected ? (
           <div className="min-w-0 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                Constat <span className="font-mono font-medium text-foreground">{selectedIndex + 1}</span>{" "}
+                Constat{" "}
+                <span className="font-mono font-medium text-foreground">{selectedIndex + 1}</span>{" "}
                 sur <span className="font-mono font-medium text-foreground">{filtered.length}</span>
               </p>
               <div className="flex gap-1.5">
                 <Button
                   variant="outline"
                   size="icon"
-                  className="size-9 rounded-full"
+                  className="size-10"
                   aria-label="Constat précédent"
                   disabled={selectedIndex <= 0}
-                  onClick={() => setSelectedId(filtered[selectedIndex - 1].id)}
+                  onClick={() => selectFinding(filtered[selectedIndex - 1].id)}
                 >
                   <ChevronLeft className="size-4" aria-hidden="true" />
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
-                  className="size-9 rounded-full"
+                  className="size-10"
                   aria-label="Constat suivant"
                   disabled={selectedIndex >= filtered.length - 1}
-                  onClick={() => setSelectedId(filtered[selectedIndex + 1].id)}
+                  onClick={() => selectFinding(filtered[selectedIndex + 1].id)}
                 >
                   <ChevronRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>
-            <FindingPanel
-              key={selected.id}
-              orgId={orgId!}
-              assessmentId={assessmentId!}
-              findingId={selected.id}
-            />
+
+            {finding.isError && (
+              <p className="text-sm text-destructive">{(finding.error as Error).message}</p>
+            )}
+            {!finding.data && !finding.isError && (
+              <p className="text-sm text-muted-foreground">Chargement…</p>
+            )}
+            {finding.data && (
+              <>
+                {isMobile ? (
+                  <Tabs defaultValue="proposal">
+                    <TabsList className="w-full">
+                      <TabsTrigger value="proposal" className="flex-1">
+                        Proposition IA
+                      </TabsTrigger>
+                      <TabsTrigger value="evidence" className="flex-1">
+                        Preuves
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="proposal">
+                      <RequirementPane finding={finding.data} />
+                    </TabsContent>
+                    <TabsContent value="evidence">
+                      <EvidencePane finding={finding.data} />
+                    </TabsContent>
+                  </Tabs>
+                ) : (
+                  <div className="grid gap-5 xl:grid-cols-2">
+                    <RequirementPane finding={finding.data} />
+                    <EvidencePane finding={finding.data} />
+                  </div>
+                )}
+                <DecisionDock
+                  orgId={orgId!}
+                  assessmentId={assessmentId!}
+                  finding={finding.data}
+                />
+              </>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Aucun constat pour ce filtre.</p>
@@ -184,7 +266,7 @@ function FindingList({
 }) {
   return (
     <ul
-      className="max-h-[calc(100dvh-16rem)] space-y-1.5 overflow-y-auto pr-1 lg:sticky lg:top-4"
+      className="space-y-1.5 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto lg:pr-1"
       aria-label="Constats"
     >
       {findings.map((f) => {
@@ -195,14 +277,14 @@ function FindingList({
               onClick={() => onSelect(f.id)}
               aria-current={f.id === selectedId}
               className={cn(
-                "w-full rounded-xl border p-3.5 text-left text-sm transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
+                "w-full rounded-lg border p-3 text-left text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-ring",
                 f.id === selectedId
-                  ? "border-foreground/30 bg-accent shadow-sm"
+                  ? "border-primary/50 bg-accent"
                   : "border-border bg-card hover:bg-muted/50",
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono font-semibold">{f.requirement_id}</span>
+                <span className="font-mono text-[13px] font-semibold">{f.requirement_id}</span>
                 <ReviewStatusBadge status={f.review_status} />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -222,42 +304,11 @@ function FindingList({
   );
 }
 
-function FindingPanel({
-  orgId,
-  assessmentId,
-  findingId,
-}: {
-  orgId: string;
-  assessmentId: string;
-  findingId: string;
-}) {
-  const finding = useQuery({
-    queryKey: ["finding", orgId, assessmentId, findingId],
-    queryFn: () => api.getFinding(orgId, assessmentId, findingId),
-  });
-
-  if (finding.isError) {
-    return <p className="text-sm text-destructive">{(finding.error as Error).message}</p>;
-  }
-  if (!finding.data) return <p className="text-sm text-muted-foreground">Chargement…</p>;
-  const f = finding.data;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-2">
-        <RequirementPane finding={f} />
-        <EvidencePane finding={f} />
-      </div>
-      <ReviewSection orgId={orgId} assessmentId={assessmentId} finding={f} />
-    </div>
-  );
-}
-
 function RequirementPane({ finding: f }: { finding: FindingDetail }) {
   const infra = isInfraAbstain(f.abstain_reason);
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <section className="space-y-4 rounded-lg border bg-card p-5">
+      <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
         Exigence ISO
       </h2>
       <div>
@@ -277,7 +328,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
 
       <div
         className={cn(
-          "rounded-xl border p-4",
+          "rounded-lg border p-4",
           f.status === "VERIFIED"
             ? "border-border bg-muted/50"
             : infra
@@ -286,7 +337,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
         )}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             {f.status === "VERIFIED"
               ? "Brouillon IA — citation localisée, pertinence à confirmer"
               : "Brouillon IA — abstention"}
@@ -296,11 +347,6 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
           ) : (
             <AbstainReasonLabel reason={f.abstain_reason} />
           )}
-          {f.confidence !== null && (
-            <span className="text-xs text-muted-foreground">
-              confiance {f.confidence.toFixed(2)}
-            </span>
-          )}
         </div>
         {f.rationale && (
           <p className="mt-2 text-sm leading-relaxed text-foreground/90">{f.rationale}</p>
@@ -308,7 +354,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
         {f.status === "ABSTAINED" && !infra && (
           <p className="mt-2 text-xs text-warning-foreground dark:text-warning">
             Le système n'a pas pu produire de citation vérifiable — ce constat nécessite votre
-            jugement (action « remplacer »).
+            jugement (« choisir un autre verdict »).
           </p>
         )}
       </div>
@@ -320,20 +366,24 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
 
 function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
   return (
-    <details className="rounded-xl border border-border p-3 text-sm">
-      <summary className="cursor-pointer font-medium text-muted-foreground">
-        Provenance ({f.attempts} tentative{f.attempts > 1 ? "s" : ""}
-        {f.final_model ? ` · ${f.final_model}` : ""})
+    <details className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
+        Détails techniques (provenance IA)
       </summary>
       <div className="mt-3 space-y-3 text-xs text-muted-foreground">
+        <p>
+          {f.attempts} tentative{f.attempts > 1 ? "s" : ""}
+          {f.final_model ? ` · modèle ${f.final_model}` : ""}
+          {f.confidence !== null ? ` · confiance déclarée ${f.confidence.toFixed(2)}` : ""}
+        </p>
         {f.policy_quote && (
           <p>
-            Citation déclarée par le modèle (audit — le texte affiché comme preuve est
-            l'extrait source) : « {f.policy_quote} »
+            Citation déclarée par le modèle (audit — le texte affiché comme preuve est l'extrait
+            source) : « {f.policy_quote} »
           </p>
         )}
         {f.attempt_history.map((att) => (
-          <div key={att.attempt_number} className="rounded-lg border border-border/60 p-2">
+          <div key={att.attempt_number} className="rounded-md border border-border/60 p-2">
             <p className="font-medium">
               Tentative {att.attempt_number} ({att.prompt_version}) —{" "}
               {att.parsed_ok ? "analysée" : "non analysable"}
@@ -353,9 +403,7 @@ function ProvenanceDisclosure({ finding: f }: { finding: FindingDetail }) {
           </div>
         ))}
         {(f.audit_log ?? []).length > 0 && (
-          <p>
-            Trace : {(f.audit_log ?? []).map((e) => `${e.node}/${e.event}`).join(" → ")}
-          </p>
+          <p>Trace : {(f.audit_log ?? []).map((e) => `${e.node}/${e.event}`).join(" → ")}</p>
         )}
       </div>
     </details>
@@ -371,15 +419,15 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
     matched && f.match_end !== null ? f.match_end - (matched.char_start ?? 0) : null;
 
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Preuves (politiques)
+    <section className="space-y-4 rounded-lg border bg-card p-5">
+      <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+        Preuves (documents de l'organisation)
       </h2>
 
       {matched && (
         <div
           className={cn(
-            "rounded-xl border p-4",
+            "rounded-lg border p-4",
             f.source_quote_kind === "candidate"
               ? "border-warning/40 bg-warning/10"
               : "border-success/30 bg-success/5",
@@ -390,7 +438,7 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
             {matched.page_number ? `, p.${matched.page_number}` : ""} —{" "}
             {f.source_quote_kind === "candidate"
               ? "passage candidat (correspondance approximative)"
-              : "passage cité"}
+              : "citation localisée et vérifiée par le code"}
           </p>
           <p className="mt-2 text-sm leading-relaxed text-foreground">
             <HighlightedText
@@ -400,9 +448,15 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
             />
           </p>
           {f.source_quote && f.source_quote_kind === "verified" && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Extrait source (autoritatif) : « {f.source_quote} »
-            </p>
+            <>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Extrait source (autoritatif) : « {f.source_quote} »
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Le code garantit que ce passage existe mot pour mot — sa pertinence pour
+                l'exigence reste votre jugement.
+              </p>
+            </>
           )}
           {f.source_quote && f.source_quote_kind === "candidate" && (
             <p className="mt-2 text-xs font-medium text-warning-foreground dark:text-warning">
@@ -425,18 +479,18 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
 
       {others.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+          <summary className="cursor-pointer text-sm font-medium text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
             Autres extraits récupérés ({others.length})
           </summary>
           <ul className="mt-3 space-y-3">
             {others.map((r) => (
-              <li key={r.result_id} className="rounded-xl border border-border p-3">
+              <li key={r.result_id} className="rounded-lg border border-border p-3">
                 <p className="text-xs font-medium text-muted-foreground">
                   {r.source_type === "policy"
                     ? `${r.filename ?? "document"}${r.page_number ? `, p.${r.page_number}` : ""}`
                     : `Exigence ISO ${r.requirement_id}`}
                 </p>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
                   {r.text}
                 </p>
               </li>
@@ -448,7 +502,11 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
   );
 }
 
-function ReviewSection({
+/** Sticky decision dock — the human decision stays reachable without
+    scrolling. Approve = confirm the AI verdict; edit = change the human
+    rationale; override = choose another verdict (the only path for
+    abstentions). */
+function DecisionDock({
   orgId,
   assessmentId,
   finding: f,
@@ -485,17 +543,20 @@ function ReviewSection({
   const abstained = f.status === "ABSTAINED";
   const needsRationale = action === "edit" || action === "override";
   const submitDisabled = review.isPending || (needsRationale && !rationale.trim());
+  const approveLabel = f.verdict
+    ? `Confirmer « ${verdictDisplay(f.verdict).label} »`
+    : "Confirmer le verdict IA";
 
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-6 shadow-xs">
+    <section className="sticky bottom-0 z-10 -mx-1 space-y-4 rounded-t-lg border bg-card p-5 pb-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Décision humaine
+        <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+          Votre décision
         </h2>
         <ReviewStatusBadge status={f.review_status} />
         <Link
           to={`/organizations/${orgId}/chat?finding=${f.id}`}
-          className="ml-auto inline-flex min-h-9 items-center gap-1 text-xs font-medium underline-offset-4 hover:underline"
+          className="ml-auto inline-flex min-h-10 items-center gap-1 text-xs font-medium underline-offset-4 hover:underline"
         >
           <MessageSquareText className="size-3.5" aria-hidden="true" />
           Expliquer via le copilote
@@ -503,9 +564,9 @@ function ReviewSection({
       </div>
 
       {f.review_status === "CONFIRMED" && (
-        <div className="rounded-xl border border-success/30 bg-success/5 p-4 text-sm">
+        <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{ACTION_LABELS[f.review_action!]}</span>
+            <span className="font-medium">{reviewActionDisplay(f.review_action).label}</span>
             <VerdictBadge verdict={f.human_verdict} />
             <span className="text-xs text-muted-foreground">
               le {f.reviewed_at ? new Date(f.reviewed_at).toLocaleString("fr-FR") : ""}
@@ -532,55 +593,60 @@ function ReviewSection({
           disabled={abstained}
           aria-pressed={action === "approve"}
           title={
-            abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined
+            abstained
+              ? "Un constat en abstention nécessite votre verdict (« choisir un autre verdict »)"
+              : undefined
           }
           className={cn(
-            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-success",
+            "min-h-10 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-success",
             action === "approve"
-              ? "bg-success text-success-foreground shadow-sm"
+              ? "bg-success text-success-foreground"
               : "border border-success/40 text-success hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          Approuver
+          {approveLabel}
         </button>
         <button
           onClick={() => setAction("edit")}
           disabled={abstained}
           aria-pressed={action === "edit"}
           title={
-            abstained ? "Un constat en abstention nécessite votre verdict (« remplacer »)" : undefined
+            abstained
+              ? "Un constat en abstention nécessite votre verdict (« choisir un autre verdict »)"
+              : undefined
           }
           className={cn(
-            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ring",
+            "min-h-10 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-ring",
             action === "edit"
-              ? "bg-primary text-primary-foreground shadow-sm"
+              ? "bg-primary text-primary-foreground"
               : "border border-input text-foreground hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          Modifier
+          Modifier la justification
         </button>
         <button
           onClick={() => setAction("override")}
           aria-pressed={action === "override"}
           className={cn(
-            "min-h-10 rounded-full px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-warning",
+            "min-h-10 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-warning",
             action === "override"
-              ? "bg-warning text-warning-foreground shadow-sm"
+              ? "bg-warning text-warning-foreground"
               : "border border-warning/50 text-warning-foreground hover:bg-warning/10 dark:text-warning",
           )}
         >
-          Remplacer
+          Choisir un autre verdict
         </button>
         {abstained && (
           <span className="self-center text-xs text-warning-foreground dark:text-warning">
-            Abstention : seul « Remplacer » est possible — le verdict vous appartient.
+            Abstention : seul « Choisir un autre verdict » est possible — le verdict vous
+            appartient.
           </span>
         )}
       </div>
 
       {action && (
         <form
-          className="space-y-3 rounded-xl border bg-muted/30 p-4"
+          className="max-h-[45dvh] space-y-3 overflow-y-auto rounded-lg border bg-muted/30 p-4"
           onSubmit={(e) => {
             e.preventDefault();
             review.mutate();
@@ -592,7 +658,7 @@ function ReviewSection({
               <select
                 value={humanVerdict}
                 onChange={(e) => setHumanVerdict(e.target.value as Verdict)}
-                className="mt-1 block rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block rounded-md border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               >
                 {VERDICT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -610,7 +676,7 @@ function ReviewSection({
               value={rationale}
               onChange={(e) => setRationale(e.target.value)}
               rows={3}
-              className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+              className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -619,7 +685,7 @@ function ReviewSection({
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
             <label className="block text-sm">
@@ -627,7 +693,7 @@ function ReviewSection({
               <input
                 value={reviewer}
                 onChange={(e) => setReviewer(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
               />
             </label>
           </div>
@@ -635,7 +701,7 @@ function ReviewSection({
             <button
               type="submit"
               disabled={submitDisabled}
-              className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-transform duration-200 hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="min-h-10 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors duration-150 hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               {review.isPending ? "Enregistrement…" : "Enregistrer la décision"}
             </button>
@@ -648,15 +714,15 @@ function ReviewSection({
 
       {f.reviews.length > 0 && (
         <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
             Historique des décisions ({f.reviews.length})
           </summary>
           <ul className="mt-2 space-y-2">
             {f.reviews.map((r) => (
-              <li key={r.sequence} className="rounded-xl border border-border p-3 text-xs">
+              <li key={r.sequence} className="rounded-lg border border-border p-3 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">#{r.sequence}</span>
-                  <span>{ACTION_LABELS[r.action]}</span>
+                  <span>{reviewActionDisplay(r.action).label}</span>
                   <VerdictBadge verdict={r.human_verdict} />
                   <span className="text-muted-foreground">
                     {new Date(r.created_at).toLocaleString("fr-FR")}
@@ -670,9 +736,7 @@ function ReviewSection({
                 {r.human_rationale && (
                   <p className="mt-1 text-muted-foreground">{r.human_rationale}</p>
                 )}
-                {r.review_note && (
-                  <p className="mt-1 text-muted-foreground">Note : {r.review_note}</p>
-                )}
+                {r.review_note && <p className="mt-1 text-muted-foreground">Note : {r.review_note}</p>}
               </li>
             ))}
           </ul>
