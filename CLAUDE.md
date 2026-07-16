@@ -229,6 +229,12 @@ cd frontend && npm run build      # tsc + vite production build
 
 # new DB migration (Alembic; migrations run automatically at backend startup)
 # add backend/alembic/versions/000N_*.py by hand following the existing pattern
+
+# LLM prompt retention (explicit, opt-in — dry-run by default). Prunes ONLY
+# request_messages of old provider calls to an explicit marker; call metadata,
+# raw_response and the whole trust chain are kept forever. Policy:
+# backend/app/services/llm_retention.py.
+backend/.venv/Scripts/python scripts/prune_llm_payloads.py --older-than-days 90 --apply
 ```
 
 ## Commit convention
