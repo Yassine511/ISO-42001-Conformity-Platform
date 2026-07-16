@@ -17,6 +17,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     database_url: str = "postgresql+psycopg://int102:int102@localhost:5433/int102"
+
+    # Auth (M10). Opaque server-side session tokens in an httpOnly cookie —
+    # no JWT, no signing secret (the DB stores sha256(token) only). Secure
+    # flag stays off for local plain-HTTP; set SESSION_COOKIE_SECURE=true
+    # behind TLS.
+    session_ttl_hours: int = 168  # 7 days, absolute (no sliding refresh)
+    session_cookie_secure: bool = False
     qdrant_url: str = "http://localhost:6333"
     cors_origins: list[str] = ["http://localhost:5173"]
 

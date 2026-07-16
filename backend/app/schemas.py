@@ -16,6 +16,65 @@ class OrganizationOut(BaseModel):
     created_at: datetime
 
 
+# --- M10 auth -------------------------------------------------------------
+# Password policy (min length, bcrypt 72-byte cap) is enforced in api/auth.py
+# with French messages — not via StringConstraints, whose pydantic messages
+# reach the UI in English through the generic 422 handler.
+
+
+class SignupIn(BaseModel):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=320)]
+    password: str
+    display_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+    organization_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+
+
+class LoginIn(BaseModel):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=320)]
+    password: str
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    display_name: str
+
+
+class SessionOut(BaseModel):
+    user: UserOut
+    organizations: list[OrganizationOut]
+
+
+class InvitationCreateIn(BaseModel):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=320)]
+
+
+class InvitationCreatedOut(BaseModel):
+    # raw token — returned exactly once, never persisted
+    invite_token: str
+    email: str
+    expires_at: datetime
+
+
+class InvitationPublicOut(BaseModel):
+    organization_name: str
+    email: str
+    expired: bool
+
+
+class InvitationAcceptIn(BaseModel):
+    password: str
+    display_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+
+
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
