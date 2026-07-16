@@ -9,7 +9,7 @@ real Postgres. Skips when the dev service is unreachable
 
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -264,7 +264,8 @@ def test_close_vs_lifecycle_race_stays_coherent(pg_env):
     plan = planner_module.draft_plan(db, session_factory, org_id, case_id)
     action_id = plan.actions[0].id
     actions_module.review_action(
-        db, org_id, case_id, action_id, action="approve", priority="haute"
+        db, org_id, case_id, action_id, action="approve", priority="haute",
+        due_date=date(2026, 9, 30),  # 0018 launch gate: deadline required
     )
     actions_module.change_lifecycle(
         db, org_id, case_id, action_id, lifecycle="IN_PROGRESS"

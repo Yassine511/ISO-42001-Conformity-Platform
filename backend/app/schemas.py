@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -587,6 +587,14 @@ class RemediationCaseOut(BaseModel):
     evidence_revision: int
     closed_at: datetime | None
     close_note: str | None
+    # ---- case planning (0018): human operational metadata, nullable —
+    # rendered honestly (« Non attribué » / « À définir ») when absent
+    owner_role: str | None
+    due_date: date | None
+    closure_criterion: str | None
+    planning_revision: int
+    planning_updated_at: datetime | None
+    planning_editor_label: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -627,6 +635,7 @@ class RemediationActionOut(BaseModel):
     owner_role: str | None
     success_criterion: str | None
     priority: str | None
+    due_date: date | None
     review_note: str | None
     reviewer_label: str | None
     reviewed_at: datetime | None
@@ -671,10 +680,31 @@ class RemediationActionReview(BaseModel):
     success_criterion: str | None = None
     # mandatory on approve/edit, forbidden meaning on reject
     priority: Literal["haute", "normale", "basse"] | None = None
+    # human-set deadline (0018) — a provided date is stored; an omitted one
+    # keeps the current value. The LLM planner never proposes deadlines.
+    due_date: date | None = None
     # edit only: human-supplied effective requirement scope (override)
     impacted_requirement_ids: list[str] | None = None
     review_note: str | None = None
     reviewer_label: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=200)
+    ] | None = None
+
+
+class RemediationCasePlanningBody(BaseModel):
+    """Human case-planning update (0018) under an optimistic revision check.
+    Values are stored as given: null clears a field (an explicit, audited
+    decision)."""
+
+    expected_revision: int
+    owner_role: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=300)
+    ] | None = None
+    due_date: date | None = None
+    closure_criterion: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=2000)
+    ] | None = None
+    editor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
 

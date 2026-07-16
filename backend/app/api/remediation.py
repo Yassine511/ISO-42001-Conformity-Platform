@@ -34,6 +34,7 @@ from app.schemas import (
     RemediationCaseCreate,
     RemediationCaseFindingOut,
     RemediationCaseOut,
+    RemediationCasePlanningBody,
     RemediationCloseBody,
     RemediationEventOut,
     RemediationLinkDecision,
@@ -93,6 +94,10 @@ def _case_payload(db: Session, case: RemediationCase, *, detail: bool = False) -
         RemediationCaseFindingOut.model_validate(l).model_dump()
         for l in sorted(case.finding_links, key=lambda l: l.created_at)
     ]
+    # compact workflow summary (0018): plan status / blocker / action counts /
+    # next-action key / closure recommendation — the frontend translates the
+    # keys through its central display module, raw keys never render.
+    base["workflow"] = service.workflow_summary(case)
     if detail:
         base["triage_drafts"] = [
             RemediationTriageDraftOut.model_validate(d).model_dump()
@@ -229,6 +234,31 @@ def unlink_finding(
 ):
     _get_org(db, org_id)
     case = _run(service.unlink_finding, db, org_id, case_id, finding_id)
+    return _case_payload(db, case, detail=True)
+
+
+@router.put("/organizations/{org_id}/remediation-cases/{case_id}/planning")
+def update_case_planning(
+    org_id: str,
+    case_id: str,
+    body: RemediationCasePlanningBody,
+    db: Session = Depends(get_db),
+):
+    """Human case-planning update (owner role / deadline / closure criterion)
+    under an optimistic revision check; every edit is an append-only
+    case_planning_updated event. 409 on a stale expected_revision."""
+    _get_org(db, org_id)
+    case = _run(
+        service.update_case_planning,
+        db,
+        org_id,
+        case_id,
+        expected_revision=body.expected_revision,
+        owner_role=body.owner_role,
+        due_date=body.due_date,
+        closure_criterion=body.closure_criterion,
+        editor_label=body.editor_label,
+    )
     return _case_payload(db, case, detail=True)
 
 
@@ -559,6 +589,7 @@ def review_action(
         owner_role=body.owner_role,
         success_criterion=body.success_criterion,
         priority=body.priority,
+        due_date=body.due_date,
         impacted_requirement_ids=body.impacted_requirement_ids,
         review_note=body.review_note,
         reviewer_label=body.reviewer_label,

@@ -60,6 +60,11 @@ def plan_case(client, approved_case):
 
 
 def _review(client, org_id, case_id, action_id, **body):
+    # 0018: IN_PROGRESS requires a human-set deadline; default one on
+    # approve/edit so lifecycle-focused tests stay readable (the launch gate
+    # itself is covered by test_in_progress_requires_due_date).
+    if body.get("action") in ("approve", "edit") and "due_date" not in body:
+        body["due_date"] = "2026-09-30"
     return client.post(
         _url(org_id, case_id, f"/actions/{action_id}/review"), json=body
     )
@@ -571,3 +576,99 @@ def test_runner_launch_false_treated_as_launched(client, plan_case, monkeypatch)
         json={"selected_action_ids": [action_id]},
     )
     assert r.status_code == 202 and r.json()["status"] == "LAUNCHED"
+
+
+# ---------------------------------------------- 0018 remediation operations
+
+
+def test_in_progress_requires_due_date(client, plan_case):
+    """Launch gate: an APPROVED action without a human-set deadline cannot
+    move to IN_PROGRESS (422 naming the missing field); setting the deadline
+    through a re-review unlocks the transition."""
+    org_id, case_id, action_id = plan_case
+    r = client.post(
+        _url(org_id, case_id, f"/actions/{action_id}/review"),
+        json={"action": "approve", "priority": "haute"},  # deliberately no due_date
+    )
+    assert r.status_code == 200
+    assert r.json()["due_date"] is None  # nothing invented
+    r = _lifecycle(client, org_id, case_id, action_id, "IN_PROGRESS")
+    assert r.status_code == 422
+    assert "échéance" in r.json()["detail"]
+    # re-review with a deadline (human decision) unlocks the launch
+    r = _review(client, org_id, case_id, action_id, action="approve", priority="haute")
+    assert r.status_code == 200
+    assert r.json()["due_date"] == "2026-09-30"
+    assert _lifecycle(client, org_id, case_id, action_id, "IN_PROGRESS").status_code == 200
+
+
+def test_case_planning_update_optimistic_revision(client, plan_case):
+    """Owner/deadline/closure criterion are human fields under an optimistic
+    revision check: a stale expected_revision is a 409, a valid one bumps the
+    revision and appends a case_planning_updated event."""
+    org_id, case_id, _ = plan_case
+    case = client.get(_url(org_id, case_id, "")).json()
+    assert case["owner_role"] is None and case["planning_revision"] == 0
+
+    r = client.put(
+        _url(org_id, case_id, "/planning"),
+        json={
+            "expected_revision": 0,
+            "owner_role": "Responsable conformité",
+            "due_date": "2026-10-15",
+            "closure_criterion": "Écart refermé par une réévaluation conforme.",
+            "editor_label": "Yassine",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["owner_role"] == "Responsable conformité"
+    assert body["due_date"] == "2026-10-15"
+    assert body["planning_revision"] == 1
+    assert body["planning_editor_label"] == "Yassine"
+    assert any(e["event_type"] == "case_planning_updated" for e in body["events"])
+
+    # stale revision: no silent overwrite
+    r = client.put(
+        _url(org_id, case_id, "/planning"),
+        json={"expected_revision": 0, "owner_role": "Autre"},
+    )
+    assert r.status_code == 409
+    assert client.get(_url(org_id, case_id, "")).json()["owner_role"] == (
+        "Responsable conformité"
+    )
+
+    # explicit clearing is a decision, audited like any other
+    r = client.put(
+        _url(org_id, case_id, "/planning"),
+        json={"expected_revision": 1},
+    )
+    assert r.status_code == 200
+    assert r.json()["owner_role"] is None
+    assert r.json()["planning_revision"] == 2
+
+
+def test_workflow_summary_in_case_payloads(client, plan_case):
+    """List/detail payloads carry the compact workflow summary: plan status,
+    action counts, next-action key and the closure RECOMMENDATION."""
+    org_id, case_id, action_id = plan_case
+    wf = client.get(_url(org_id, case_id, "")).json()["workflow"]
+    assert wf["active_plan_status"] == "VERIFIED"
+    assert wf["blocker_reason"] is None
+    assert wf["pending_action_count"] == 1
+    assert wf["next_action_key"] == "review_actions"
+    assert wf["closure"]["recommended_ready"] is False
+    assert "open_actions" in wf["closure"]["recommendations"]
+
+    # drive the action to DONE with a recorded effectiveness -> close_case
+    _to_done(client, org_id, case_id, action_id)
+    client.post(
+        _url(org_id, case_id, f"/actions/{action_id}/effectiveness"),
+        json={"effectiveness": "EFFECTIVE", "note": "Réévaluation favorable."},
+    )
+    listed = client.get(f"/api/organizations/{org_id}/remediation-cases").json()
+    wf = next(c for c in listed if c["id"] == case_id)["workflow"]
+    assert wf["pending_action_count"] == 0
+    assert wf["open_action_count"] == 0
+    assert wf["next_action_key"] == "close_case"
+    assert wf["closure"]["recommended_ready"] is True

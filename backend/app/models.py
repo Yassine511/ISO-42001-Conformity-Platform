@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -841,6 +842,8 @@ REMEDIATION_EVENT_TYPES = (
     "lifecycle_changed",
     "reassessment_launched",
     "effectiveness_recorded",
+    # 0018 human case-planning edits (owner / deadline / closure criterion)
+    "case_planning_updated",
     "case_closed",
     "case_reopened",
     # M7b patch/artifact flow (case-scoped view; generic version lifecycle
@@ -978,6 +981,22 @@ class RemediationCase(Base):
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     close_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ---- case planning (0018): HUMAN operational metadata, all nullable —
+    # existing cases stay honestly empty (« Non attribué » / « À définir »),
+    # never backfilled. owner_role/editor label are free text, EXPLICITLY
+    # UNVERIFIED (no identity layer by design). planning_revision guards
+    # concurrent edits (optimistic check: the client sends the revision it
+    # read; a mismatch is a 409, never a silent overwrite).
+    owner_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    closure_criterion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    planning_revision: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    planning_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    planning_editor_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -1329,6 +1348,10 @@ class RemediationAction(Base):
     owner_role: Mapped[str | None] = mapped_column(Text, nullable=True)
     success_criterion: Mapped[str | None] = mapped_column(Text, nullable=True)
     priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 0018: human-set deadline — never invented by the LLM planner (there is
+    # deliberately no ai_due_date). Nullable: existing actions stay honest.
+    # Required (with the other operational fields) before IN_PROGRESS.
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewer_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(

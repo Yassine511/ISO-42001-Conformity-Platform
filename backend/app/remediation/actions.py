@@ -110,6 +110,7 @@ def _effective_snapshot(action: RemediationAction) -> dict:
         "owner_role": action.owner_role,
         "success_criterion": action.success_criterion,
         "priority": action.priority,
+        "due_date": action.due_date.isoformat() if action.due_date else None,
         "lifecycle": action.lifecycle,
         "effective_requirement_ids": [r.requirement_id for r in action.requirements],
     }
@@ -127,6 +128,7 @@ def review_action(
     owner_role: str | None = None,
     success_criterion: str | None = None,
     priority: str | None = None,
+    due_date=None,  # datetime.date | None — human-set, never LLM-proposed
     impacted_requirement_ids: list[str] | None = None,
     review_note: str | None = None,
     reviewer_label: str | None = None,
@@ -164,6 +166,7 @@ def review_action(
         row.owner_role = None
         row.success_criterion = None
         row.priority = None
+        row.due_date = None
         row.lifecycle = "REJECTED"
         for req in list(row.requirements):
             db.delete(req)
@@ -220,6 +223,10 @@ def review_action(
                 + ", ".join(unknown)
             )
         row.priority = priority
+        # deadline: a provided date is the human decision; an omitted one
+        # keeps the current value (never silently cleared on re-review)
+        if due_date is not None:
+            row.due_date = due_date
         row.review_action = action
         row.lifecycle = "APPROVED"
 
@@ -286,6 +293,31 @@ def change_lifecycle(
         raise RemediationConflictError(
             f"Transition invalide : {row.lifecycle} → {lifecycle}."
         )
+    if lifecycle == "IN_PROGRESS":
+        # launch gate (0018): an action starts only fully specified — human
+        # confirmation, description, owner role, deadline, success criterion
+        # and priority. Most are already guaranteed by the review CHECK; the
+        # deadline is the genuinely new requirement.
+        missing = []
+        if row.review_status != "CONFIRMED":
+            missing.append("décision humaine")
+        if not row.description:
+            missing.append("description")
+        if not row.owner_role:
+            missing.append("rôle responsable")
+        if row.due_date is None:
+            missing.append("échéance")
+        if not row.success_criterion:
+            missing.append("critère de succès")
+        if not row.priority:
+            missing.append("priorité")
+        if missing:
+            db.rollback()
+            raise RemediationInvalidError(
+                "Impossible de démarrer l'action — champs requis manquants : "
+                + ", ".join(missing)
+                + "."
+            )
     before = row.lifecycle
     row.lifecycle = lifecycle
     append_event(

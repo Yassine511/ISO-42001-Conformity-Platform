@@ -654,3 +654,140 @@ def _assert_no_other_active_case_or_rollback(
     except RemediationConflictError:
         db.rollback()
         raise
+
+
+# --------------------------------------------------------- case planning (0018)
+
+
+def _planning_state(case: RemediationCase) -> dict:
+    return {
+        "owner_role": case.owner_role,
+        "due_date": case.due_date.isoformat() if case.due_date else None,
+        "closure_criterion": case.closure_criterion,
+    }
+
+
+def update_case_planning(
+    db: Session,
+    org_id: str,
+    case_id: str,
+    *,
+    expected_revision: int,
+    owner_role: str | None,
+    due_date,
+    closure_criterion: str | None,
+    editor_label: str | None = None,
+) -> RemediationCase:
+    """Update the HUMAN case-planning fields (owner / deadline / closure
+    criterion) under an optimistic revision check: the client must send the
+    planning_revision it read; a mismatch is a 409 so two editors can never
+    silently overwrite each other. Values are stored as given (None clears a
+    field — an explicit human decision, audited). Commits."""
+    case = lock_case(db, org_id, case_id)
+    if case.status == "CLOSED":
+        db.rollback()
+        raise RemediationConflictError(
+            "Cas clôturé : rouvrez-le avant de modifier son pilotage."
+        )
+    if expected_revision != case.planning_revision:
+        db.rollback()
+        raise RemediationConflictError(
+            "Le pilotage du cas a été modifié entre-temps (révision "
+            f"{case.planning_revision}, vous avez lu {expected_revision}) — "
+            "rechargez avant de réessayer."
+        )
+    before = _planning_state(case)
+    case.owner_role = (owner_role or "").strip() or None
+    case.due_date = due_date
+    case.closure_criterion = (closure_criterion or "").strip() or None
+    case.planning_revision += 1
+    case.planning_updated_at = _now()
+    case.planning_editor_label = editor_label
+    case.updated_at = _now()
+    append_event(
+        db, case.id, "case_planning_updated",
+        {
+            "before": before,
+            "after": _planning_state(case),
+            "planning_revision": case.planning_revision,
+        },
+        editor_label,
+    )
+    db.commit()
+    return case
+
+
+# ------------------------------------------------------- workflow summary (0018)
+
+# Next-action keys are a stable machine vocabulary; the frontend translates
+# them through its central display module — raw keys never render.
+NEXT_ACTION_KEYS = (
+    "review_triage",
+    "draft_plan",
+    "wait_planning",
+    "redraft_plan",
+    "review_actions",
+    "launch_actions",
+    "complete_actions",
+    "check_effectiveness",
+    "close_case",
+    "reopen_case",
+)
+
+
+def workflow_summary(case: RemediationCase) -> dict:
+    """Compact list-level workflow summary: active-plan status, blocker
+    reason, action counts, the derived next-action key and a
+    closure-readiness RECOMMENDATION (closure is not enforced by these
+    checks — the close endpoint stays a human decision)."""
+    plan = next((p for p in case.plans if p.id == case.active_plan_id), None)
+    actions = plan.actions if plan is not None and plan.status == "VERIFIED" else []
+    pending = sum(1 for a in actions if a.review_status == "PENDING")
+    open_count = sum(1 for a in actions if a.lifecycle in ("APPROVED", "IN_PROGRESS"))
+    done = [a for a in actions if a.lifecycle == "DONE"]
+    unchecked = sum(1 for a in done if a.effectiveness == "NOT_CHECKED")
+
+    if case.status == "CLOSED":
+        key = "reopen_case"
+    elif case.status == "TRIAGE":
+        key = "review_triage"
+    elif case.status == "TRIAGE_APPROVED":
+        key = "draft_plan"
+    elif case.status == "PLANNING":
+        key = "wait_planning"
+    elif plan is not None and plan.status == "ABSTAINED":
+        key = "redraft_plan"
+    elif pending > 0 or case.status == "PLAN_READY":
+        key = "review_actions"
+    elif any(a.lifecycle == "APPROVED" for a in actions):
+        key = "launch_actions"
+    elif any(a.lifecycle == "IN_PROGRESS" for a in actions):
+        key = "complete_actions"
+    elif unchecked > 0:
+        key = "check_effectiveness"
+    else:
+        key = "close_case"
+
+    recommendations: list[str] = []
+    if case.status != "CLOSED":
+        if plan is None or plan.status != "VERIFIED":
+            recommendations.append("no_verified_plan")
+        if pending > 0 or open_count > 0:
+            recommendations.append("open_actions")
+        if unchecked > 0:
+            recommendations.append("unchecked_effectiveness")
+    return {
+        "active_plan_status": plan.status if plan is not None else None,
+        "blocker_reason": plan.abstain_reason
+        if plan is not None and plan.status == "ABSTAINED"
+        else None,
+        "pending_action_count": pending,
+        "open_action_count": open_count,
+        "next_action_key": key,
+        "closure": {
+            # a recommendation, never an enforced gate (the backend does not
+            # yet require effectiveness at closure — do not claim otherwise)
+            "recommended_ready": len(recommendations) == 0,
+            "recommendations": recommendations,
+        },
+    }

@@ -55,7 +55,10 @@ class TriageEffective(_Payload):
 
 
 class ActionProjection(_Payload):
-    """Action review projection before/after one review decision."""
+    """Action review projection before/after one review decision.
+
+    due_date (0018) is additive and optional: historical payloads without the
+    key keep validating unchanged — no PAYLOAD_VERSION bump needed."""
 
     review_status: str
     review_action: str | None = None
@@ -64,6 +67,7 @@ class ActionProjection(_Payload):
     owner_role: str | None = None
     success_criterion: str | None = None
     priority: str | None = None
+    due_date: str | None = None  # ISO date, human-set
     lifecycle: str
     effective_requirement_ids: list[str]
 
@@ -182,6 +186,22 @@ class EffectivenessRecorded(_Payload):
     reassessment_id: str | None = None
 
 
+class CasePlanningState(_Payload):
+    """Human case-planning fields (0018) — owner/deadline/closure criterion."""
+
+    owner_role: str | None = None
+    due_date: str | None = None  # ISO date
+    closure_criterion: str | None = None
+
+
+class CasePlanningUpdated(_Payload):
+    """One optimistic-revision planning edit; full before/after values."""
+
+    before: CasePlanningState
+    after: CasePlanningState
+    planning_revision: int  # the NEW revision after this edit
+
+
 class CaseClosed(_Payload):
     close_note: str
     from_status: str
@@ -279,6 +299,7 @@ PAYLOAD_SCHEMAS: dict[str, type[_Payload]] = {
     "lifecycle_changed": LifecycleChanged,
     "reassessment_launched": ReassessmentLaunched,
     "effectiveness_recorded": EffectivenessRecorded,
+    "case_planning_updated": CasePlanningUpdated,
     "case_closed": CaseClosed,
     "case_reopened": CaseReopened,
     "patch_proposed": PatchProposed,
