@@ -22,7 +22,7 @@ export default function HighlightedText({
   return (
     <span className="whitespace-pre-wrap">
       {text.slice(0, start)}
-      <mark className="rounded bg-amber-200 px-0.5 py-0 text-slate-900">
+      <mark className="rounded box-decoration-clone bg-warning/30 px-0.5 py-0 text-warning-foreground dark:text-warning">
         {text.slice(start, end)}
       </mark>
       {text.slice(end)}

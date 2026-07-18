@@ -6,12 +6,22 @@ import App from "./App";
 import { AuthProvider } from "./auth";
 import { ThemeProvider } from "@/components/theme-provider";
 import { MotionRoot } from "@/components/motion";
-import "@fontsource/geist-sans/400.css";
-import "@fontsource/geist-sans/500.css";
-import "@fontsource/geist-sans/600.css";
-import "@fontsource/geist-sans/700.css";
-import "@fontsource/geist-mono/400.css";
-import "@fontsource/geist-mono/500.css";
+// "Registre" type system: Instrument Sans (body/UI), Newsreader (serif
+// headings), Spline Sans Mono (technical values — ids, offsets, counts).
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
+import "@fontsource/instrument-sans/700.css";
+import "@fontsource/newsreader/400.css";
+import "@fontsource/newsreader/500.css";
+import "@fontsource/newsreader/600.css";
+import "@fontsource/newsreader/400-italic.css";
+// the landing hero's italic line is weight 500 — without this face the browser
+// synthesises the slant off the upright instead of using Newsreader's italic
+import "@fontsource/newsreader/500-italic.css";
+import "@fontsource/spline-sans-mono/400.css";
+import "@fontsource/spline-sans-mono/500.css";
+import "@fontsource/spline-sans-mono/600.css";
 import "./index.css";
 
 const queryClient = new QueryClient();

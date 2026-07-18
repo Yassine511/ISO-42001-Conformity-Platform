@@ -455,6 +455,12 @@ function AnswerCard({ message: m }: { message: ChatMessage }) {
   return (
     <div className="max-w-[95%] space-y-3 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="flex size-6 shrink-0 items-center justify-center rounded-[7px] bg-ink font-serif text-xs font-semibold text-ink-foreground"
+        >
+          C
+        </span>
         <p className="text-sm font-semibold">Réponse IA</p>
         {m.evidence_scope && (
           <span className="ml-auto rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
@@ -462,7 +468,7 @@ function AnswerCard({ message: m }: { message: ChatMessage }) {
           </span>
         )}
       </div>
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <p className="font-mono text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
         Brouillon IA — citations localisées, pertinence à confirmer
       </p>
 
@@ -479,7 +485,7 @@ function AnswerCard({ message: m }: { message: ChatMessage }) {
 
       {m.answer_citations.length > 0 && (
         <div className="border-t pt-3">
-          <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          <p className="font-mono text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Sources citées
           </p>
           <ol className="mt-2 space-y-2" aria-label="Sources">
@@ -498,7 +504,7 @@ function AnswerCard({ message: m }: { message: ChatMessage }) {
       )}
 
       <div className="border-t pt-3">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        <p className="font-mono text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           Limites de cette réponse
         </p>
         <div className="mt-1 space-y-1 text-xs text-muted-foreground">
@@ -626,8 +632,8 @@ function PotentialGapCard({
   onFollowUp: (q: string) => void;
 }) {
   return (
-    <div className="max-w-[95%] space-y-3 rounded-lg border border-amber-600/40 bg-amber-50 p-4 dark:border-amber-400/30 dark:bg-amber-400/10">
-      <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-amber-800 uppercase dark:text-amber-200">
+    <div className="max-w-[95%] space-y-3 rounded-xl border border-warning/40 border-l-[3px] border-l-warning bg-warning/[0.07] p-4">
+      <p className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tracking-wide text-warning-foreground uppercase dark:text-warning">
         <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
         Écart potentiel — aucune citation vérifiable
       </p>
@@ -635,7 +641,7 @@ function PotentialGapCard({
       {m.suggested_clause && (
         <div className="space-y-1.5 text-sm">
           <p>
-            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-400/20 dark:text-amber-200">
+            <span className="rounded-full bg-warning/20 px-2 py-0.5 text-xs font-medium text-warning-foreground dark:text-warning">
               Clause à examiner : {m.suggested_clause.requirement_id}
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
@@ -693,7 +699,7 @@ function PotentialGapCard({
 function InfraNotice({ message: m }: { message: ChatMessage }) {
   return (
     <div className="max-w-[95%] rounded-lg border bg-muted p-4">
-      <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <p className="flex items-center gap-1.5 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         <Settings2 className="size-3.5 shrink-0" aria-hidden="true" />
         Service indisponible
       </p>

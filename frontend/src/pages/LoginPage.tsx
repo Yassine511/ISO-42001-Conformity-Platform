@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { CircleX } from "lucide-react";
 import { homeOf, useAuth } from "../auth";
 import { AuthFrame } from "@/components/auth-frame";
 import { Button } from "@/components/ui/button";
@@ -40,16 +41,30 @@ export default function LoginPage() {
     <AuthFrame
       title="Se connecter"
       subtitle="Reprenez votre travail de conformité."
+      brand={{
+        tagline: "La conformité, sans acte de foi.",
+        text: "Citations vérifiées au caractère près. Verdicts confirmés par un humain.",
+        note: "ISO/IEC 42001",
+      }}
       footer={
         <>
           Pas encore de compte ?{" "}
           <Link to="/signup" className="font-medium text-foreground underline underline-offset-4">
-            Créer un compte
+            Créer un espace
           </Link>
         </>
       }
     >
       <form className="space-y-4" onSubmit={submit}>
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/[0.08] px-3.5 py-2.5 text-[12.5px] text-destructive"
+          >
+            <CircleX className="mt-px size-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="email">Adresse e-mail</Label>
           <Input
@@ -75,11 +90,6 @@ export default function LoginPage() {
             className="h-10"
           />
         </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
         <Button type="submit" className="h-10 w-full" disabled={pending}>
           {pending ? "Connexion…" : "Se connecter"}
         </Button>

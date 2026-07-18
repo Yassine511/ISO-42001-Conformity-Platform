@@ -330,7 +330,7 @@ function PilotageRail({
       className="space-y-3 rounded-lg border bg-card p-4 lg:sticky lg:top-4"
     >
       <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+        <h2 className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
           Pilotage du cas
         </h2>
         {c.status !== "CLOSED" && (
@@ -353,7 +353,9 @@ function PilotageRail({
         </RailRow>
         {primary && (
           <RailRow label="Écart principal">
-            <span className="font-mono text-[13px]">{primary.finding_requirement_id}</span>{" "}
+            <span className="font-mono text-[13px] font-semibold text-primary">
+              {primary.finding_requirement_id}
+            </span>{" "}
             <span className="text-muted-foreground">
               {verdictDisplay(primary.finding_human_verdict).label}
             </span>
@@ -511,7 +513,9 @@ function LinkedFindings({
             key={l.finding_id}
             className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm"
           >
-            <span className="font-mono text-xs">{l.finding_requirement_id}</span>
+            <span className="font-mono text-xs font-semibold text-primary">
+              {l.finding_requirement_id}
+            </span>
             {l.is_primary && (
               <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-primary">
                 principal

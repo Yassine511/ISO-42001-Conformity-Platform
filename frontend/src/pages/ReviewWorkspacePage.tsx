@@ -308,7 +308,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
   const infra = isInfraAbstain(f.abstain_reason);
   return (
     <section className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+      <h2 className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
         Exigence ISO
       </h2>
       <div>
@@ -337,7 +337,7 @@ function RequirementPane({ finding: f }: { finding: FindingDetail }) {
         )}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          <span className="font-mono text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             {f.status === "VERIFIED"
               ? "Brouillon IA — citation localisée, pertinence à confirmer"
               : "Brouillon IA — abstention"}
@@ -420,7 +420,7 @@ function EvidencePane({ finding: f }: { finding: FindingDetail }) {
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-5">
-      <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+      <h2 className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
         Preuves (documents de l'organisation)
       </h2>
 
@@ -550,7 +550,7 @@ function DecisionDock({
   return (
     <section className="sticky bottom-0 z-10 -mx-1 space-y-4 rounded-t-lg border bg-card p-5 pb-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+        <h2 className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
           Votre décision
         </h2>
         <ReviewStatusBadge status={f.review_status} />

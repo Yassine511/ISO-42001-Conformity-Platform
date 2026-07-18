@@ -1,50 +1,90 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { FileCheck2 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PageFade } from "@/components/motion";
 
-/** Shared centered frame for the public auth pages (connexion, inscription,
-    invitation) — same quiet header as the landing, one card of content. */
+/** The brand mark used on every public auth surface. */
+function BrandMark({ tone = "ink" }: { tone?: "ink" | "surface" }) {
+  return (
+    <Link to="/" className="flex items-center gap-2.5">
+      <span
+        className={
+          "flex size-[30px] items-center justify-center rounded-lg font-serif text-base font-semibold " +
+          (tone === "ink" ? "bg-primary text-primary-foreground" : "bg-ink text-ink-foreground")
+        }
+      >
+        C
+      </span>
+      <span className="text-sm font-semibold tracking-tight">Copilote 42001</span>
+    </Link>
+  );
+}
+
+/**
+ * Shared frame for the public auth pages. With `brand`, it renders the split
+ * card of the design — ink panel on the left, form on the right. Without it
+ * (invitation states), it renders the compact centered card.
+ */
 export function AuthFrame({
   title,
   subtitle,
   children,
   footer,
+  brand,
+  badge,
 }: {
   title: string;
   subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Left ink panel content — omit for the centered (invitation) variant. */
+  brand?: { tagline: string; text: string; note: string };
+  /** Optional status chip above the title (invitation states). */
+  badge?: ReactNode;
 }) {
-  return (
-    <div className="flex min-h-[100dvh] flex-col bg-background">
-      <header className="border-b">
-        <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-3">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-ink text-ink-foreground">
-              <FileCheck2 className="size-4" aria-hidden="true" />
-            </div>
-            <div className="leading-tight">
-              <p className="text-sm font-semibold tracking-tight">Copilote ISO/IEC 42001</p>
-              <p className="text-xs text-muted-foreground">Gouvernance de l'IA</p>
-            </div>
-          </Link>
-          <ThemeToggle />
+  const form = (
+    <main className="p-7 sm:p-9">
+      {!brand && (
+        <div className="mb-6">
+          <BrandMark tone="surface" />
         </div>
-      </header>
+      )}
+      {badge ? <div className="mb-3.5">{badge}</div> : null}
+      <h1 className="font-serif text-[26px] font-medium tracking-tight">{title}</h1>
+      {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{subtitle}</p>}
+      <div className="mt-5">{children}</div>
+      {footer && <div className="mt-4 text-center text-sm text-muted-foreground">{footer}</div>}
+    </main>
+  );
 
-      <PageFade className="flex flex-1 items-center justify-center px-6 py-12">
-        <main className="w-full max-w-sm space-y-6">
-          <div className="space-y-1.5 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            {subtitle && (
-              <p className="text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
-            )}
-          </div>
-          {children}
-          {footer && <div className="text-center text-sm text-muted-foreground">{footer}</div>}
-        </main>
+  return (
+    <div className="relative flex min-h-[100dvh] items-center justify-center bg-secondary/30 p-4 sm:p-6">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <PageFade className={brand ? "w-full max-w-4xl" : "w-full max-w-md"}>
+        <div
+          className={
+            "overflow-hidden rounded-2xl border bg-card " +
+            (brand ? "md:grid md:grid-cols-[280px_1fr]" : "")
+          }
+        >
+          {brand && (
+            <aside className="hidden flex-col bg-ink p-8 text-ink-foreground md:flex">
+              <BrandMark />
+              <div className="flex flex-1 flex-col justify-center py-10">
+                <p className="font-serif text-[26px] leading-[1.2] font-medium tracking-tight">
+                  {brand.tagline}
+                </p>
+                <p className="mt-3 text-[13px] leading-relaxed text-ink-foreground/70">
+                  {brand.text}
+                </p>
+              </div>
+              <p className="font-mono text-[11px] text-ink-foreground/55">{brand.note}</p>
+            </aside>
+          )}
+          {form}
+        </div>
       </PageFade>
     </div>
   );

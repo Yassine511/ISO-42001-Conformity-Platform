@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Download, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, Download, ShieldCheck, TriangleAlert, UserCheck } from "lucide-react";
 import {
   api,
   Assessment,
@@ -14,6 +14,7 @@ import {
   Verdict,
 } from "../api";
 import { severityDisplay, verdictDisplay } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -241,6 +242,8 @@ function NextAction({
     const remaining = pendingReview.findings_done - pendingReview.reviewed_count;
     return (
       <NextActionPanel
+        eyebrow="Action prioritaire"
+        icon={UserCheck}
         title={`${remaining} constat${remaining > 1 ? "s" : ""} attend${remaining > 1 ? "ent" : ""} votre décision`}
         description="L'IA a proposé des verdicts ; ils ne comptent dans la conformité qu'une fois confirmés par vous."
         actionLabel="Reprendre la revue humaine"
@@ -328,7 +331,9 @@ function NextAction({
   return (
     <NextActionPanel
       tone="done"
-      title="Aucune action urgente"
+      eyebrow="Aucune action urgente"
+      icon={Check}
+      title="Tout est à jour"
       description="Les constats confirmés sont traités. Vous pouvez relancer une évaluation après toute mise à jour des documents."
       actionLabel="Voir les évaluations"
       actionTo={`${base}/evaluations`}
@@ -613,7 +618,10 @@ function DomainBar({ d }: { d: ConformityDomain }) {
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
         {d.pct !== null && (
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            className={cn(
+              "h-full rounded-full transition-[width] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              d.pct >= 80 ? "bg-success" : d.pct >= 50 ? "bg-warning" : "bg-destructive",
+            )}
             style={{ width: `${d.pct}%` }}
           />
         )}

@@ -54,7 +54,7 @@ export function MetricLedger({
             <dd className="mt-2 text-sm text-muted-foreground">Indisponible</dd>
           ) : (
             <dd className="mt-1 flex items-baseline gap-2">
-              <span className="text-[28px] leading-9 font-semibold tracking-tight tabular-nums">
+              <span className="font-mono text-[28px] leading-9 font-semibold tracking-tight tabular-nums">
                 {entry.value}
               </span>
               {entry.detail ? (

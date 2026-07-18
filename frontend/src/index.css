@@ -96,8 +96,9 @@
 }
 
 @theme inline {
-  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", monospace;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "Spline Sans Mono", ui-monospace, "Cascadia Mono", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -148,6 +149,19 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+  /* "Registre" editorial voice: every heading is Newsreader serif, medium
+     weight, slightly tightened — the grand-livre look. Weight utilities
+     (font-semibold, etc.) still win over this base rule; family utilities
+     (font-sans / font-mono) still override the family when a heading must
+     read as UI or data. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    letter-spacing: -0.01em;
   }
   /* Metrics and operational counts align digit columns everywhere. */
   html {

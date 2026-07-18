@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { Check, CircleX, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { homeOf, useAuth } from "../auth";
@@ -70,7 +71,14 @@ export default function InviteAcceptPage() {
         title="Invitation expirée"
         subtitle={`L'invitation à rejoindre ${info.data.organization_name} a expiré. Demandez un nouveau lien à un membre de l'organisation.`}
       >
-        <></>
+        <div className="flex flex-col items-center text-center">
+          <span className="flex size-13 items-center justify-center rounded-[14px] border bg-muted text-muted-foreground">
+            <Clock className="size-6" aria-hidden="true" />
+          </span>
+          <Button asChild variant="outline" className="mt-6 h-10">
+            <Link to="/login">Retour à la connexion</Link>
+          </Button>
+        </div>
       </AuthFrame>
     );
   }
@@ -78,9 +86,36 @@ export default function InviteAcceptPage() {
   return (
     <AuthFrame
       title={`Rejoindre ${info.data.organization_name}`}
-      subtitle={`Créez votre compte pour ${info.data.email}.`}
+      subtitle="Vous avez été invité·e à rejoindre l'espace de conformité de cette organisation."
+      badge={
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-success/45 bg-success/15 px-2.5 py-0.5 text-[11.5px] font-semibold text-success">
+          <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
+          Invitation valide
+        </span>
+      }
     >
       <form className="space-y-4" onSubmit={submit}>
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/[0.08] px-3.5 py-2.5 text-[12.5px] text-destructive"
+          >
+            <CircleX className="mt-px size-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor="invite_email">Adresse e-mail</Label>
+          <Input
+            id="invite_email"
+            type="email"
+            value={info.data.email}
+            readOnly
+            disabled
+            className="h-10"
+          />
+          <p className="text-xs text-muted-foreground">Pré-remplie par l'invitation.</p>
+        </div>
         <div className="space-y-2">
           <Label htmlFor="display_name">Votre nom</Label>
           <Input
@@ -107,11 +142,6 @@ export default function InviteAcceptPage() {
           />
           <p className="text-xs text-muted-foreground">10 caractères minimum.</p>
         </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
         <Button type="submit" className="h-10 w-full" disabled={pending}>
           {pending ? "Création…" : "Rejoindre l'organisation"}
         </Button>

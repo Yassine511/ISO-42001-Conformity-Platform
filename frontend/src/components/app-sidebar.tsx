@@ -4,7 +4,6 @@ import {
   Check,
   ChevronsUpDown,
   ClipboardList,
-  FileCheck2,
   FileText,
   LayoutDashboard,
   ListChecks,
@@ -27,7 +26,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -114,8 +112,6 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const NAV_GROUPS = ["Piloter", "Évaluer", "Traiter", "Gouverner"] as const;
-
 export function activeNavKey(pathname: string, search: string, orgId: string): string | null {
   const base = `/organizations/${orgId}`;
   if (pathname === base || pathname === `${base}/`) return "overview";
@@ -154,6 +150,12 @@ export function AppSidebar() {
   const latestReviewable = assessments.data
     ?.filter((a) => a.findings_done > 0)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+  // Pending human decisions across all assessments — surfaced as the amber
+  // count on « Revue humaine » (matches the design's nav badge).
+  const pendingReviewCount = (assessments.data ?? []).reduce(
+    (n, a) => n + Math.max(0, a.findings_done - a.reviewed_count),
+    0,
+  );
 
   const resolveTarget = (item: NavItem): string => {
     if (item.key === "review" && latestReviewable) {
@@ -169,15 +171,15 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild tooltip="Accueil">
               <Link to="/">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink text-ink-foreground">
-                  <FileCheck2 className="size-4" aria-hidden="true" />
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink font-serif text-[15px] font-semibold text-ink-foreground">
+                  C
                 </div>
                 <div className="grid flex-1 leading-tight">
                   <span className="truncate text-sm font-semibold tracking-tight">
-                    Copilote ISO 42001
+                    Copilote 42001
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
-                    Gouvernance de l'IA
+                    {currentOrg?.name ?? "Gouvernance de l'IA"}
                   </span>
                 </div>
               </Link>
@@ -217,14 +219,12 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {NAV_GROUPS.map((group) => (
-          <SidebarGroup key={group} className="py-1">
-            <SidebarGroupLabel className="text-[11px] tracking-[0.14em] uppercase">
-              {group}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {NAV_ITEMS.filter((item) => item.group === group).map((item) => (
+        <SidebarGroup className="py-1">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {NAV_ITEMS.map((item) => {
+                const showCount = item.key === "review" && pendingReviewCount > 0;
+                return (
                   <SidebarMenuItem key={item.key}>
                     <SidebarMenuButton
                       asChild
@@ -234,15 +234,23 @@ export function AppSidebar() {
                     >
                       <Link to={resolveTarget(item)}>
                         <item.icon aria-hidden="true" />
-                        <span className="whitespace-normal">{item.label}</span>
+                        <span className="flex-1 whitespace-normal">{item.label}</span>
+                        {showCount ? (
+                          <span
+                            className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warning px-1.5 font-mono text-[10px] font-bold text-warning-foreground group-data-[collapsible=icon]:hidden"
+                            aria-label={`${pendingReviewCount} en attente`}
+                          >
+                            {pendingReviewCount}
+                          </span>
+                        ) : null}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>
@@ -259,7 +267,7 @@ export function AppSidebar() {
                   aria-label="Menu du compte"
                   className="border border-sidebar-border bg-background/60"
                 >
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold uppercase">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold uppercase text-ink-foreground">
                     {(user?.display_name ?? "?").slice(0, 1)}
                   </div>
                   <div className="grid flex-1 leading-tight">

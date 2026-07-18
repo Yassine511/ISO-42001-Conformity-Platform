@@ -225,11 +225,20 @@ function ControlRow({
   });
 
   return (
-    <li className="px-5 py-4 text-sm transition-colors hover:bg-muted/30">
+    <li
+      className={cn(
+        "px-5 py-4 text-sm transition-colors hover:bg-muted/30",
+        // controls still carrying the default applicability read as "à examiner"
+        c.is_default && "bg-warning/[0.05]",
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono font-medium text-foreground">{c.control_id}</span>
+        <span className="font-mono font-semibold text-primary">{c.control_id}</span>
         <StatusLabel display={soaEvalStatusDisplay(c.status)} dot={false} />
-        <Badge variant={c.applicable ? "outline" : "neutral"}>
+        <Badge
+          variant={c.applicable ? "success" : "outline"}
+          className={cn(c.is_default && "border-dashed")}
+        >
           {c.applicable ? "applicable" : "non applicable"}
         </Badge>
         {c.is_default && <span className="text-xs text-muted-foreground/80">(par défaut)</span>}

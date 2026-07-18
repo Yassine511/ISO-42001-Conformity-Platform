@@ -40,28 +40,40 @@ export function NextActionPanel({
   children?: ReactNode;
   className?: string;
 }) {
+  const accent =
+    tone === "attention"
+      ? { border: "border-warning/55", tile: "bg-warning/15 text-warning-foreground dark:text-warning", eyebrow: "text-warning-foreground dark:text-warning" }
+      : tone === "done"
+        ? { border: "border-success/55 bg-success/[0.05]", tile: "bg-success/15 text-success", eyebrow: "text-success" }
+          // light: ink rule; dark: cobalt (an inverted ink border reads as a
+        // stark white box — the design specifies cobalt on dark surfaces)
+      : { border: "border-ink dark:border-primary", tile: "bg-primary/10 text-primary", eyebrow: "text-primary" };
   return (
     <section
       aria-label={eyebrow}
       className={cn(
-        "relative overflow-hidden rounded-lg border bg-card",
+        "relative overflow-hidden rounded-xl border-[1.5px] bg-card",
+        accent.border,
         className,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "absolute inset-y-0 left-0 w-1",
-          tone === "attention" ? "bg-warning" : tone === "done" ? "bg-success" : "bg-primary",
-        )}
-      />
-      <div className="flex flex-col gap-4 py-5 pr-5 pl-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6">
+        {Icon ? (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "flex size-11 shrink-0 items-center justify-center rounded-[11px]",
+              accent.tile,
+            )}
+          >
+            <Icon className="size-5" />
+          </span>
+        ) : null}
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className={cn("text-[11px] font-semibold tracking-[0.15em] uppercase", accent.eyebrow)}>
             {eyebrow}
           </p>
-          <h2 className="text-base font-semibold tracking-tight text-balance">{title}</h2>
+          <h2 className="font-sans text-lg font-semibold tracking-tight text-balance">{title}</h2>
           {description ? (
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
           ) : null}

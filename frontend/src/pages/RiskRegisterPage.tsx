@@ -36,14 +36,18 @@ export function SeverityBadge({
 }) {
   if (severity === null) {
     return (
-      <Badge variant="neutral" title="Poids de contrôle indisponible dans la politique de notation">
+      <Badge
+        variant="neutral"
+        className="border-dashed bg-transparent"
+        title="Poids de contrôle indisponible dans la politique de notation"
+      >
         non évaluée
       </Badge>
     );
   }
   return (
-    <Badge variant={SEVERITY_VARIANTS[severity]}>
-      {SEVERITY_LABELS[severity]} ({score})
+    <Badge variant={SEVERITY_VARIANTS[severity]} className="tabular-nums">
+      {`${SEVERITY_LABELS[severity]} (${score})`}
     </Badge>
   );
 }
@@ -205,7 +209,7 @@ export default function RiskRegisterPage() {
         ) : (
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="border-b bg-muted/50 text-xs tracking-wide text-muted-foreground uppercase">
+              <thead className="border-b bg-secondary/60 text-[11.5px] font-semibold text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">
                     Exigence
@@ -251,6 +255,11 @@ export default function RiskRegisterPage() {
             humaine tient — clôturer un cas de remédiation annote la ligne mais ne la retire pas ;
             seule une nouvelle évaluation confirmée peut changer le verdict.
           </p>
+          <p className="mt-2">
+            L'applicabilité <strong className="font-medium text-foreground">annote</strong> les
+            risques ; elle ne les retire jamais du registre ni du calcul de couverture. Un contrôle
+            non applicable reste visible avec sa justification.
+          </p>
         </div>
         <TechnicalDisclosure summary="Comment la sévérité est calculée">
           <p>
@@ -271,7 +280,7 @@ function RiskCard({ orgId, row }: { orgId: string; row: RiskRow }) {
   return (
     <li className="rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-sm font-semibold">{row.requirement_id}</span>
+        <span className="font-mono text-sm font-semibold text-primary">{row.requirement_id}</span>
         <SeverityBadge severity={row.severity} score={row.severity_score} />
         <VerdictBadge verdict={row.human_verdict as Verdict} />
       </div>
@@ -319,7 +328,7 @@ function RegisterRow({ orgId, row }: { orgId: string; row: RiskRow }) {
   return (
     <tr className="align-top transition-colors hover:bg-muted/30">
       <td className="px-4 py-3.5">
-        <span className="font-mono font-medium text-foreground">{row.requirement_id}</span>
+        <span className="font-mono font-semibold text-primary">{row.requirement_id}</span>
         <p className="text-xs text-muted-foreground">{row.domain_title_fr}</p>
         {!row.applicable && (
           <Badge

@@ -12,7 +12,6 @@ import {
   verdictDisplay,
 } from "@/lib/labels";
 import { FieldState } from "@/components/field-state";
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { MetricLedger } from "@/components/metric-ledger";
@@ -20,6 +19,7 @@ import { NextActionPanel } from "@/components/next-action-panel";
 import { StatusLabel } from "@/components/status-label";
 import { TableToolbar } from "@/components/table-toolbar";
 import { TechnicalDisclosure } from "@/components/technical-disclosure";
+import { cn } from "@/lib/utils";
 
 export function CaseStatusBadge({ status }: { status: CaseStatus }) {
   return <StatusLabel display={caseStatusDisplay(status)} />;
@@ -120,76 +120,11 @@ export default function RemediationListPage() {
           description="Ouvrez un cas depuis un écart confirmé, dans la revue humaine ou le registre des risques."
         />
       ) : (
-        <>
-          {/* desktop operational table */}
-          <div className="hidden overflow-x-auto rounded-lg border bg-card md:block">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="border-b bg-muted/50 text-xs tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Cas
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Écart
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Phase
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Prochaine action
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Responsable
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Échéance
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Critère de clôture
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Mise à jour
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    <span className="sr-only">Action</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {filtered.map((c) => (
-                  <CaseTableRow key={c.id} orgId={orgId!} c={c} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* mobile record cards */}
-          <ul className="space-y-3 md:hidden">
-            {filtered.map((c) => (
-              <li key={c.id}>
-                <Link
-                  to={`/organizations/${orgId}/remediation/${c.id}`}
-                  className="block rounded-lg border bg-card p-4 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">{caseDisplayTitle(c)}</span>
-                    <CaseStatusBadge status={c.status} />
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Prochaine action : {nextActionLabel(c.workflow?.next_action_key)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Responsable : <FieldState value={c.owner_role} kind="owner" /> · Échéance :{" "}
-                    <FieldState
-                      value={c.due_date ? new Date(c.due_date).toLocaleDateString("fr-FR") : null}
-                      kind="deadline"
-                    />
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </>
+        <ul className="grid gap-4 lg:grid-cols-2">
+          {filtered.map((c) => (
+            <CaseCard key={c.id} orgId={orgId!} c={c} />
+          ))}
+        </ul>
       )}
 
       <TechnicalDisclosure summary="Comment fonctionne le cycle de remédiation">
@@ -206,71 +141,81 @@ export default function RemediationListPage() {
   );
 }
 
-function CaseTableRow({ orgId, c }: { orgId: string; c: RemediationCase }) {
+/** One case as a record card (design: 2-up grid). Keeps the operational
+    fields the table carried — owner, deadline, closure criterion — so the
+    card view loses no information. */
+function CaseCard({ orgId, c }: { orgId: string; c: RemediationCase }) {
   const primary = c.finding_links.find((l) => l.is_primary) ?? c.finding_links[0];
+  const closed = c.status === "CLOSED";
   return (
-    <tr className="align-top transition-colors hover:bg-muted/30">
-      <td className="max-w-xs px-4 py-3.5">
-        <Link
-          to={`/organizations/${orgId}/remediation/${c.id}`}
-          className="font-medium underline-offset-2 hover:underline"
-        >
-          {caseDisplayTitle(c)}
-        </Link>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {c.finding_links.length} constat{c.finding_links.length > 1 ? "s" : ""} lié
-          {c.finding_links.length > 1 ? "s" : ""} · ouvert le{" "}
-          {new Date(c.created_at).toLocaleDateString("fr-FR")}
-        </p>
-      </td>
-      <td className="px-4 py-3.5">
-        {primary ? (
-          <>
-            <span className="font-mono text-[13px] font-medium">
-              {primary.finding_requirement_id}
+    <li>
+      <Link
+        to={`/organizations/${orgId}/remediation/${c.id}`}
+        className={cn(
+          "group flex h-full flex-col rounded-xl border bg-card p-5 transition-colors hover:border-ink/40 focus-visible:outline-2 focus-visible:outline-ring",
+          closed && "bg-secondary/40",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="font-mono text-[11px] text-muted-foreground uppercase">
+              CAS-{c.id.slice(0, 6)}
             </span>
-            <p className="text-xs text-muted-foreground">
-              {verdictDisplay(primary.finding_human_verdict).label}
-            </p>
-          </>
-        ) : (
-          <span className="text-xs text-muted-foreground/80 italic">{MISSING.value}</span>
-        )}
-      </td>
-      <td className="px-4 py-3.5">
-        <CaseStatusBadge status={c.status} />
-      </td>
-      <td className="px-4 py-3.5 text-[13px]">
-        {nextActionLabel(c.workflow?.next_action_key)}
-        {c.workflow?.blocker_reason && (
-          <p className="mt-0.5 text-xs text-warning-foreground dark:text-warning">
-            Plan non vérifié — une nouvelle rédaction est requise.
+            <h3 className="mt-0.5 font-serif text-lg leading-tight font-medium">
+              {caseDisplayTitle(c)}
+            </h3>
+          </div>
+          <CaseStatusBadge status={c.status} />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Constat</span>
+          {primary ? (
+            <>
+              <span className="font-mono font-semibold text-primary">
+                {primary.finding_requirement_id}
+              </span>
+              <StatusLabel
+                display={verdictDisplay(primary.finding_human_verdict)}
+                dot={false}
+                className="text-[10.5px]"
+              />
+            </>
+          ) : (
+            <span className="italic">{MISSING.value}</span>
+          )}
+        </div>
+
+        <div className="mt-auto space-y-1 border-t pt-3 text-xs text-muted-foreground">
+          <p className="pt-1">
+            Prochaine action :{" "}
+            <span className="font-medium text-foreground">
+              {nextActionLabel(c.workflow?.next_action_key)}
+            </span>
           </p>
-        )}
-      </td>
-      <td className="px-4 py-3.5 text-xs">
-        <FieldState value={c.owner_role} kind="owner" />
-      </td>
-      <td className="px-4 py-3.5 text-xs">
-        <FieldState
-          value={c.due_date ? new Date(c.due_date).toLocaleDateString("fr-FR") : null}
-          kind="deadline"
-        />
-      </td>
-      <td className="max-w-48 px-4 py-3.5 text-xs">
-        <FieldState value={c.closure_criterion} kind="value" className="line-clamp-2" />
-      </td>
-      <td className="px-4 py-3.5 text-xs whitespace-nowrap text-muted-foreground">
-        {new Date(c.updated_at).toLocaleDateString("fr-FR")}
-      </td>
-      <td className="px-4 py-3.5 text-right">
-        <Button asChild variant="ghost" size="sm">
-          <Link to={`/organizations/${orgId}/remediation/${c.id}`}>
-            Ouvrir
-            <ArrowRight className="size-3.5" aria-hidden="true" />
-          </Link>
-        </Button>
-      </td>
-    </tr>
+          {c.workflow?.blocker_reason && (
+            <p className="text-warning-foreground dark:text-warning">
+              Plan non vérifié — une nouvelle rédaction est requise.
+            </p>
+          )}
+          <p>
+            Responsable : <FieldState value={c.owner_role} kind="owner" /> · Échéance :{" "}
+            <FieldState
+              value={c.due_date ? new Date(c.due_date).toLocaleDateString("fr-FR") : null}
+              kind="deadline"
+            />
+          </p>
+          <p className="flex items-center gap-1">
+            <span className="truncate">
+              Critère de clôture : <FieldState value={c.closure_criterion} kind="value" />
+            </span>
+            <ArrowRight
+              className="ml-auto size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
+          </p>
+        </div>
+      </Link>
+    </li>
   );
 }

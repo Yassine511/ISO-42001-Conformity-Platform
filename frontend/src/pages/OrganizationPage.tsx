@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
 import { StatusLabel } from "@/components/status-label";
 import { TechnicalDisclosure, TechnicalRow } from "@/components/technical-disclosure";
+import { cn } from "@/lib/utils";
 
 // Pipeline node names -> French progress labels (raw node names never render)
 const NODE_LABELS: Record<string, string> = {
@@ -173,6 +174,7 @@ function DocumentsSection({
 }) {
   const queryClient = useQueryClient();
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
 
   const upload = useMutation({
     mutationFn: (file: File) => api.uploadDocument(orgId, file),
@@ -220,12 +222,50 @@ function DocumentsSection({
         description="Chaque évaluation utilise automatiquement tous les documents préparés."
       />
 
+      {/* dropzone — drag & drop or browse (design §Preuves) */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          handleFiles(e.dataTransfer.files);
+        }}
+        className={cn(
+          "flex flex-wrap items-center gap-4 rounded-xl border-[1.5px] border-dashed bg-card p-5 transition-colors",
+          dragOver ? "border-primary bg-primary/[0.04]" : "border-input",
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className="flex size-11 shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary"
+        >
+          <FileUp className="size-5" />
+        </span>
+        {/* min-width forces the button onto its own line in a narrow column
+            instead of crushing the label */}
+        <div className="min-w-[13rem] flex-1">
+          <p className="text-sm font-medium text-balance">
+            Glissez vos documents ici, ou parcourez
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            PDF, DOCX, TXT, MD — 20 Mo max par fichier.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
+          Parcourir
+        </Button>
+      </div>
+
       <div className="rounded-lg border bg-card p-4">
         <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
           <div>
             <dt className="sr-only">Documents</dt>
             <dd>
-              <span className="text-2xl font-semibold tabular-nums">{list.length}</span>{" "}
+              <span className="font-mono text-2xl font-semibold tabular-nums">{list.length}</span>{" "}
               <span className="text-muted-foreground">document{list.length > 1 ? "s" : ""}</span>
             </dd>
           </div>
@@ -294,9 +334,26 @@ function DocumentsSection({
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-medium">{doc.filename}</div>
-              <div className="text-xs text-muted-foreground">
-                {doc.page_count} page{doc.page_count > 1 ? "s" : ""}
-                {doc.error ? ` — ${doc.error}` : ""}
+              <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span className="font-mono uppercase">
+                  {(doc.filename.split(".").pop() ?? "").slice(0, 4)}
+                </span>
+                <span aria-hidden="true" className="opacity-50">
+                  ·
+                </span>
+                <span className="font-mono tabular-nums">
+                  {doc.page_count} page{doc.page_count > 1 ? "s" : ""}
+                </span>
+                <span aria-hidden="true" className="opacity-50">
+                  ·
+                </span>
+                <span className="font-mono">
+                  {new Date(doc.created_at).toLocaleDateString("fr-FR", {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+                {doc.error ? <span className="text-destructive">— {doc.error}</span> : null}
               </div>
             </div>
             <StatusLabel display={docStatusDisplay(doc.status)} dot={false} />

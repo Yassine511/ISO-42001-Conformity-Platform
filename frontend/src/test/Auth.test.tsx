@@ -142,7 +142,7 @@ describe("LandingPage", () => {
       </Routes>,
     );
     expect(
-      await screen.findByRole("heading", { name: "La conformité, prouvée ligne par ligne." }),
+      await screen.findByRole("heading", { name: /L'humain confirme\./ }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Créer/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Se connecter" }).length).toBeGreaterThan(0);
