@@ -41,6 +41,31 @@ export function StaggerGroup({ children, className }: { children: ReactNode; cla
   );
 }
 
+/** Scroll-triggered cascade reveal (the design-lab `.reveal` / `--i`
+    contract): fade + 14px rise the first time the element enters the
+    viewport, delayed by `i` × 90 ms so sibling blocks waterfall. */
+export function Reveal({
+  children,
+  className,
+  i = 0,
+}: {
+  children: ReactNode;
+  className?: string;
+  i?: number;
+}) {
+  return (
+    <m.div
+      className={className}
+      initial={{ opacity: 0, y: 14 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.12 }}
+      transition={{ duration: 0.55, ease: EASE, delay: i * 0.09 }}
+    >
+      {children}
+    </m.div>
+  );
+}
+
 export function StaggerItem({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <m.div

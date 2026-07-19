@@ -106,7 +106,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText("Adresse e-mail"), "alice@lumen.fr");
     await user.type(screen.getByLabelText("Mot de passe"), "correct horse battery");
-    await user.click(screen.getByRole("button", { name: "Se connecter" }));
+    await user.click(screen.getByRole("button", { name: /Ouvrir mon espace/ }));
 
     await waitFor(() =>
       expect(mocked.login).toHaveBeenCalledWith("alice@lumen.fr", "correct horse battery"),
@@ -127,7 +127,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText("Adresse e-mail"), "alice@lumen.fr");
     await user.type(screen.getByLabelText("Mot de passe"), "mauvais mot de passe");
-    await user.click(screen.getByRole("button", { name: "Se connecter" }));
+    await user.click(screen.getByRole("button", { name: /Ouvrir mon espace/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Identifiants invalides.");
   });

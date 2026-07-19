@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { CircleX } from "lucide-react";
 import { homeOf, useAuth } from "../auth";
-import { AuthFrame } from "@/components/auth-frame";
+import { AuthFrame, ACCENT_ON_INK } from "@/components/auth-frame";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,22 +40,41 @@ export default function LoginPage() {
   return (
     <AuthFrame
       title="Se connecter"
-      subtitle="Reprenez votre travail de conformité."
+      subtitle="Retrouvez vos espaces d'organisation et reprenez la revue là où vous l'avez laissée."
+      stamp="✓ Accès nominatif · journalisé"
       brand={{
-        tagline: "La conformité, sans acte de foi.",
-        text: "Citations vérifiées au caractère près. Verdicts confirmés par un humain.",
-        note: "ISO/IEC 42001",
+        eyebrow: "Espace de conformité",
+        tagline: (
+          <>
+            Le registre où chaque
+            <br />
+            verdict porte{" "}
+            <em className="font-serif font-normal italic" style={ACCENT_ON_INK}>
+              une signature.
+            </em>
+          </>
+        ),
+        text:
+          "Vos documents, vos évaluations, vos décisions — et la preuve que chacune d'elles " +
+          "repose sur une citation localisée, pas sur l'assurance d'un modèle.",
+        points: [
+          ["§1", "Session par cookie httpOnly — aucun jeton exposé au script"],
+          ["§2", "Isolation stricte par organisation — l'existence d'autrui ne fuit pas"],
+          ["§3", "Invitations à usage unique, expirées sous 7 jours"],
+        ],
+        note: "L'IA rédige · le code vérifie · l'humain confirme",
       }}
       footer={
         <>
-          Pas encore de compte ?{" "}
-          <Link to="/signup" className="font-medium text-foreground underline underline-offset-4">
-            Créer un espace
+          <span>Pas encore d'espace ?</span>
+          <Link to="/signup" className="font-medium text-primary hover:underline hover:underline-offset-4">
+            Créer un espace de conformité
           </Link>
         </>
       }
+      caps="Session par cookie httpOnly · chaque connexion est journalisée."
     >
-      <form className="space-y-4" onSubmit={submit}>
+      <form className="space-y-5" onSubmit={submit}>
         {error && (
           <div
             role="alert"
@@ -74,9 +93,12 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="vous@entreprise.fr"
-            className="h-10"
+            placeholder="solene.vasseur@lumen-ai.fr"
+            className="h-11"
           />
+          <p className="text-xs text-muted-foreground">
+            Celle avec laquelle votre espace a été créé ou votre invitation émise.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Mot de passe</Label>
@@ -87,11 +109,11 @@ export default function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="h-10"
+            className="h-11"
           />
         </div>
-        <Button type="submit" className="h-10 w-full" disabled={pending}>
-          {pending ? "Connexion…" : "Se connecter"}
+        <Button type="submit" className="h-11 w-full" disabled={pending}>
+          {pending ? "Connexion…" : "Ouvrir mon espace →"}
         </Button>
       </form>
     </AuthFrame>
