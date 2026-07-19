@@ -98,15 +98,18 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-2.5">
-        <label htmlFor="scope-select" className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3">
+        <label
+          htmlFor="scope-select"
+          className="font-mono text-xs tracking-[0.08em] text-muted-foreground uppercase"
+        >
           Périmètre
         </label>
         <select
           id="scope-select"
           value={assessmentId}
           onChange={(e) => setAssessmentId(e.target.value)}
-          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+          className="h-9 rounded-md border border-input bg-card px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
         >
           <option value="">Organisation — derniers verdicts confirmés</option>
           {(assessments.data ?? []).map((a) => (
@@ -527,15 +530,17 @@ function PriorityTable({ orgId, rows }: { orgId: string; rows: RiskRow[] }) {
           </Button>
         }
       />
-      <div className="overflow-x-auto rounded-lg border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card [scrollbar-width:thin]">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead scope="col">Exigence</TableHead>
               <TableHead scope="col">Pourquoi ce risque</TableHead>
               <TableHead scope="col">Sévérité</TableHead>
-              <TableHead scope="col">Traitement</TableHead>
-              <TableHead scope="col">
+              <TableHead scope="col" className="hidden lg:table-cell">
+                Traitement
+              </TableHead>
+              <TableHead scope="col" className="hidden md:table-cell">
                 <span className="sr-only">Action</span>
               </TableHead>
             </TableRow>
@@ -546,7 +551,7 @@ function PriorityTable({ orgId, rows }: { orgId: string; rows: RiskRow[] }) {
                 <TableCell className="font-mono text-[13px] font-semibold whitespace-nowrap">
                   {r.requirement_id}
                 </TableCell>
-                <TableCell className="max-w-md">
+                <TableCell className="max-w-md whitespace-normal">
                   <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
                     {r.risk_statement_fr}
                   </p>
@@ -554,7 +559,7 @@ function PriorityTable({ orgId, rows }: { orgId: string; rows: RiskRow[] }) {
                 <TableCell>
                   <StatusLabel display={severityDisplay(r.severity)} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {r.treatment?.active_case_id ? (
                     <Link
                       to={`/organizations/${orgId}/remediation/${r.treatment.active_case_id}`}
@@ -568,7 +573,7 @@ function PriorityTable({ orgId, rows }: { orgId: string; rows: RiskRow[] }) {
                     <Badge variant="warning">Sans traitement</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="hidden text-right md:table-cell">
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/organizations/${orgId}/risk-register`}>
                       Détails

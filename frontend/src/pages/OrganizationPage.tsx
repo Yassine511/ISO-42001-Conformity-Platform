@@ -560,7 +560,14 @@ function AssessmentCard({
 
       <div className="space-y-1.5">
         <progress
-          className="h-2 w-full overflow-hidden rounded [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
+          className={cn(
+            "h-2 w-full overflow-hidden rounded [&::-webkit-progress-bar]:bg-muted",
+            a.status === "FAILED"
+              ? "[&::-moz-progress-bar]:bg-destructive/50 [&::-webkit-progress-value]:bg-destructive/50"
+              : a.status === "COMPLETED"
+                ? "[&::-moz-progress-bar]:bg-success [&::-webkit-progress-value]:bg-success"
+                : "[&::-moz-progress-bar]:bg-primary [&::-webkit-progress-value]:bg-primary",
+          )}
           value={a.findings_done}
           max={Math.max(a.total, 1)}
           aria-label="Progression de l'évaluation"

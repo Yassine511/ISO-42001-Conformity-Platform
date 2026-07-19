@@ -28,7 +28,7 @@ export function WorkflowStrip({
     <ol
       aria-label={ariaLabel}
       className={cn(
-        "flex items-stretch gap-0 overflow-x-auto rounded-lg border bg-card",
+        "flex items-stretch gap-0 overflow-x-auto rounded-lg border bg-card [scrollbar-width:thin]",
         className,
       )}
     >
@@ -37,7 +37,7 @@ export function WorkflowStrip({
           key={step.key}
           aria-current={step.state === "current" ? "step" : undefined}
           className={cn(
-            "flex min-w-32 flex-1 items-center gap-2.5 px-4 py-3",
+            "flex min-w-28 flex-1 items-center gap-2.5 px-3.5 py-3",
             i > 0 && "border-l",
           )}
         >
@@ -56,14 +56,14 @@ export function WorkflowStrip({
           <span className="min-w-0">
             <span
               className={cn(
-                "block truncate text-[13px] leading-tight font-medium",
+                "block text-[13px] leading-tight font-medium",
                 step.state === "todo" && "text-muted-foreground",
               )}
             >
               {step.label}
             </span>
             {step.caption ? (
-              <span className="block truncate text-xs leading-tight text-muted-foreground">
+              <span className="block text-xs leading-tight whitespace-nowrap text-muted-foreground">
                 {step.caption}
               </span>
             ) : null}
