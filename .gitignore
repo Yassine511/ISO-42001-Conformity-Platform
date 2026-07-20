@@ -29,3 +29,6 @@ skills-lock.json
 Thumbs.db
 .DS_Store
 *.tsbuildinfo
+
+# Claude Code project instructions (local working notes)
+CLAUDE.md

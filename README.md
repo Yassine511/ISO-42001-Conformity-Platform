@@ -7,6 +7,7 @@
 ![React](https://img.shields.io/badge/react-19-61dafb)
 ![FastAPI](https://img.shields.io/badge/FastAPI-LangGraph-009688)
 ![UI](https://img.shields.io/badge/interface-fran%C3%A7ais-lightgrey)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 LLMs are good at reading policies and drafting compliance findings — and equally good at inventing
 the evidence. This project takes the useful half and disarms the dangerous half:
