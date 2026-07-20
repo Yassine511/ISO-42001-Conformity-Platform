@@ -88,7 +88,6 @@ def _collect(SessionLocal, assessment_ids: list[str]) -> dict[str, dict]:
 
 def _attempt1_outcomes(SessionLocal, findings: dict[str, dict]) -> list:
     """Attempt-1 classification per requirement, from ITS OWN assessment."""
-    from sqlalchemy import select
 
     from app.eval.posthoc import classify_attempt1, recover_attempt1_content
     from app.models import Finding

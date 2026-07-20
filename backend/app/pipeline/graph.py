@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models import Assessment, AssessmentAttempt, Document, DocumentStatus, Finding, Organization
-from app.pipeline.dev_split import DEV_REQUIREMENT_IDS, is_dev_requirement
+from app.pipeline.dev_split import is_dev_requirement
 from app.pipeline.nodes import (
     SessionFactory,
     make_judge_node,

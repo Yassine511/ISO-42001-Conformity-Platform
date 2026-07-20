@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session, load_only
 
 from app.models import (
     Finding,
-    RemediationCase,
     RemediationTriageDraft,
 )
 from app.pipeline import llm as llm_service

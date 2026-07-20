@@ -19,7 +19,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlalchemy.orm import Session
 
 from app.services import scoring, soa
 

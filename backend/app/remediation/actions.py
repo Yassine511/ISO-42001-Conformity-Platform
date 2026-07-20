@@ -28,7 +28,6 @@ in reassessment.py), never as proof.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (

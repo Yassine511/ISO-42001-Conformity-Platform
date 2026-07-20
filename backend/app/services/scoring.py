@@ -52,7 +52,6 @@ from app.models import (
 )
 from app.services.retrieval import load_kb
 from app.services.scoring_policy import (
-    CURRENT_SCORING_POLICY,
     GAP_FACTOR,
     resolve_policy,
     resolve_weight,
