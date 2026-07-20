@@ -1,197 +1,275 @@
 # ISO 42001 Conformity Platform
 
-**Copilote de conformité ISO/IEC 42001 — INT102 (Teamwill)**
+**An ISO/IEC 42001 compliance copilot with a verifiable trust layer — AI proposes, deterministic code and a human decide.**
 
-AI copilot for ISO/IEC 42001 conformity assessment with a **verifiable trust layer**: every finding and every
-chat answer must carry citations that a deterministic checker verifies against the source text; the system
-abstains instead of guessing, a human confirms every verdict, and reliability is measured on a gold dataset.
+[![CI](https://github.com/Yassine511/ISO-42001-Conformity-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Yassine511/ISO-42001-Conformity-Platform/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![React](https://img.shields.io/badge/react-19-61dafb)
+![FastAPI](https://img.shields.io/badge/FastAPI-LangGraph-009688)
+![UI](https://img.shields.io/badge/interface-fran%C3%A7ais-lightgrey)
 
-Full specification: [Plan_Projet_INT102.md](Plan_Projet_INT102.md).
+LLMs are good at reading policies and drafting compliance findings — and equally good at inventing
+the evidence. This project takes the useful half and disarms the dangerous half:
+
+- **Every citation is machine-verified.** A deterministic checker locates each quoted passage in the
+  source document (exact match after normalization). A quote the checker cannot locate is never shown
+  as evidence — the finding **abstains** instead.
+- **Abstention is a first-class answer.** When the evidence isn't there, the system says so, with the
+  retrieval trace, instead of guessing.
+- **A human confirms every verdict.** AI output is a write-once draft; decisions live in an immutable
+  review history. Scoring, the risk register, the SoA and the PDF report are computed only from
+  human-confirmed findings — deterministically, with no AI in the loop.
+- **Reliability is measured, not claimed.** A frozen gold dataset, a held-out test split, Wilson
+  confidence intervals, and published raw counts — including the weak points.
+
+Built end-to-end as the INT102 internship project at **Teamwill** (solo, ~11–13 weeks).
+Full specification and design rationale: [Plan_Projet_INT102.md](Plan_Projet_INT102.md).
+
+---
+
+## What it does
+
+| Capability | How the trust layer applies |
+|---|---|
+| **Assessment pipeline** — evaluates an organization's policy corpus against 65 paraphrased ISO 42001 requirements | LangGraph graph ① retrieve → ② judge (LLM, JSON mode) → ③ verify (deterministic citation + clause + schema checks; one bounded repair retry, then abstention) → ④ human review → ⑤ deterministic scoring |
+| **Grounded chat copilot** — answers compliance questions with clickable footnote citations | Claim-level gating: a claim survives only if *every* citation it references verifies against the retrieved sources; the answer is assembled server-side from surviving claims. Unanswerable questions become explicit « Écart potentiel » abstention cards |
+| **Remediation agent** — turns confirmed gaps into corrective-action plans | LLM-suggested / human-approved triage; plans gated by requirement binding and exact quote binding; per-action human review with mandatory priority; effectiveness checked by scoped re-assessments |
+| **Document patching** — drafts policy amendments as anchored patches | Original uploads are immutable; patches anchor on a unique raw-equality quote, the human-edited text is the only text applied, and activation is a token-fenced two-phase protocol with full version lineage |
+| **ISO artifacts** — conformity dashboard, AI risk register, Statement of Applicability, PDF report | All derived deterministically from human-confirmed findings under a versioned severity policy; the trust panel discloses gate counts and coverage |
+
+Everything the auditor sees is a **server-derived source slice at persisted offsets** — never the
+model's own quote string.
 
 ## Architecture
 
-- `backend/` — FastAPI + SQLAlchemy (PostgreSQL). Document upload & parsing (PyMuPDF, python-docx),
-  then RAG, LangGraph assessment pipeline, chat copilot, trust layer (milestones M2+).
-- `frontend/` — React + Vite + TypeScript + Tailwind + TanStack Query (interface in French).
-- `docker-compose.yml` — PostgreSQL, Qdrant, backend, frontend.
+```mermaid
+flowchart LR
+    subgraph Frontend["React 19 + Vite (French UI)"]
+        UI["Upload / Review workspace /<br/>Chat / Remediation / Dashboard / SoA"]
+    end
 
-## Quick start (Docker)
+    subgraph Backend["FastAPI + SQLAlchemy"]
+        API["REST API + org-scoped auth<br/>(httpOnly cookie sessions)"]
+        subgraph Pipeline["LangGraph pipeline"]
+            R["① Retrieve<br/>hybrid RAG"] --> J["② Judge<br/>LLM, JSON mode"] --> V["③ Verify<br/>deterministic checker"]
+            V -->|"verified"| H["④ Human review"]
+            V -->|"citation not located"| A["ABSTAINED"]
+            A --> H
+            H --> S["⑤ Score & artifacts<br/>(no AI)"]
+        end
+        CHAT["Chat copilot<br/>claim-bound answers"]
+        REM["Remediation agent<br/>triage → plan → patch"]
+    end
 
-```bash
-docker compose up --build
-# Frontend : http://localhost:5173   API : http://localhost:8000/docs
+    subgraph Data["Data layer"]
+        PG[("PostgreSQL<br/>authoritative store +<br/>full provenance chain")]
+        QD[("Qdrant<br/>derived, rebuildable<br/>vector index")]
+    end
+
+    LLM["Mistral (primary)<br/>Groq (fallback)"]
+
+    UI <--> API
+    API --> Pipeline
+    API --> CHAT
+    API --> REM
+    R --> QD
+    Pipeline <--> PG
+    CHAT <--> PG
+    REM <--> PG
+    J <--> LLM
+    CHAT <--> LLM
+    REM <--> LLM
 ```
 
-## Local development
+Design invariants the codebase enforces (and tests):
+
+- **Provenance chain** — `documents → document_versions → pages → chunks`; every chunk stores
+  `page_number, char_start, char_end` with the tested invariant
+  `page_text[char_start:char_end] == chunk_text`. Citations resolve through these offsets.
+- **PostgreSQL is authoritative; Qdrant is derived.** Indexing is a full reconciliation; search
+  hydrates results from PostgreSQL and silently discards unknown points — an orphan vector can never
+  surface. Retrieval is version-aware: one current-version snapshot per search, so rank fusion never
+  mixes two corpus states.
+- **Original uploads are immutable.** Agent output is a separate artifact or an explicitly activated
+  new document version; superseded versions are never deleted, so past findings keep citing their
+  exact text.
+- **Full audit trail** — per-attempt LLM provenance, immutable review histories, append-only
+  remediation and version event streams.
+
+## Measured results (M6 evaluation)
+
+Measured on the frozen corpus v1.2.0 (`m6-freeze` tag), held-out test split (n=14 requirements,
+Wilson 95 % CIs, raw counts always published — protocol in
+[eval/m6/rapport_m6.md](eval/m6/rapport_m6.md)):
+
+| Metric | Result |
+|---|---|
+| Pipeline verdict accuracy vs gold | **9/14** (64.3 % [38.8; 83.7]) |
+| Unsupported first-draft citations blocked by the verification gate | **3/14** |
+| Unsupported citations displayed to the user | **0** — a structural invariant, checked empirically |
+| Chat citation-location validity | **24/24** |
+| Chat claim–citation semantic support precision (human-labelled) | 23/32 |
+| Chat answer faithfulness | 7/10 FAITHFUL, **0 UNFAITHFUL** |
+
+Weakest measured point (stated, not hidden): abstention recall on deliberately uncovered
+requirements — the system asserts authentic-but-irrelevant citations instead of abstaining
+(0/3 pipeline, 1/3 chat). Human review (M5) and the remediation loop (M7) are the designed
+countermeasures. Dev diagnostics (n=51) are reported separately and never aggregated with holdout.
+
+Retrieval exit gates (dev gold split, `scripts/retrieval_sanity.py`, strict six-document baseline):
+doc recall@5 ≥ 0.85, evidence-anchor recall@5 ≥ 0.70, anchor recall@10 ≥ 0.85 — measured
+**0.95 / 0.86 / 0.93** (hybrid) on corpus v1.2.0; KB scope R@5 = **0.96** (floor 0.60).
+
+## The dataset
+
+Real company documents were off-limits, so the corpus is itself an authored deliverable
+([corpus/](corpus/README.md)): a 65-requirement **paraphrased** ISO 42001 knowledge base (French,
+clauses 4–10 + Annex A), six policy documents of the fictional organization **Lumen AI** with
+deliberately seeded gaps, and 65 gold labels (100 % KB coverage, dev/test split — the test split is
+reserved for the M6 report, never for tuning). Eleven requirements are deliberately uncovered
+corpus-wide: the correct system answer there is abstention.
+
+The ISO/IEC 42001 text is copyrighted — the KB contains only paraphrases with clause references
+(validator-enforced), never standard text.
+
+## Quick start
 
 ```bash
-# services
+git clone https://github.com/Yassine511/ISO-42001-Conformity-Platform.git
+cd ISO-42001-Conformity-Platform
+cp .env.example .env          # add MISTRAL_API_KEY (and optionally GROQ_API_KEY)
+docker compose up --build -d
+# Frontend : http://localhost:5173     API docs : http://localhost:8000/docs
+```
+
+Sign up (creates your user and organization), upload documents, index
+(`POST /api/organizations/{id}/index` — first run downloads the ~220 MB embedding model), index the
+KB (`POST /api/kb/index`), then launch an assessment from the UI.
+
+### Local development
+
+```bash
+# services only
 docker compose up -d postgres qdrant
 
-# backend
+# backend (http://localhost:8000; migrations run automatically at startup)
 cd backend
 python -m venv .venv && .venv\Scripts\pip install -r requirements-dev.txt
-.venv\Scripts\uvicorn app.main:app --reload            # http://localhost:8000
+.venv\Scripts\uvicorn app.main:app --reload
 
-# tests
-.venv\Scripts\python -m pytest
+# backend tests — 480+, no Docker/model/LLM needed
+.venv\Scripts\python -m pytest -q
 
-# frontend
+# frontend (http://localhost:5173, proxies /api)
 cd ../frontend
-npm install && npm run dev                              # http://localhost:5173 (proxies /api)
+npm install && npm run dev
+npm run test                  # Vitest + Testing Library behaviour tests
 ```
 
-## Configuration
+### Configuration
 
-Environment variables (see `backend/app/config.py`; a `.env` at the repo root is picked up by Docker Compose):
+Environment variables (see `backend/app/config.py`; the repo-root `.env` is picked up by Docker
+Compose, `backend/.env` serves host-side CLI runs):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DATABASE_URL` | local Postgres | SQLAlchemy connection string |
-| `QDRANT_URL` | `http://localhost:6333` | Vector store (M2) |
-| `MISTRAL_API_KEY` | — | LLM provider (M3+) |
-| `GROQ_API_KEY` | — | Fallback LLM (M3+) |
+| `DATABASE_URL` | local Postgres (host port 5433) | SQLAlchemy connection string |
+| `QDRANT_URL` | `http://localhost:6333` | Vector store |
+| `MISTRAL_API_KEY` | — | Primary LLM provider |
+| `GROQ_API_KEY` | — | Fallback LLM provider |
 
-## Commit message convention
+Note: the PDF export needs WeasyPrint's native Pango/Cairo libraries — available in the Docker image
+(CI-validated); on a bare Windows host venv the endpoint returns a clean 503.
 
-Commits follow a clear, descriptive format tied to the project milestones:
-
-```
-<Mx> <area>: <imperative summary>
-
-<optional body: what changed and why, one bullet per significant change>
-```
-
-- **`Mx`** — the milestone the work belongs to (`M1a` foundation, `M1b` corpus, `M2` RAG, `M3` pipeline,
-  `M4` chat, `M5` frontend/HITL, `M6` evaluation, `M7a` remediation planning agent, `M7b` document-editing
-  tool, `M8` artifacts, `M9` deliverables, `M10` auth + landing). Omitted for cross-cutting fixes.
-  (Commits older than the M7a/M7b introduction use the pre-renumbering `M7`/`M8` meanings.)
-- **`area`** — `backend`, `frontend`, `infra`, `corpus`, `eval`, or `docs`.
-- Summary in the imperative mood ("add citation verifier", not "added"), ≤ 72 characters.
-
-Examples:
+## Repository map
 
 ```
-M1a backend: add document upload and per-page parsing
-M2 backend: index chunks in Qdrant with multilingual embeddings
-infra: map container Postgres to host port 5433
+backend/
+  app/pipeline/      LangGraph assessment graph, citation verifier, run contract
+  app/chat/          grounded chat copilot (claim-bound drafting)
+  app/remediation/   remediation agent: triage, planner, actions, document patcher
+  app/services/      retrieval (BM25 + vector + RRF), parsing, chunking, anchors,
+                     checksums, scoring + versioned severity policy, SoA, PDF export
+  app/eval/          M6 evaluation harness (scoring, gates, tamper-evident sheets)
+  app/api/           REST routers + auth dependencies
+  alembic/           19 migrations (run automatically at startup)
+  tests/             480+ tests (offline by default: SQLite + fake embedder)
+frontend/src/        React 19 pages, components, Vitest behaviour tests
+corpus/              versioned KB + Lumen AI documents + gold labels (see corpus/README.md)
+eval/                frozen M6 run artifacts + M7b anchor contract corpus
+scripts/             CLI demos, eval runners, corpus validator, retrieval gates
 ```
 
-## Retrieval (M2)
+## Assessment demo (CLI)
 
-Hybrid retrieval = French-analyzer BM25 + vector search (fastembed
-`paraphrase-multilingual-MiniLM-L12-v2`, 384-dim) merged with RRF, over a versioned Qdrant
-collection (`retrieval_minilm12_v1`). PostgreSQL is authoritative; Qdrant is a rebuildable
-derived index (`/index` reconciles, search hydrates from PG and discards orphans).
+The pipeline is demoable without the frontend (services up, `MISTRAL_API_KEY` in `backend/.env`):
 
-```
-POST /api/organizations/{id}/index    # chunk + embed + reconcile (first run downloads ~220 MB model)
-POST /api/kb/index                    # index the 65 ISO KB requirements (reads CORPUS_PATH)
-POST /api/organizations/{id}/search   # {"query": "...", "k": 8, "scope": "policy|kb|both"}
-```
-
-Exit gates (dev gold split, `scripts/retrieval_sanity.py`, strict six-document baseline):
-doc recall@5 ≥ 0.85, anchor recall@5 ≥ 0.70, anchor recall@10 ≥ 0.85 — measured
-0.95 / 0.86 / 0.93 (hybrid) on corpus v1.2.0; KB scope R@5 = 0.96 on natural-language
-rationale queries (floor 0.60).
-
-## Milestones
-
-M1a foundation → M1b French corpus + gold labels → M2 hybrid RAG → M3 pipeline core
-(judge/verify/abstain) → M4 chat copilot → M5 frontend HITL → M6 evaluation →
-M7a remediation planning agent (this state: LLM-suggested/human-approved triage →
-schema-and-binding-verified corrective-action plan → per-action human review →
-lifecycle/effectiveness tracking with scoped reassessments as evidence) →
-M7b document-editing tool (anchored patches, versioning; originals immutable) →
-M8 scoring & artifacts (this state: deterministic Node ⑤ scoring over human-confirmed
-findings, conformity dashboard + trust panel, derived risk register with versioned severity
-policy, per-control SoA, WeasyPrint PDF report, chat finding drill-down) →
-M9 deliverables → M10 SaaS-readiness (organization auth + public landing page).
-Spec: `Plan_Projet_INT102.md` (§8 remediation, §14 roadmap).
-Note: the PDF export needs WeasyPrint's native Pango/Cairo libraries — available in the
-Docker image (CI-validated); on a bare Windows host venv the endpoint returns a clean 503.
-
-## Authentication (M10)
-
-Self-hosted email/password auth with org-scoped access. Signing up creates the user AND
-their organization; teammates join via single-use invite links (7-day expiry, no e-mail
-server needed). Sessions are opaque tokens in an httpOnly `SameSite=Lax` cookie; the DB
-stores only `sha256(token)` (no JWT, no signing secret). Every business route requires
-membership of the addressed organization (404, never 403 — org existence is not leaked),
-including the org-unscoped `/api/documents/{id}` family. Public: the landing page, signup,
-login, invitation lookup/accept, `/api/health`.
-
-Pre-M10 organizations have no members — attach an operator account with
-`python scripts/create_user.py --email you@x.fr --name "Vous" --org "Lumen AI"` (password
-prompted). CLI/eval scripts talk to the runner/services directly and are unaffected.
-Pre-production TODOs (documented, out of scope): login rate limiting, password reset
-(needs e-mail infra), CSRF double-submit hardening.
-
-## Evaluation (M6)
-
-Measured on the frozen corpus v1.2.0 with the pre-M5-frozen contract (question generator +
-grading rubric, sha256-bound) plus pipeline scoring rules frozen before the holdout run.
-Full French report: `eval/m6/rapport_m6.md`; harness `backend/app/eval/`; runners
-`scripts/eval_pipeline.py`, `scripts/eval_chat_run.py`, `scripts/eval_chat_score.py`
-(the holdout requires `--m6-holdout` AND `HEAD == m6-freeze` with a clean worktree outside
-the run's artifact directory). Holdout (test split, n=14, Wilson 95% CIs, raw counts always
-published): pipeline verdict accuracy 9/14; the verification gate blocked 3/14 unsupported
-first-draft citations (0 unsupported citations displayed — a structural invariant, checked
-empirically, never claimed as a measured "hallucination reduction"); chat citation-location
-validity 24/24; claim–citation semantic support precision 23/32; answer faithfulness 7/10
-FAITHFUL, 0 UNFAITHFUL. Weakest measured point (stated, not hidden): abstention recall on
-deliberately uncovered requirements — the system asserts authentic-but-irrelevant citations
-instead of abstaining (0/3 pipeline, 1/3 chat); human review (M5) and remediation (M7) are
-the designed countermeasures. Dev diagnostics (n=51) reported separately, never aggregated.
-
-Note: mainline moved to corpus v1.3.0 for M8 (per-requirement control `weight` metadata only —
-requirement text, gold labels and the dev/test split are unchanged). The published M6 result
-above remains frozen at v1.2.0 under the `m6-freeze` tag.
-
-## Frontend + HITL (M5)
-
-Three French UI pages on `http://localhost:5173` (`docker compose up --build -d`):
-
-- **Documents & évaluations** — upload, index, launch an assessment (frozen 51-requirement dev
-  manifest; the M6 test split is structurally unrunnable over HTTP), live per-node progress by
-  polling, resume/abandon (cooperative cancellation). Creation freezes the run contract
-  (requirement manifest, `retrieval_k`, document manifest) atomically with indexing under an
-  org lock — one RUNNING assessment per organization, DB-enforced.
-- **Espace de revue** — the formal human confirmation stage: split view requirement ↔ evidence
-  with the cited span highlighted at its persisted offsets; the displayed quote is always the
-  server-derived source slice (fail-closed), never the model string. Actions: approuver /
-  modifier / remplacer (only option for abstentions). The AI draft is write-once — decisions
-  live in `review_*` projections plus the immutable `finding_reviews` history (re-review allowed).
-- **Copilote** — chat answers rendered from `answer_segments` with clickable `[n]` footnotes
-  opening the source passage in context; unanswerable questions become amber « Écart potentiel »
-  cards (suggested clause + unverified per-passage model notes); provider outages render as
-  neutral service notices.
-
-The containerized backend reads API keys from the repo-root `.env` (`MISTRAL_API_KEY=…`,
-compose `env_file`); `backend/.env` serves host-side CLI runs. Frontend behaviour tests:
-`cd frontend && npm run test`.
-
-## Pipeline (M3)
-
-LangGraph pipeline (`backend/app/pipeline/`): ① retrieve (hybrid RAG) → ② judge (Mistral, JSON
-mode, French prompts; Groq fallback, 429s retried with backoff before falling back) → ③ verify
-(deterministic citation verifier + clause/schema/threshold checks; one bounded repair retry, then
-abstention). `VERIFIED` = **citation/schema-verified with an EXACT match after normalization**
-(case, accents, whitespace, typographic quotes) — not "verdict proven correct" (M6 measures verdict
-accuracy; M5 human review confirms). A near-match (fuzzy) citation is only a candidate: the judge
-gets one retry to re-quote exactly, then the finding abstains with reason `fuzzy_citation`,
-keeping the match offsets for priority human review. Full per-attempt provenance (`assessments`,
-`findings`, `assessment_attempts`, `llm_calls`) and a PostgreSQL checkpointer
-(`LANGGRAPH_STRICT_MSGPACK=true`). Exit-criterion demo (services up, `MISTRAL_API_KEY` in
-`backend/.env`):
-
-```
-backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.9.2  # VERIFIED
-backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.4.5  # ABSTAINED
-backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --all-dev            # dev split only
+```bash
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.9.2  # → VERIFIED
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --requirement A.4.5  # → ABSTAINED
+backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --all-dev            # dev split
 backend/.venv/Scripts/python scripts/assess_demo.py --org "Lumen AI" --assessment <id>    # resume a crashed run
 ```
 
-`--assessment` resumes a RUNNING assessment after a process crash: the assessment's stored
-requirement manifest is authoritative (terminal findings are returned idempotently, checkpointed
-threads resume mid-flight; a mismatching `--requirement/--all-dev` selection is rejected).
+`VERIFIED` means **citation/schema-verified** — the quote exists in the source at an exact match
+after normalization (case, accents, whitespace, typographic quotes) — never "verdict proven correct"
+(verdict accuracy is measured in M6; human review produces CONFIRMED). A near-match earns one repair
+retry, then abstention with the offsets kept for priority human review.
+
+## Authentication (M10)
+
+Self-hosted email/password auth with org-scoped access. Signing up creates the user and their
+organization; teammates join via single-use invite links (7-day expiry, no e-mail server needed).
+Sessions are opaque tokens in an httpOnly `SameSite=Lax` cookie; the DB stores only `sha256(token)`
+(no JWT, no signing secret). Every business route requires membership of the addressed organization
+(404, never 403 — org existence is not leaked). Public: landing page, signup, login, invitation
+lookup/accept, `/api/health`.
+
+Pre-M10 organizations have no members — attach an operator with
+`python scripts/create_user.py --email you@x.fr --name "Vous" --org "Lumen AI"`.
+Pre-production TODOs (documented, deliberately out of scope): login rate limiting, password reset
+(needs e-mail infra), CSRF double-submit hardening.
+
+## Testing & CI
+
+- **Backend** — 480+ pytest tests, offline by default (SQLite + injected fake embedder + in-memory
+  Qdrant); CI adds a live Postgres service so the migration-chain and checkpointer tests run for real.
+  Includes adversarial suites: planted fake quotes, injected instructions in documents, fabricated
+  anchors, stale-state races.
+- **Frontend** — 78 Vitest + Testing Library behaviour tests, plus `tsc` and a production build in CI.
+- **Docker PDF job** — builds the backend image and renders a real PDF inside it (the authoritative
+  native-library check).
+- **Out of CI, by design** — retrieval quality gates (`scripts/retrieval_sanity.py`) need the live
+  embedding model + indexed baseline; corpus consistency (`scripts/validate_corpus.py`) also runs
+  under pytest.
+
+## Milestones
+
+| Milestone | Deliverable | Status |
+|---|---|---|
+| M1a / M1b | Foundation (upload, parsing, provenance) + authored French corpus & gold labels | ✅ |
+| M2 | Hybrid RAG: French-analyzer BM25 + multilingual vectors + RRF, versioned Qdrant collection | ✅ |
+| M3 | Pipeline core: judge / verify / repair-retry / abstain, per-attempt provenance | ✅ |
+| M4 | Grounded chat copilot with claim-level citation gating | ✅ |
+| M5 | Frontend + human-in-the-loop review workspace (write-once drafts, immutable reviews) | ✅ |
+| M6 | Evaluation: frozen contracts, sealed holdout run, published report | ✅ |
+| M7a | Remediation planning agent (triage → verified plans → per-action review → effectiveness) | ✅ |
+| M7b | Document-editing tool: anchored patches, immutable originals, versioned activation | ✅ |
+| M8 | Scoring & artifacts: dashboard, trust panel, risk register, SoA, PDF export | ✅ |
+| M9 | Deliverables: README, architecture, internship report, defense | ✅ |
+| M10 | SaaS-readiness: organization auth + public landing page | ✅ |
+
+## Commit convention
+
+```
+<Mx> <area>: <imperative summary>
+```
+
+`Mx` = milestone tag (omitted for cross-cutting fixes); `area` ∈ `backend | frontend | infra |
+corpus | eval | docs`; summary in the imperative mood, ≤ 72 characters. Commits older than the
+M7a/M7b introduction use the pre-renumbering `M7`/`M8` meanings.
+
+---
+
+*User-facing text (UI, API messages, corpus, reports) is French; code, comments and commits are
+English. INT102 internship project — Teamwill.*
