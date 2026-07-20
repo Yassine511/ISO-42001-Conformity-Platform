@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ArrowLeft,
   Building2,
   Check,
   ChevronsUpDown,
@@ -169,14 +170,14 @@ export function AppSidebar() {
       <SidebarHeader className="gap-3 pb-1">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Accueil">
-              <Link to="/">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink font-serif text-[15px] font-semibold text-ink-foreground">
-                  C
+            <SidebarMenuButton size="lg" asChild tooltip="Retour à l'accueil">
+              <Link to="/" aria-label="Retour à l'accueil">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink text-ink-foreground">
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                 </div>
                 <div className="grid flex-1 leading-tight">
-                  <span className="truncate text-sm font-semibold tracking-tight">
-                    Copilote 42001
+                  <span className="truncate text-sm font-medium tracking-tight">
+                    Retour à l'accueil
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
                     {currentOrg?.name ?? "Gouvernance de l'IA"}

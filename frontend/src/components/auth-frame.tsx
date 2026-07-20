@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PageFade, Reveal } from "@/components/motion";
@@ -10,19 +11,19 @@ export const ACCENT_ON_INK = {
   color: "color-mix(in oklab, var(--primary) 45%, var(--ink-foreground))",
 } as const;
 
-/** The brand mark used on every public auth surface. */
-function BrandMark({ tone = "ink" }: { tone?: "ink" | "surface" }) {
+/** Back to the public landing page — the product has no wordmark yet, so the
+    lockup slot carries a plain return control instead. */
+function BackToSite({ tone = "ink" }: { tone?: "ink" | "surface" }) {
   return (
-    <Link to="/" className="flex items-center gap-2.5">
-      <span
-        className={
-          "flex size-[30px] items-center justify-center rounded-lg font-mono text-base font-bold " +
-          (tone === "ink" ? "bg-ink-foreground text-ink" : "bg-ink text-ink-foreground")
-        }
-      >
-        C
-      </span>
-      <span className="text-sm font-semibold tracking-tight">Copilote 42001</span>
+    <Link
+      to="/"
+      aria-label="Retour à l'accueil"
+      className={
+        "flex size-[30px] items-center justify-center rounded-lg transition-opacity hover:opacity-80 " +
+        (tone === "ink" ? "bg-ink-foreground text-ink" : "bg-ink text-ink-foreground")
+      }
+    >
+      <ArrowLeft className="size-4" aria-hidden="true" />
     </Link>
   );
 }
@@ -75,7 +76,7 @@ export function AuthFrame({
           <div className="overflow-hidden rounded-2xl border bg-card">
             <main className="p-7 sm:p-9">
               <div className="mb-6">
-                <BrandMark tone="surface" />
+                <BackToSite tone="surface" />
               </div>
               {badge ? <div className="mb-3.5">{badge}</div> : null}
               <h1 className="font-serif text-[26px] font-medium tracking-tight">{title}</h1>
@@ -97,7 +98,7 @@ export function AuthFrame({
     <div className="grid min-h-[100dvh] bg-background md:grid-cols-[5fr_6fr]">
       {/* ink manifesto panel */}
       <aside className="relative hidden flex-col overflow-hidden bg-ink p-10 text-ink-foreground md:flex lg:p-13">
-        <BrandMark />
+        <BackToSite />
         <div className="flex max-w-md flex-1 flex-col justify-center py-10">
           <Reveal i={0}>
             <p
@@ -148,7 +149,7 @@ export function AuthFrame({
         </div>
         <div className="w-full max-w-[420px]">
           <div className="mb-7 md:hidden">
-            <BrandMark tone="surface" />
+            <BackToSite tone="surface" />
           </div>
           {stamp && (
             <Reveal i={0}>

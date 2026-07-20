@@ -155,12 +155,6 @@ export default function LandingPage() {
       {/* top nav */}
       <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex size-[30px] items-center justify-center rounded-lg bg-ink font-mono text-base font-bold text-ink-foreground">
-              C
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight">Copilote 42001</span>
-          </Link>
           <nav className="hidden items-center gap-8 text-[13.5px] text-muted-foreground md:flex">
             <a href="#pipeline" className="transition-colors hover:text-foreground">
               Le pipeline
@@ -172,7 +166,7 @@ export default function LandingPage() {
               Piste d'audit
             </a>
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
             {authed ? (
               <Button asChild size="sm" className="h-9">
@@ -533,7 +527,6 @@ export default function LandingPage() {
             </div>
             <footer className="border-t border-ink-foreground/15">
               <div className="mx-auto flex w-full max-w-6xl flex-wrap gap-6 px-6 py-6 font-mono text-[11px] tracking-[0.06em] text-ink-foreground/45 uppercase">
-                <span>Copilote 42001</span>
                 <span className="inline-flex items-center gap-1.5">
                   <Check className="size-3" aria-hidden="true" />
                   L'IA rédige · le code vérifie · l'humain confirme
