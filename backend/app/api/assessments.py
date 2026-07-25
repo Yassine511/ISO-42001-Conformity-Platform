@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from datetime import datetime, timezone
 
@@ -86,6 +86,17 @@ def _manifest_complete(assessment: Assessment) -> bool:
     return bool(assessment.requirement_ids) and assessment.document_manifest is not None
 
 
+def _resumable(assessment: Assessment) -> bool:
+    """Exactly the conditions resume_assessment() accepts: a RUNNING row with a
+    complete manifest that no live thread in THIS process is executing. Offering
+    the action on a run that is progressing normally just produces a 409."""
+    return (
+        assessment.status == AssessmentStatus.RUNNING.value
+        and _manifest_complete(assessment)
+        and not runner.is_running_locally(assessment.id)
+    )
+
+
 def _list_item(assessment: Assessment, counts: dict) -> dict:
     c = counts.get(assessment.id, {})
     findings_done = c.get("VERIFIED", 0) + c.get("ABSTAINED", 0)
@@ -98,6 +109,7 @@ def _list_item(assessment: Assessment, counts: dict) -> dict:
         "abstained_count": c.get("ABSTAINED", 0),
         "reviewed_count": c.get("reviewed", 0),
         "manifest_complete": _manifest_complete(assessment),
+        "resumable": _resumable(assessment),
         "progress": AssessmentProgressOut(**progress) if progress else None,
     }
 
@@ -185,8 +197,28 @@ def list_assessments(org_id: str, db: Session = Depends(get_db)):
 def get_assessment(org_id: str, assessment_id: str, db: Session = Depends(get_db)):
     _get_org(db, org_id)
     assessment = _get_assessment(db, org_id, assessment_id)
+    # Only the columns FindingSummaryOut serializes (+ created_at, the sort
+    # key): the full Finding row carries large JSON provenance
+    # (retrieved/audit_log) that would be hydrated for nothing — and this
+    # endpoint is POLLED every 2 s while the run is live.
     findings = db.scalars(
-        select(Finding).where(Finding.assessment_id == assessment_id)
+        select(Finding)
+        .options(
+            load_only(
+                Finding.id,
+                Finding.requirement_id,
+                Finding.status,
+                Finding.verdict,
+                Finding.abstain_reason,
+                Finding.confidence,
+                Finding.domain,
+                Finding.review_status,
+                Finding.review_action,
+                Finding.human_verdict,
+                Finding.created_at,
+            )
+        )
+        .where(Finding.assessment_id == assessment_id)
     ).all()
     # manifest order (the run plan), unplanned/legacy findings last by creation
     order = {rid: i for i, rid in enumerate(assessment.requirement_ids or [])}

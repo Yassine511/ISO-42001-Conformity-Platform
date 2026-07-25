@@ -438,6 +438,13 @@ class AssessmentListItemOut(AssessmentOut):
     reviewed_count: int
     # False for legacy pre-M5 rows (no frozen manifests): resume is refused.
     manifest_complete: bool
+    # True only for a RUNNING row this process is NOT executing — i.e. an
+    # ORPHANED run (crash, restart, --reload). POST .../resume 409s otherwise,
+    # so the UI must not offer it. Process-local, exactly like `progress`:
+    # honest under the single-worker deployment the app is built for
+    # (see README «Déploiement»), never a correctness mechanism — the DB
+    # partial unique index remains the authority.
+    resumable: bool
     progress: AssessmentProgressOut | None = None
 
 

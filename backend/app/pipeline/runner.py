@@ -225,13 +225,17 @@ def run_assessment(
     # be resumed — completing it would silently drop the missing requirements.
     missing = [rid for rid in manifest if rid not in final["done_ids"]]
     if missing:
-        note_assessment_error(
-            session_factory,
-            assessment_id,
-            (error_note or "")
-            + f" ; {len(missing)} exigence(s) sans constat : "
-            + ", ".join(missing),
-        )
+        # join non-empty parts only: with no operational failures the note must
+        # not start with a dangling " ; "
+        parts = [
+            part
+            for part in (
+                error_note,
+                f"{len(missing)} exigence(s) sans constat : " + ", ".join(missing),
+            )
+            if part
+        ]
+        note_assessment_error(session_factory, assessment_id, " ; ".join(parts))
         return _result(AssessmentStatus.RUNNING.value, error_note)
 
     # Cancellation re-check immediately before finalization: a cancel that

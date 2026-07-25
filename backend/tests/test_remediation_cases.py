@@ -282,6 +282,25 @@ def test_link_suggestions_lists_eligible_unlinked_findings(client, gap_env):
     assert by_req["A.9.2"] not in ids  # already linked
     assert by_req["A.5.2"] not in ids  # compliant: never suggested
 
+    # A finding owned by ANOTHER active case is refused at link time
+    # (one active case per finding): suggesting it would be a guaranteed 409.
+    other_case = _create_case(client, org_id, by_req["A.4.5"])
+    assert other_case.status_code == 201
+    r = client.get(_url(org_id, case_id, "/link-suggestions"))
+    assert r.status_code == 200
+    assert by_req["A.4.5"] not in [s["finding_id"] for s in r.json()]
+    # …and it comes back once that case is CLOSED (linking is legal again)
+    other_id = other_case.json()["id"]
+    client.post(
+        _url(org_id, other_id, "/triage/approve"),
+        json={"triage_draft_id": other_case.json()["triage_drafts"][0]["id"]},
+    )
+    assert client.post(
+        _url(org_id, other_id, "/close"), json={"close_note": "doublon"}
+    ).status_code == 200
+    r = client.get(_url(org_id, case_id, "/link-suggestions"))
+    assert by_req["A.4.5"] in [s["finding_id"] for s in r.json()]
+
 
 # ---------------------------------------------------- triage approval / reopen
 

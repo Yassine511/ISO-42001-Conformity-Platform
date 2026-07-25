@@ -483,6 +483,9 @@ def make_verify_node(session_factory: SessionFactory):
         if draft_payload is None:
             # parse/schema failure — the judge pre-populated the errors
             errors = state.get("verification_errors") or ["réponse du modèle invalide"]
+            # verify() never ran on this path, so the attempt row is completed
+            # here (_route_failure does NOT record: the path below already did)
+            _record_verifier_errors(session_factory, state, errors, [])
             return _route_failure(
                 session_factory, state, errors, repair_errors=errors, codes=[]
             )
@@ -552,7 +555,9 @@ def make_verify_node(session_factory: SessionFactory):
         codes: list[str],
         match=None,
     ) -> dict:
-        _record_verifier_errors(session_factory, state, errors, codes)
+        # NOTE: the attempt row is completed by the CALLER (both call sites
+        # record before routing here) — recording again would be a redundant
+        # write of identical values on every retryable failure.
         # keep the newest fuzzy candidate across retries: attempt 2 returning
         # malformed JSON must not lose attempt 1's near-match offsets
         fuzzy_candidate = (

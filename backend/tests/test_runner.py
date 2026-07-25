@@ -161,6 +161,25 @@ def test_operational_failure_keeps_running_with_note(env, monkeypatch):  # noqa:
     assert row.status == "RUNNING" and "A.4.5" in row.error
 
 
+def test_coverage_note_has_no_dangling_separator(env, monkeypatch):  # noqa: F811
+    """Incomplete coverage with NO operational failure and NO infra abstention:
+    the note is the coverage clause alone, never prefixed by a bare ' ; '."""
+    session_factory, org_id = env
+    _use(FakeLLM([_valid_draft()]))
+    aid = create_assessment(session_factory, org_id, ["A.9.2", "A.4.5"])
+    real = runner.run_requirement
+
+    def skip_second(sf, a, rid, **kwargs):
+        # succeeds without persisting a finding -> uncovered, but not a failure
+        return real(sf, a, rid, **kwargs) if rid == "A.9.2" else {"finding": None}
+
+    monkeypatch.setattr(runner, "run_requirement", skip_second)
+    run = runner.run_assessment(session_factory, aid)
+    assert run.status == "RUNNING" and run.operational_failures == 0
+    error = _row(session_factory, aid).error
+    assert error.startswith("1 exigence(s) sans constat : A.4.5")
+
+
 def test_on_progress_exception_never_aborts(env):  # noqa: F811
     session_factory, org_id = env
     _use(FakeLLM([_valid_draft()]))

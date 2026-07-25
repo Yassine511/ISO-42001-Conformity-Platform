@@ -373,6 +373,20 @@ def link_suggestions(db: Session, org_id: str, case_id: str) -> list[dict]:
             Assessment.organization_id == org_id,
             Finding.review_status == "CONFIRMED",
             Finding.human_verdict.in_(ELIGIBLE_VERDICTS),
+            # A finding owned by ANY non-CLOSED case is refused by
+            # _ensure_no_active_case at link time — suggesting it would offer
+            # a guaranteed 409. Same predicate as that guard; findings already
+            # linked to THIS case are dropped by `linked_ids` below.
+            ~select(RemediationCaseFinding.id)
+            .join(
+                RemediationCase,
+                RemediationCase.id == RemediationCaseFinding.case_id,
+            )
+            .where(
+                RemediationCaseFinding.finding_id == Finding.id,
+                RemediationCase.status != "CLOSED",
+            )
+            .exists(),
         )
         .order_by(Finding.reviewed_at.desc())
     ).all()
