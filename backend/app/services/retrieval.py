@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from qdrant_client import models as qm
-from sqlalchemy import select
+from sqlalchemy import Row, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -233,7 +233,10 @@ def sync_index(db: Session, org_id: str) -> tuple[dict, list]:
     return report, stale_point_ids
 
 
-def _chunk_point(row: Chunk, org_id: str, vector: list[float]) -> qm.PointStruct:
+def _chunk_point(row: "Chunk | Row", org_id: str, vector: list[float]) -> qm.PointStruct:
+    """`row` is any carrier of the chunk columns: an ORM Chunk (sync_index) or
+    a detached column Row (patcher._index_candidate_points, which must not hold
+    ORM identity across its rollback)."""
     return qm.PointStruct(
         id=qdrant.point_id(row.id),
         vector=vector,

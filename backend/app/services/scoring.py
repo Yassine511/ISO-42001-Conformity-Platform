@@ -278,7 +278,7 @@ def build_reporting_scope(
         rows = db.scalars(
             select(Finding).where(Finding.assessment_id.in_(included_ids))
         )
-        best_pending: dict[str, EffectiveFinding] = {}
+        best_pending: dict[str, tuple] = {}
         best_confirmed: dict[str, tuple] = {}
         for f in rows:
             if f.requirement_id not in manifests.get(f.assessment_id, ()):
@@ -302,8 +302,16 @@ def build_reporting_scope(
                 if prev is None or key > prev[0]:
                     best_confirmed[f.requirement_id] = (key, ef)
             else:
-                best_pending.setdefault(f.requirement_id, ef)
-        for rid, ef in best_pending.items():
+                # NEWEST pending, chosen explicitly: the driving query has no
+                # ORDER BY, so setdefault() would keep whichever row Postgres
+                # happened to return first and the coverage row could change
+                # between identical requests. Same (timestamp, id) max as
+                # best_confirmed above.
+                key = (f.created_at, f.id)
+                prev = best_pending.get(f.requirement_id)
+                if prev is None or key > prev[0]:
+                    best_pending[f.requirement_id] = (key, ef)
+        for rid, (_, ef) in best_pending.items():
             if rid not in best_confirmed:
                 effective[rid] = ef
         for rid, (_, ef) in best_confirmed.items():

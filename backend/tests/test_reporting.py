@@ -137,6 +137,29 @@ def test_denominator_is_scored_only_with_coverage(db_session):
     assert dom["pending_review"] == 1 and dom["not_assessed"] == 1
 
 
+def test_pending_coverage_row_is_the_newest_finding_not_an_arbitrary_one(db_session):
+    """Two assessments both leave 4.1 unconfirmed. The coverage row must be the
+    NEWEST pending finding deterministically — the driving query has no ORDER
+    BY, so relying on row order made this vary between identical requests."""
+    org = _org(db_session)
+    older = _assessment(db_session, org, requirement_ids=["4.1"])
+    newer = _assessment(db_session, org, requirement_ids=["4.1"])
+    old_id = _finding(db_session, older, "4.1")
+    new_id = _finding(db_session, newer, "4.1")
+    for fid, created in ((old_id, NOW - timedelta(days=2)), (new_id, NOW)):
+        db_session.get(Finding, fid).created_at = created
+    db_session.commit()
+
+    scope = _scope(db_session, org)
+    assert scope.effective["4.1"].finding_id == new_id
+
+    # …and the answer does not depend on insertion order
+    db_session.get(Finding, old_id).created_at = NOW + timedelta(days=1)
+    db_session.commit()
+    db_session.expire_all()
+    assert _scope(db_session, org).effective["4.1"].finding_id == old_id
+
+
 def test_overridden_ai_abstained_finding_is_scored(db_session):
     """status=ABSTAINED + review override is the designed resolution path —
     Node ⑤ must score the human verdict, not discard it."""

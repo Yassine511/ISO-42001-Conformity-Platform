@@ -761,9 +761,24 @@ def _index_candidate_points(
     db: Session, org_id: str, version_id: str, token: str
 ) -> None:
     """Lock-free candidate indexing with token-fenced heartbeats. Raises on
-    Qdrant/embedding failure (caller marks INDEX_FAILED)."""
-    rows = db.scalars(
-        select(Chunk).where(Chunk.document_version_id == version_id)
+    Qdrant/embedding failure (caller marks INDEX_FAILED).
+
+    COLUMN select, not ORM entities: Session.rollback() EXPIRES every loaded
+    ORM object, so reading `row.text` afterwards would re-SELECT one row per
+    chunk AND autobegin a transaction that stays open across the embedding
+    call — defeating the release below. Row tuples are plain detached data
+    (same discipline as chat/service.py, which snapshots to dicts before its
+    rollback)."""
+    rows = db.execute(
+        select(
+            Chunk.id,
+            Chunk.document_id,
+            Chunk.document_version_id,
+            Chunk.page_number,
+            Chunk.char_start,
+            Chunk.char_end,
+            Chunk.text,
+        ).where(Chunk.document_version_id == version_id)
     ).all()
     db.rollback()  # no transaction held across embedding/Qdrant work
     qdrant.ensure_collection()

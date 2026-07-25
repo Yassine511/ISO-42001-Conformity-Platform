@@ -370,14 +370,24 @@ def test_late_triage_draft_discarded_when_links_changed_mid_draft(client, gap_en
     db.close()
 
 
-def test_abstained_draft_approval_requires_all_fields(client, gap_env):
+def test_abstained_draft_approval_requires_the_three_mandatory_fields(client, gap_env):
+    """An ABSTAINED draft carries no AI values, so the human must supply
+    classification, scope and scope_rationale. correction_note is deliberately
+    NOT in that set: it records the IMMEDIATE correction, which may legitimately
+    be empty, and ck_remediation_cases_triage_coherence leaves it nullable for
+    exactly that reason."""
     org_id, _aid, by_req = gap_env
     body = _create_case(client, org_id, by_req["A.9.2"], scripts=[None]).json()
     case_id, draft_id = body["id"], body["triage_drafts"][0]["id"]
-    assert client.post(
+    r = client.post(
         _url(org_id, case_id, "/triage/approve"), json={"triage_draft_id": draft_id}
-    ).status_code == 422
-    # correction_note included: all four human fields are required
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "classification" in detail and "scope" in detail
+    assert "correction_note" not in detail
+
+    # the three mandatory fields alone are enough — no invented correction text
     r = client.post(
         _url(org_id, case_id, "/triage/approve"),
         json={
@@ -387,18 +397,24 @@ def test_abstained_draft_approval_requires_all_fields(client, gap_env):
             "scope_rationale": "Écart isolé.",
         },
     )
-    assert r.status_code == 422 and "correction_note" in r.json()["detail"]
+    assert r.status_code == 200
+    assert r.json()["status"] == "TRIAGE_APPROVED"
+    assert r.json()["correction_note"] is None
+
+
+def test_blank_correction_note_clears_the_ai_value(client, gap_env):
+    """An explicit blank is an audited human decision to record NO immediate
+    correction — it must clear the AI draft's note, not silently inherit it."""
+    org_id, _aid, by_req = gap_env
+    body = _create_case(client, org_id, by_req["A.9.2"]).json()
+    case_id, draft_id = body["id"], body["triage_drafts"][0]["id"]
+    assert body["triage_drafts"][0]["ai_correction_note"]  # the AI proposed one
     r = client.post(
         _url(org_id, case_id, "/triage/approve"),
-        json={
-            "triage_draft_id": draft_id,
-            "classification": "nonconformity",
-            "correction_note": "Correction immédiate documentée.",
-            "scope": "local",
-            "scope_rationale": "Écart isolé.",
-        },
+        json={"triage_draft_id": draft_id, "correction_note": "   "},
     )
-    assert r.status_code == 200 and r.json()["status"] == "TRIAGE_APPROVED"
+    assert r.status_code == 200
+    assert r.json()["correction_note"] is None
 
 
 def test_reopen_triage_clears_projection_and_bumps_revision(client, gap_env):

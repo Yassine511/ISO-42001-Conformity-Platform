@@ -413,7 +413,8 @@ def approve_triage(
 ) -> RemediationCase:
     """Approve one EXPLICIT triage draft (never 'latest'). Omitted fields
     accept the AI draft; provided fields override. An ABSTAINED draft has no
-    AI values to accept — all fields are then required. Commits."""
+    AI values to accept — classification, scope and scope_rationale are then
+    required; correction_note stays optional throughout (see below). Commits."""
     from app.models import RemediationTriageDraft
 
     case = lock_case(db, org_id, case_id)
@@ -435,15 +436,22 @@ def approve_triage(
 
     effective = {
         "classification": classification or draft.ai_classification,
+        # blank explicitly CLEARS the note (an audited human decision);
+        # omitted inherits the AI draft's note
         "correction_note": (
-            correction_note if correction_note is not None else draft.ai_correction_note
+            ((correction_note or "").strip() or None)
+            if correction_note is not None
+            else draft.ai_correction_note
         ),
         "scope": scope or draft.ai_scope,
         "scope_rationale": scope_rationale or draft.ai_scope_rationale,
     }
-    # A VERIFIED draft always carries a correction note; on an ABSTAINED
-    # draft the human supplies EVERY field, correction note included.
-    required = ("classification", "correction_note", "scope", "scope_rationale")
+    # correction_note is deliberately NOT required — it records the IMMEDIATE
+    # correction, which may legitimately be empty (a gap whose only answer is
+    # the corrective plan itself). ck_remediation_cases_triage_coherence
+    # (models.py) leaves it nullable for exactly this reason; requiring it here
+    # would force a reviewer to invent text to get past the form.
+    required = ("classification", "scope", "scope_rationale")
     missing = [k for k in required if not effective[k]]
     if missing:
         db.rollback()

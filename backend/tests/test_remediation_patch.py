@@ -116,6 +116,56 @@ def test_verified_proposal_with_resolved_span(client, approved_action):
     assert any(e["event_type"] == "patch_proposed" for e in detail["events"])
 
 
+def test_candidate_indexing_holds_no_transaction_across_embedding(monkeypatch):
+    """`_index_candidate_points` releases its read transaction BEFORE the
+    embedding call — the point of the `db.rollback()` there.
+
+    That only holds while the chunk data is DETACHED. With ORM entities,
+    Session.rollback() expires them, so the first attribute read re-SELECTs one
+    row per chunk AND autobegins a transaction that then stays open across the
+    slow, network-bound embedding work. Pin the property, not the shape.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.db import Base
+    from app.models import Organization
+    from app.services.retrieval import materialize_version_chunks
+    from tests.conftest import seed_parsed_document
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
+    org = Organization(name="Indexation SA")
+    db.add(org)
+    db.commit()
+    doc = seed_parsed_document(db, org.id, "p.txt", [DOC_TEXT])
+    version = doc.versions[0]
+    materialize_version_chunks(db, version)
+    db.commit()
+
+    observed: dict = {}
+    real_embed = patcher_module.embed_texts
+
+    def spy_embed(texts):
+        observed["count"] = len(texts)
+        observed["in_transaction"] = db.in_transaction()
+        return real_embed(texts)
+
+    monkeypatch.setattr(patcher_module, "embed_texts", spy_embed)
+    patcher_module._index_candidate_points(db, org.id, version.id, "tok-1")
+
+    assert observed["count"] > 0, "the version's chunks must reach the embedder"
+    assert observed["in_transaction"] is False, (
+        "a transaction was held open across embed_texts — the chunk rows were "
+        "still ORM-attached and got refreshed after the rollback"
+    )
+    db.close()
+
+
 def test_fabricated_anchor_repairs_then_abstains(client, approved_action):
     org_id, case_id, action_id, doc_id = approved_action
     bad = _patch_json(anchor="Cette phrase n'existe pas dans le document cible.")
