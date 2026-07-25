@@ -16,7 +16,7 @@ export default defineConfig({
       output: {
         // stable vendor chunks: heavy libs cache independently of app code
         manualChunks: {
-          react: ["react", "react-dom", "react-router-dom"],
+          react: ["react", "react-dom", "react-router"],
           motion: ["framer-motion"],
         },
       },

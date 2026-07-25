@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 import { api, UNAUTHORIZED_EVENT, type Organization, type SessionInfo, type User } from "./api";
 
 /** M10 session layer. The session itself lives in an httpOnly cookie the JS

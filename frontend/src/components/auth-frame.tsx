@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PageFade, Reveal } from "@/components/motion";
 

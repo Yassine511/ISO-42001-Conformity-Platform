@@ -4,7 +4,7 @@
 // lifecycle stepper and the next-action panel (both of which read the WHOLE
 // case), and composes the rest. Panels are imported individually rather than
 // through a barrel so the page's dependency list stays readable.
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { api, type RemediationCaseDetail, type RemediationPlan } from "../api";

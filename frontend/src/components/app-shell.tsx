@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Search } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { Separator } from "@/components/ui/separator";

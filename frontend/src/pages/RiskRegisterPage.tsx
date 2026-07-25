@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { MessageSquareText, ShieldAlert } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, RiskRow, Severity, Verdict } from "../api";

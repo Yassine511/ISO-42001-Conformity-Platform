@@ -298,12 +298,14 @@ Pre-production TODOs (documented, deliberately out of scope):
 - **Docker PDF job** — builds the backend image and renders a real PDF inside it (the authoritative
   native-library check).
 - **Dependency audit** — `npm run audit:gate` fails on any high/critical advisory except ones
-  documented in `frontend/scripts/audit-gate.mjs` with a reason and a review date. It also fails on
-  an *expired* or *stale* exception, so a documented exception cannot quietly become permanent.
-  One is live: react-router's RSC-mode CSRF advisory has no published fix (it lands in a version 8
-  that does not exist) and does not apply to this client-only SPA — and npm's suggested "fix",
-  downgrading to 7.11.0, would reintroduce the open-redirect advisories that *do* affect
-  `<Link>`/`useNavigate`.
+  documented in `frontend/scripts/audit-gate.mjs`. An exception cannot quietly become permanent:
+  it declares either `fixedIn` (the version that will fix it — the gate asks the npm registry on
+  **every run** whether that version is published, and fails the day it is, so CI turns red exactly
+  when action is possible rather than on a calendar date) or, when no fix version is known, a
+  `reviewAfter` date. A *stale* exception (advisory gone) also fails. The list is currently empty:
+  the react-router RSC-CSRF exception was removed when the mechanism's first live run revealed
+  react-router 8.3.0 **had** been published (the manual check had queried `react-router-dom`,
+  which v8 retired) and the app was upgraded to it — zero open advisories.
 - **Out of CI, by design** — retrieval quality gates (`scripts/retrieval_sanity.py`) need the live
   embedding model + indexed baseline; corpus consistency (`scripts/validate_corpus.py`) also runs
   under pytest.

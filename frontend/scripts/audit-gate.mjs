@@ -6,9 +6,28 @@
  * reactions to that situation are both bad: leave CI permanently red until
  * upstream ships a fix (so nobody reads it any more), or drop the gate
  * (so nothing is checked). This script adds the third: fail on every
- * high/critical advisory EXCEPT ones listed below with a reason and a review
- * date, and fail on a stale or unnecessary exception too — so an exception
- * cannot quietly become permanent.
+ * high/critical advisory EXCEPT ones documented below, and make sure an
+ * exception cannot quietly become permanent.
+ *
+ * How an exception stays honest — two mechanisms, by what is knowable:
+ *
+ * - `fixedIn` (preferred): the advisory names the version that will fix it.
+ *   The gate asks the npm registry on EVERY run whether that version has been
+ *   published. The day it exists, the gate fails with "upgrade and remove the
+ *   exception" — CI turns red exactly when action is possible, never on an
+ *   arbitrary calendar date that fires regardless of whether anything changed.
+ *   (This is not hypothetical: the mechanism's first live run caught that
+ *   react-router 8.3.0 HAD been published — the original exception had
+ *   checked the wrong package, react-router-dom, which v8 retired — and the
+ *   upgrade removed the exception the same day.)
+ *
+ * - `reviewAfter` (fallback, for advisories whose fix version is unknown):
+ *   a review date, after which the gate fails until a human re-checks.
+ *   Reviewing means checking whether a fix now exists — not extending the
+ *   date.
+ *
+ * Either way, an exception that no longer matches any advisory is itself a
+ * failure (the note has become misleading documentation).
  *
  * Usage: node scripts/audit-gate.mjs
  */
@@ -18,29 +37,30 @@ import { execSync } from "node:child_process";
 const FAIL_LEVELS = new Set(["high", "critical"]);
 
 /**
- * Each entry must name a specific advisory, say why it cannot be fixed, why it
- * does not apply here, and when to look again. Reviewing means checking
- * whether the fixed version now exists — not extending the date.
+ * Each entry must name a specific advisory (ghsa + package + title), say why
+ * it does not apply here (reason), and carry either `fixedIn` (the version
+ * that will fix it — auto-checked against the registry on every run) or
+ * `reviewAfter` (a YYYY-MM-DD date, only when no fix version is known).
+ * Currently empty — react-router's RSC-mode CSRF exception was removed when
+ * the 8.3.0 upgrade landed.
  */
-const EXCEPTIONS = [
-  {
-    ghsa: "GHSA-qwww-vcr4-c8h2",
-    package: "react-router",
-    title: "RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
-    // Vulnerable range is >=7.12.0 <8.3.0. react-router 8 DOES NOT EXIST yet
-    // (npm dist-tag latest = 7.18.1), so there is no version that both fixes
-    // this and fixes the 6.x/<7.18 open-redirect advisories. Verified, not
-    // assumed: `npm view react-router-dom versions` stops at 7.18.1.
-    reason:
-      "No fixed version is published (fix lands in 8.3.0; react-router 8 does not exist). " +
-      "Not reachable here: the advisory is specific to RSC mode — server components, " +
-      "server actions and their CSRF handling. This app is a client-only SPA on " +
-      "BrowserRouter with no SSR and no RSC, and its own writes are same-origin " +
-      "cookie+SameSite=Lax. Downgrading to 7.11.0 (npm's suggested 'fix') would " +
-      "reintroduce the two open-redirect advisories that DO apply to <Link>/useNavigate.",
-    reviewAfter: "2026-10-01",
-  },
-];
+const EXCEPTIONS = [];
+
+/** True once `pkg@version` is published on the registry. A registry/network
+ * error counts as "not yet published" (fail open): the gate runs right after
+ * `npm ci`, so a dead registry has already failed the job for a clearer
+ * reason, and a transient error must not flip this gate red on its own. */
+function fixPublished(pkg, version) {
+  try {
+    const out = execSync(`npm view ${pkg}@${version} version --json`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 const raw = (() => {
   try {
@@ -69,6 +89,24 @@ for (const [name, vuln] of Object.entries(report.vulnerabilities ?? {})) {
     const exception = EXCEPTIONS.find((e) => e.ghsa === ghsa);
     if (!exception) {
       blocking.push(`${name} [${vuln.severity}] ${advisory.title} (${advisory.url})`);
+    } else if (exception.fixedIn) {
+      if (fixPublished(exception.package, exception.fixedIn)) {
+        blocking.push(
+          `${name} [${vuln.severity}] ${advisory.title} — THE FIX IS NOW PUBLISHED ` +
+            `(${exception.package}@${exception.fixedIn}): upgrade and remove the ` +
+            `exception from scripts/audit-gate.mjs`,
+        );
+      } else {
+        excused.push(
+          `${ghsa} (${name}) — fix ${exception.package}@${exception.fixedIn} not yet published; ` +
+            `the gate re-checks the registry on every run`,
+        );
+      }
+    } else if (!exception.reviewAfter) {
+      blocking.push(
+        `exception ${ghsa} (${name}) declares neither fixedIn nor reviewAfter — ` +
+          `it would be permanent; add one in scripts/audit-gate.mjs`,
+      );
     } else if (exception.reviewAfter < today) {
       blocking.push(
         `${name} [${vuln.severity}] ${advisory.title} — EXCEPTION EXPIRED ` +

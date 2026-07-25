@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import { Check, CircleX, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";

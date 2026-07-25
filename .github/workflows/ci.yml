@@ -77,10 +77,12 @@ jobs:
       - name: Test (Vitest)
         run: npm run test
       # Fails on every high/critical advisory except ones documented in
-      # scripts/audit-gate.mjs with a reason and a review date — and fails on a
-      # stale or expired exception too. A bare `npm audit --audit-level=high`
-      # cannot express "no fixed version is published and it does not apply
-      # here", which leaves only permanent red or no gate at all.
+      # scripts/audit-gate.mjs. Exceptions carry `fixedIn` (registry-checked on
+      # every run: the gate fails the day the fixing version is published) or a
+      # `reviewAfter` date when no fix version is known — and a stale exception
+      # fails too. A bare `npm audit --audit-level=high` cannot express "no
+      # fixed version is published and it does not apply here", which leaves
+      # only permanent red or no gate at all.
       - name: Audit
         run: npm run audit:gate
 

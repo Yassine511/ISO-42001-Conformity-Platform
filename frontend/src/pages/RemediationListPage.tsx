@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Wrench } from "lucide-react";
 import { api, type CaseStatus, type RemediationCase } from "../api";

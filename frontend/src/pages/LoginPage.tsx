@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router";
 import { CircleX } from "lucide-react";
 import { homeOf, useAuth } from "../auth";
 import { AuthFrame, ACCENT_ON_INK } from "@/components/auth-frame";

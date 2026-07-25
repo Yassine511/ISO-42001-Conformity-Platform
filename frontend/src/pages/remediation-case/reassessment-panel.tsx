@@ -1,7 +1,7 @@
 // Scoped re-assessments launched to check action effectiveness.
 // Split out of the 1 929-line RemediationCasePage — see that file.
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { SectionHeading } from "@/components/section-heading";
 import {
