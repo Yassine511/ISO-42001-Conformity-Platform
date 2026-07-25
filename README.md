@@ -268,7 +268,11 @@ existence: `/api/auth/login`, the existing-account branch of `/api/auth/invitati
 and `/api/auth/signup`. Fixed windows keyed on `(e-mail, client IP)` — hashed, so the limiter is not
 itself a list of typed addresses — in process memory, consistent with the single-worker deployment.
 A successful login forgets its window, and the limiter fails open on its own errors: it protects an
-endpoint, it must never be the reason nobody can log in.
+endpoint, it must never be the reason nobody can log in. The client IP is read from
+`X-Forwarded-For`, which nginx **overwrites** with the real peer address (`$remote_addr`) — a
+client-supplied value never reaches the backend through the front door, so it cannot be forged to
+rotate the throttle key. A caller reaching the backend port directly can still forge it; in the
+compose deployment that port sits on the same host trust boundary as the published Postgres port.
 
 This bounds, but does not remove, the **account-existence disclosure**: with no e-mail server signup
 must either create the account or refuse, so its 409 necessarily reveals that an address is taken.

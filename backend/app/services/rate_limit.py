@@ -122,11 +122,17 @@ def client_ip(request) -> str:
     """Best-effort client identity.
 
     X-Forwarded-For is honoured because the production deployment is behind
-    nginx, where request.client.host is always the proxy. It is SPOOFABLE by a
-    direct caller — which is why the limiters are keyed on (identifier, ip),
-    never on ip alone: forging the header rotates only half the key, and the
-    e-mail half is exactly what an enumeration or guessing attack must hold
-    fixed."""
+    nginx, where request.client.host is always the proxy. This is safe ONLY
+    because nginx.conf sets the header with $remote_addr — OVERWRITING anything
+    the client sent, so the first entry is the proxy-verified peer address. (A
+    pass-through or appending proxy would let any caller rotate the throttle
+    key per request by forging the header; rotating either half of the
+    (identifier, ip) key is a fresh counter.)
+
+    Residual, accepted: a caller who can reach the backend port directly
+    (bypassing nginx) can forge the header. In the compose deployment that
+    port sits on the same host trust boundary as the published Postgres port,
+    so the limiter is not the weakest link there."""
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
