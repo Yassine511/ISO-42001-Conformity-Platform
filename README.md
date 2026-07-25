@@ -293,6 +293,13 @@ Pre-production TODOs (documented, deliberately out of scope):
 - **Frontend** — 89 Vitest + Testing Library behaviour tests, plus `tsc` and a production build in CI.
 - **Docker PDF job** — builds the backend image and renders a real PDF inside it (the authoritative
   native-library check).
+- **Dependency audit** — `npm run audit:gate` fails on any high/critical advisory except ones
+  documented in `frontend/scripts/audit-gate.mjs` with a reason and a review date. It also fails on
+  an *expired* or *stale* exception, so a documented exception cannot quietly become permanent.
+  One is live: react-router's RSC-mode CSRF advisory has no published fix (it lands in a version 8
+  that does not exist) and does not apply to this client-only SPA — and npm's suggested "fix",
+  downgrading to 7.11.0, would reintroduce the open-redirect advisories that *do* affect
+  `<Link>`/`useNavigate`.
 - **Out of CI, by design** — retrieval quality gates (`scripts/retrieval_sanity.py`) need the live
   embedding model + indexed baseline; corpus consistency (`scripts/validate_corpus.py`) also runs
   under pytest.

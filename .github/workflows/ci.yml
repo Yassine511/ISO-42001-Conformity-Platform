@@ -76,10 +76,13 @@ jobs:
         run: npm run build
       - name: Test (Vitest)
         run: npm run test
-      # Keep the dev toolchain patched: fail on a high/critical advisory
-      # (the esbuild/Vite dev-server disclosure was fixed by the Vite 6 bump).
+      # Fails on every high/critical advisory except ones documented in
+      # scripts/audit-gate.mjs with a reason and a review date — and fails on a
+      # stale or expired exception too. A bare `npm audit --audit-level=high`
+      # cannot express "no fixed version is published and it does not apply
+      # here", which leaves only permanent red or no gate at all.
       - name: Audit
-        run: npm audit --audit-level=high
+        run: npm run audit:gate
 
   # M8 PDF export: the ONLY environment that authoritatively validates the
   # WeasyPrint native libraries (Pango/Cairo/fonts) is the backend Docker
