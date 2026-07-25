@@ -87,11 +87,18 @@ def _manifest_complete(assessment: Assessment) -> bool:
 
 
 def _resumable(assessment: Assessment) -> bool:
-    """Exactly the conditions resume_assessment() accepts: a RUNNING row with a
-    complete manifest that no live thread in THIS process is executing. Offering
-    the action on a run that is progressing normally just produces a 409."""
+    """A RUNNING row with a complete manifest that no live thread in THIS
+    process is executing — i.e. an orphaned run. Offering resume on a run that
+    is progressing normally just produces a 409.
+
+    cancel_requested excludes it too: resuming a run whose cancellation is
+    pending would launch a runner that finalizes FAILED at its very first
+    check. resume_assessment() itself does not test the flag (the run IS still
+    RUNNING, so the 409 guard does not fire) — this field must not advertise an
+    action that is guaranteed to be futile."""
     return (
         assessment.status == AssessmentStatus.RUNNING.value
+        and not assessment.cancel_requested
         and _manifest_complete(assessment)
         and not runner.is_running_locally(assessment.id)
     )

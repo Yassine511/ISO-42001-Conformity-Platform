@@ -486,9 +486,7 @@ def make_verify_node(session_factory: SessionFactory):
             # verify() never ran on this path, so the attempt row is completed
             # here (_route_failure does NOT record: the path below already did)
             _record_verifier_errors(session_factory, state, errors, [])
-            return _route_failure(
-                session_factory, state, errors, repair_errors=errors, codes=[]
-            )
+            return _route_failure(session_factory, state, errors, repair_errors=errors)
 
         draft = DraftFinding.model_validate(draft_payload)
         result = verify(draft, state.get("retrieved") or [], state["requirement_id"])
@@ -543,7 +541,6 @@ def make_verify_node(session_factory: SessionFactory):
             state,
             result.errors,
             result.repair_errors,
-            codes=result.error_codes,
             match=result.match,
         )
 
@@ -552,12 +549,12 @@ def make_verify_node(session_factory: SessionFactory):
         state: GovernanceState,
         errors: list[str],
         repair_errors: list[str],
-        codes: list[str],
         match=None,
     ) -> dict:
-        # NOTE: the attempt row is completed by the CALLER (both call sites
-        # record before routing here) — recording again would be a redundant
-        # write of identical values on every retryable failure.
+        # NOTE: the attempt row (errors AND their typed codes) is completed by
+        # the CALLER — both call sites record before routing here, which is why
+        # this function no longer takes `codes`. Recording again would be a
+        # redundant write of identical values on every retryable failure.
         # keep the newest fuzzy candidate across retries: attempt 2 returning
         # malformed JSON must not lose attempt 1's near-match offsets
         fuzzy_candidate = (

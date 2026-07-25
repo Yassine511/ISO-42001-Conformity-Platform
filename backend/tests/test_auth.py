@@ -132,13 +132,63 @@ def test_login_logout_lifecycle(client):
         assert len(db.scalars(select(AuthSession)).all()) == 1
 
 
-def test_expired_session_is_401(client):
+def test_expired_session_is_401_and_the_row_is_pruned(client):
     _signup(client)
     with client.session_factory() as db:
         session = db.scalars(select(AuthSession)).one()
         session.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         db.commit()
     assert client.get("/api/auth/me").status_code == 401
+    # presenting an expired token deletes it: no cron job prunes these
+    with client.session_factory() as db:
+        assert db.scalars(select(AuthSession)).all() == []
+
+
+def test_login_prunes_expired_sessions_but_never_live_ones(client):
+    """The pruning sweep at login is scoped to EXPIRED rows. If it ever widened,
+    every other device of that user would be silently logged out."""
+    _signup(client)
+    live_token = client.cookies["int102_session"]
+    with client.session_factory() as db:
+        live = db.scalars(select(AuthSession)).one()
+        # a second, already-expired session for the same user (an old device)
+        db.add(
+            AuthSession(
+                user_id=live.user_id,
+                token_hash="dead" * 16,
+                expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+            )
+        )
+        db.commit()
+
+    client.cookies.clear()
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "alice@lumen.fr", "password": "correct horse battery"},
+    ).status_code == 200
+
+    with client.session_factory() as db:
+        hashes = {s.token_hash for s in db.scalars(select(AuthSession))}
+    assert "dead" * 16 not in hashes  # expired row swept
+    # the pre-existing LIVE session still authenticates
+    client.cookies.clear()
+    client.cookies.set("int102_session", live_token)
+    assert client.get("/api/auth/me").status_code == 200
+
+
+def test_unknown_email_login_still_pays_the_bcrypt_cost(client, monkeypatch):
+    """§1.5: skipping the hash comparison when the address is unknown makes the
+    identical 401 answer ~100x faster — an account-enumeration timing oracle."""
+    from app.services import auth as auth_service
+
+    calls = []
+    monkeypatch.setattr(
+        auth_service, "waste_password_comparison", lambda: calls.append(1)
+    )
+    r = client.post(
+        "/api/auth/login", json={"email": "nobody@x.fr", "password": "aaaaaaaaaaaa"}
+    )
+    assert r.status_code == 401 and calls == [1]
 
 
 def test_anonymous_requests_are_401(client):
