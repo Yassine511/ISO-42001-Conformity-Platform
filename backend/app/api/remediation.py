@@ -6,7 +6,7 @@ Org scoping is structural (assessments.py pattern): every route nests under
 Service exceptions map: NotFound -> 404, Conflict -> 409, Invalid -> 422.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -242,10 +242,24 @@ def link_finding(
 
 @router.delete("/organizations/{org_id}/remediation-cases/{case_id}/findings/{finding_id}")
 def unlink_finding(
-    org_id: str, case_id: str, finding_id: str, db: Session = Depends(get_db)
+    org_id: str,
+    case_id: str,
+    finding_id: str,
+    actor_label: str | None = Query(default=None, max_length=200),
+    db: Session = Depends(get_db),
 ):
+    """Unlink a finding from a TRIAGE case.
+
+    `actor_label` is a QUERY parameter, not a body field, because this is the
+    only mutation in this router that is a DELETE — every sibling is a POST
+    carrying a RemediationActorBody. Without it the `finding_unlinked` event
+    was the one audit row in the whole case stream that silently lost its
+    attribution.
+    """
     _get_org(db, org_id)
-    case = _run(service.unlink_finding, db, org_id, case_id, finding_id)
+    case = _run(
+        service.unlink_finding, db, org_id, case_id, finding_id, actor_label=actor_label
+    )
     return _case_payload(db, case, detail=True)
 
 
@@ -410,7 +424,12 @@ def create_patch_proposal(
 def list_patch_proposals(
     org_id: str, case_id: str, action_id: str, db: Session = Depends(get_db)
 ):
-    _get_org(db, org_id)
+    # Tenant guard BEFORE the query, like the artifact routes below. The
+    # per-proposal org re-check inside proposal_view already refused a foreign
+    # case, but relying on a downstream check is the pattern this module's
+    # docstring warns against — and it left an oracle: a foreign case with at
+    # least one proposal answered 404 while one with none answered [].
+    _get_case(db, org_id, case_id)
     ids = db.scalars(
         select(PatchProposal.id)
         .where(

@@ -518,3 +518,63 @@ def test_events_are_monotonic_and_payloads_validated(client, gap_env):
     assert [e.sequence for e in events] == list(range(1, len(events) + 1))
     assert all(e.payload_version == 1 for e in events)
     db.close()
+
+
+def test_unlink_records_the_actor_like_every_sibling_event(client, gap_env):
+    """Audit pass 5 (F7): `unlink_finding` is the only mutation in this router
+    that is a DELETE, so it had no RemediationActorBody to read — and the
+    route simply never passed `actor_label`, even though the service accepts
+    it and writes it. `finding_unlinked` was the one event in the whole case
+    stream that silently lost its attribution."""
+    org_id, aid, by_req = gap_env
+    case_id = _create_case(client, org_id, by_req["A.9.2"]).json()["id"]
+    client.post(
+        f"/api/organizations/{org_id}/assessments/{aid}/findings/{by_req['A.4.5']}/review",
+        json={
+            "action": "override",
+            "human_verdict": "missing",
+            "human_rationale": "Aucune preuve.",
+        },
+    )
+    client.post(
+        _url(org_id, case_id, "/findings"),
+        json={
+            "finding_id": by_req["A.4.5"],
+            "decision": "link",
+            "actor_label": "Alice",
+        },
+    )
+
+    r = client.delete(
+        _url(org_id, case_id, f"/findings/{by_req['A.4.5']}"), params={"actor_label": "Alice"}
+    )
+    assert r.status_code == 200
+    unlinked = [e for e in r.json()["events"] if e["event_type"] == "finding_unlinked"]
+    assert len(unlinked) == 1
+    assert unlinked[0]["actor_label"] == "Alice"
+    # linked and unlinked now carry attribution the same way
+    linked = [e for e in r.json()["events"] if e["event_type"] == "finding_linked"]
+    assert linked[-1]["actor_label"] == "Alice"
+
+
+def test_unlink_without_an_actor_stays_anonymous_rather_than_failing(client, gap_env):
+    """The label is optional everywhere else (free text, explicitly unverified
+    — there is no identity layer by design), so it stays optional here."""
+    org_id, aid, by_req = gap_env
+    case_id = _create_case(client, org_id, by_req["A.9.2"]).json()["id"]
+    client.post(
+        f"/api/organizations/{org_id}/assessments/{aid}/findings/{by_req['A.4.5']}/review",
+        json={
+            "action": "override",
+            "human_verdict": "missing",
+            "human_rationale": "Aucune preuve.",
+        },
+    )
+    client.post(
+        _url(org_id, case_id, "/findings"),
+        json={"finding_id": by_req["A.4.5"], "decision": "link"},
+    )
+    r = client.delete(_url(org_id, case_id, f"/findings/{by_req['A.4.5']}"))
+    assert r.status_code == 200
+    unlinked = [e for e in r.json()["events"] if e["event_type"] == "finding_unlinked"]
+    assert unlinked[0]["actor_label"] is None

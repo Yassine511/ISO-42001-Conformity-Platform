@@ -612,3 +612,49 @@ def test_drafting_lease_blocks_then_recovers(client, approved_action):
     assert recovered.status == "ABSTAINED"
     assert recovered.abstain_reason == "draft_interrupted"
     db.close()
+
+
+def test_patch_proposal_reads_enforce_tenant(client, approved_action):
+    """Audit pass 5 (F11): the proposal LIST route queried by case_id with no
+    tenant guard, unlike its artifact siblings — it leaned on proposal_view's
+    per-row org re-check instead. That refused a foreign case, but it also
+    leaked a distinguisher: a foreign case with at least one proposal answered
+    404, one with none answered an empty list."""
+    org_a, case_id, action_id, _doc_id = approved_action
+    proposal = _verified_proposal(client, approved_action)
+    org_b = client.post("/api/organizations", json={"name": "Autre locataire"}).json()["id"]
+
+    # list through the wrong org: 404, and the SAME 404 whether or not the
+    # case happens to hold proposals — no existence oracle
+    r = client.get(
+        f"/api/organizations/{org_b}/remediation-cases/{case_id}"
+        f"/actions/{action_id}/patch-proposals"
+    )
+    assert r.status_code == 404
+    r = client.get(
+        f"/api/organizations/{org_b}/remediation-cases/{case_id}"
+        f"/actions/unknown-action-id/patch-proposals"
+    )
+    assert r.status_code == 404
+
+    # detail through the wrong org -> 404 (already guarded, pinned here too)
+    assert (
+        client.get(
+            f"/api/organizations/{org_b}/remediation-cases/{case_id}"
+            f"/patch-proposals/{proposal['id']}"
+        ).status_code
+        == 404
+    )
+
+    # the legitimate org still lists and reads normally
+    r = client.get(
+        f"/api/organizations/{org_a}/remediation-cases/{case_id}"
+        f"/actions/{action_id}/patch-proposals"
+    )
+    assert r.status_code == 200 and [p["id"] for p in r.json()] == [proposal["id"]]
+    # an unknown action inside the caller's OWN case is an empty list, not 404
+    r = client.get(
+        f"/api/organizations/{org_a}/remediation-cases/{case_id}"
+        f"/actions/unknown-action-id/patch-proposals"
+    )
+    assert r.status_code == 200 and r.json() == []

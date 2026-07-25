@@ -47,10 +47,16 @@ export const remediationApi = {
     post(`/api/organizations/${orgId}/remediation-cases/${caseId}/findings`, body).then(
       (r) => json<RemediationCaseDetail>(r),
     ),
-  unlinkFinding: (orgId: string, caseId: string, findingId: string) =>
-    fetch(`/api/organizations/${orgId}/remediation-cases/${caseId}/findings/${findingId}`, {
-      method: "DELETE",
-    }).then((r) => json<RemediationCaseDetail>(r)),
+  // actor_label rides in the query string: this is the only DELETE mutation
+  // in the remediation API, and a DELETE carries no body for the
+  // RemediationActorBody its POST siblings use.
+  unlinkFinding: (orgId: string, caseId: string, findingId: string, actorLabel?: string) => {
+    const qs = actorLabel ? `?actor_label=${encodeURIComponent(actorLabel)}` : "";
+    return fetch(
+      `/api/organizations/${orgId}/remediation-cases/${caseId}/findings/${findingId}${qs}`,
+      { method: "DELETE" },
+    ).then((r) => json<RemediationCaseDetail>(r));
+  },
   redraftTriage: (orgId: string, caseId: string) =>
     post(`/api/organizations/${orgId}/remediation-cases/${caseId}/triage/redraft`, {}).then(
       (r) => json<TriageDraft>(r),
