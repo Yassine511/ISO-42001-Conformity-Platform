@@ -3,6 +3,23 @@
 # security fixes — a pinned digest does not receive them automatically.
 FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS build
 WORKDIR /app
+# The digest pin is the point of this image AND its blind spot: `node:22-alpine`
+# keeps moving, this reference does not, so a dependency raising its Node floor
+# silently outruns the pin. react-router 8 requires Node >= 22.22.0
+# (package.json `engines`), and `npm ci` only WARNS on EBADENGINE — the build
+# would go on and ship. Fail here instead, naming the fix.
+RUN node -e "\
+const need = [22, 22, 0], have = process.versions.node.split('.').map(Number); \
+const older = have[0] !== need[0] ? have[0] < need[0] \
+  : have[1] !== need[1] ? have[1] < need[1] : have[2] < need[2]; \
+if (older) { \
+  console.error('Node ' + process.versions.node + ' is below the ' + need.join('.') + \
+    ' floor declared in frontend/package.json (react-router 8). Refresh the ' + \
+    'node:22-alpine digest in frontend/Dockerfile: docker pull node:22-alpine && ' + \
+    'docker inspect --format=\"{{index .RepoDigests 0}}\" node:22-alpine'); \
+  process.exit(1); \
+} \
+console.log('node ' + process.versions.node + ' satisfies the ' + need.join('.') + ' floor');"
 COPY package*.json ./
 RUN npm ci
 COPY . .

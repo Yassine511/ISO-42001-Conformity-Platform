@@ -86,6 +86,25 @@ jobs:
       - name: Audit
         run: npm run audit:gate
 
+  # The `frontend` job above runs on setup-node's Node, which tracks the latest
+  # 22.x — it can never observe the version the DEPLOYED image actually uses,
+  # because frontend/Dockerfile pins its base by digest and a digest does not
+  # move when the tag does. Building the image here is the only place the pin
+  # is exercised: it runs the Node-floor assertion in the build stage (react
+  # -router 8 needs >= 22.22.0) and proves the production bundle still builds.
+  # Same reasoning as backend-docker-pdf below. If this job fails on the floor
+  # check, refresh the digest in frontend/Dockerfile — the error names the
+  # commands.
+  frontend-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # --progress=plain so the build stage's "node X satisfies the 22.22.0
+      # floor" line is readable in the job log; the runtime stage is nginx and
+      # has no node to interrogate afterwards.
+      - name: Build frontend image (Node-floor assertion + production build)
+        run: docker build --progress=plain -t int102-frontend-ci frontend
+
   # M8 PDF export: the ONLY environment that authoritatively validates the
   # WeasyPrint native libraries (Pango/Cairo/fonts) is the backend Docker
   # image itself — a host venv can pass unit tests while the image lacks a

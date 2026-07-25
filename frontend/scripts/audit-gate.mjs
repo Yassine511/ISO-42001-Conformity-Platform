@@ -73,12 +73,49 @@ const raw = (() => {
 })();
 
 const report = JSON.parse(raw);
+
+// Fail CLOSED on an unrecognized report shape. `report.vulnerabilities ?? {}`
+// alone means a future npm that renames the key (npm 6 called it `advisories`)
+// makes the loop below iterate nothing and the gate print "OK" — a gate that
+// cannot tell "no advisories" from "I did not understand the report" is worse
+// than no gate, because it looks green. `metadata.vulnerabilities` is the
+// independent tally npm emits alongside; requiring both to exist, and their
+// totals to agree, means a shape change is a loud failure instead of a pass.
+if (typeof report.vulnerabilities !== "object" || report.vulnerabilities === null) {
+  console.error(
+    "npm audit --json did not return a `vulnerabilities` object — the report " +
+      "format changed. Update scripts/audit-gate.mjs; do NOT assume the absence " +
+      "of findings.",
+  );
+  process.exit(1);
+}
+const counts = report.metadata?.vulnerabilities;
+if (typeof counts !== "object" || counts === null) {
+  console.error(
+    "npm audit --json returned no `metadata.vulnerabilities` tally — cannot " +
+      "cross-check that the parsed entries are the complete set.",
+  );
+  process.exit(1);
+}
+const declaredTotal = Object.entries(counts)
+  .filter(([level]) => level !== "total")
+  .reduce((sum, [, n]) => sum + (typeof n === "number" ? n : 0), 0);
+const parsedTotal = Object.keys(report.vulnerabilities).length;
+if (declaredTotal !== parsedTotal) {
+  console.error(
+    `npm audit reports ${declaredTotal} vulnerable package(s) in metadata but ` +
+      `${parsedTotal} entry/entries were parsed — the report shape changed. ` +
+      "Update scripts/audit-gate.mjs.",
+  );
+  process.exit(1);
+}
+
 const today = new Date().toISOString().slice(0, 10);
 
 const blocking = [];
 const excused = [];
 
-for (const [name, vuln] of Object.entries(report.vulnerabilities ?? {})) {
+for (const [name, vuln] of Object.entries(report.vulnerabilities)) {
   if (!FAIL_LEVELS.has(vuln.severity)) continue;
   const advisories = (vuln.via ?? []).filter((v) => typeof v === "object");
   // A package entry with only string `via` values is transitively affected;
@@ -122,7 +159,7 @@ for (const [name, vuln] of Object.entries(report.vulnerabilities ?? {})) {
 // the advisory was fixed or the dependency dropped, and the note is now
 // misleading documentation.
 const seen = new Set(
-  Object.values(report.vulnerabilities ?? {})
+  Object.values(report.vulnerabilities)
     .flatMap((v) => v.via ?? [])
     .filter((v) => typeof v === "object")
     .map((v) => (v.url ?? "").split("/").pop()),
