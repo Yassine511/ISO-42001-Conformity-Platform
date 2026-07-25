@@ -101,3 +101,57 @@ Upgraded: `react-router-dom@7.18.1` → `react-router@8.3.0`, 23 import sites +
 the Vite vendor chunk rewritten, **zero remaining npm advisories**, exception
 list now empty. Note: react-router 8 requires Node ≥ 22.22 (CI's
 `node-version: "22"` resolves above that; local installs below it only warn).
+
+## Audit of 2026-07-25 — pass 5 (repo state 7f4f674)
+
+A fifth read-only pass over the whole repository, run against a verified clean
+baseline (482 backend tests, 89 frontend tests, `tsc --noEmit` clean) so every
+finding below is new rather than inherited. Eleven findings; the four acted on
+are marked, the rest are recorded here as open with their file references.
+
+### Fixed
+
+| § | Finding | Fix |
+|---|---------|-----|
+| F1 | `_hash_token` used `.encode("ascii")` on an attacker-controlled string. A single byte ≥ 0x7F in the `int102_session` cookie 500'd **every authenticated route**, and a non-ASCII invitation path token 500'd both **unauthenticated** invitation routes. Not an auth bypass — a robustness defect | UTF-8 encoding (identical bytes for every `token_urlsafe` we mint, so no stored hash moved); the miss then falls through the normal 401/404 path. Regression test covers both surfaces plus hash stability |
+| F2 | `build_reporting_scope` selected whole `Finding` rows, hydrating the `retrieved` / `audit_log` JSON payloads that no calculator reads. Every reporting endpoint builds a scope and **one dashboard render fires three of them** | `load_only` on the 12 columns `EffectiveFinding` carries; `_materialize_treatments` counts actions by two columns instead of whole rows. Test asserts on the emitted SQL (a dropped `load_only` is invisible in the returned data) and is mutation-checked |
+| F3 | Lock order contradicted the invariant the code itself documents (`org → case → document → versions`): `supersede_upload` took the base **version** lock first, `recover_upload_activation` took the version before the document, and the `INDEX_FAILED` handler took a document lock with **no org lock at all** — while their twin `_activate_upload_candidate` used the declared order for the same rows | New `_lock_upload_scope` helper (the upload counterpart of `_lock_activation_scope`), used by all three. Not a live deadlock — the org lock fronted every multi-row path and serialized them — but the protocol's two halves must not disagree. Tests trace the real lock sequence through `Session.get(with_for_update=…)` and are mutation-checked against the old order |
+| F4 | Six free-text fields persisted into unbounded `Text` columns with no `max_length`, five of them also copied verbatim into `remediation_events.payload` — append-only, no pruning path. With nginx allowing 21 MB bodies, one request could park that in the audit trail. Id lists were unbounded too, and `create_assessment` deduped with an O(n²) `list.count()` per element | `NOTE_MAX`/`SHORT_NOTE_MAX`/`ID_MAX` bounds across the request models; `Counter` for the dedup. New `tests/test_input_bounds.py` is a **guard**: it fails for any future request-model string field added without a bound, with an explicit exemption list (passwords only, which are never stored as given) |
+
+### Open — recorded, not acted on
+
+- **F5** `resolvedTheme` is derived during render while the matchMedia listener
+  toggles the `dark` class imperatively, so `theme-toggle.tsx` shows a stale
+  icon after an OS theme change and its first click is a no-op
+  (`components/theme-provider.tsx:37,44-52`).
+- **F6** `navigator.clipboard` is secure-context only; on this deliberately
+  plain-HTTP deployment «Copier le lien» throws an unhandled rejection with no
+  feedback (`components/members-dialog.tsx:112-117`). Recoverable — the link is
+  also in a readonly input.
+- **F7** `unlink_finding` never passes `actor_label`, so `finding_unlinked`
+  lands with no attribution while every sibling event keeps it
+  (`api/remediation.py:243-249`). A design gap: it is the only DELETE among
+  POST siblings, so there is no body to carry it.
+- **F8** `scopeIds.split(",")` submits `""` for a trailing comma, producing a
+  French error with an empty requirement name
+  (`pages/remediation-case/plan-panel.tsx:207-209`).
+- **F9** `frontend/Dockerfile` pins a `node:22-alpine` digest that may predate
+  react-router 8's `>=22.22.0` engine floor. **Unverified — no Docker daemon on
+  the audit host.** Local (22.23.1) and CI (`node-version: "22"`) both satisfy
+  it; only the frozen digest is unknown.
+- **F10** `audit-gate.mjs` iterates `report.vulnerabilities ?? {}` and prints
+  "OK" if npm ever changes the report shape — it cannot distinguish "no
+  advisories" from "I did not understand the report" (`scripts/audit-gate.mjs:81`).
+- **F11** `list_patch_proposals` queries by `case_id` with no tenant guard,
+  relying on `proposal_view`'s downstream org check instead of `_get_case`
+  (`api/remediation.py:407-421`). No leak; it leaves a weak existence oracle
+  (a foreign case with ≥1 proposal answers 404, one with none answers `[]`).
+
+### Verified clean (scoped to what was inspected)
+
+Mechanical route-guard enumeration across all of `app/api/*.py` — no gap. No
+LLM/Qdrant/embedding call inside an open transaction at any site read. Jinja
+autoescape on with zero `|safe` in `report.html.j2`. All 20 migration
+downgrades present and coherent. CI does run the Postgres-only suites, so the
+local skips are not a coverage gap. The M7b panel split introduced no
+stale-props-in-state.
