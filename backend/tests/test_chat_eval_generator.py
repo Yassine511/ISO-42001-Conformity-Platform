@@ -5,6 +5,7 @@ reserved for the M6 run (the CLI guard below is what enforces that)."""
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -45,7 +46,13 @@ def test_test_split_requires_m6_holdout_flag(tmp_path):
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--split", "test", "-o", str(tmp_path / "x.json")],
         capture_output=True,
-        text=True,
+        # Pin BOTH sides of the pipe to UTF-8: the script prints French to
+        # stderr, and on Windows the child's stdio encoding and the parent's
+        # text=True decode each default to the console locale independently —
+        # a mismatch turns « réservé » into mojibake and fails the assert
+        # below depending on which shell launched pytest.
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     assert result.returncode == 2
     assert "réservé au rapport M6" in result.stderr

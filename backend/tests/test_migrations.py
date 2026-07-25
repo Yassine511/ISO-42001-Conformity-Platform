@@ -800,9 +800,10 @@ def test_0014_backfills_document_versions(scratch_db):
             )
         con.rollback()
 
-        # The two POST-HOC circular FKs are added by the migration only (they
-        # are plain columns in the ORM, so create_all-based test DBs — pg_env,
-        # SQLite unit tests — never build them). Confirm the migration did:
+        # The two POST-HOC circular FKs are declared use_alter=True in the ORM
+        # (since the drift fix), so create_all builds them on Postgres too —
+        # SQLite (supports_alter=False) still skips them. Confirm the
+        # MIGRATION's copy has the right delete rules:
         # current_version has no ondelete ('a' = NO ACTION); source_artifact_id
         # is RESTRICT ('r') so a cited artifact cannot be deleted.
         fk_rules = dict(
