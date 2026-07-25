@@ -12,6 +12,7 @@ Checkpointer notes:
   strict — the state only carries primitives, so nothing legitimate is lost.
 """
 
+from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -122,8 +123,12 @@ def create_assessment(
         if not requirement_ids:
             raise ValueError("manifeste vide : précisez au moins une exigence.")
         # a duplicated id would inflate the manifest total and make full
-        # coverage unreachable — reject rather than silently dedup
-        duplicates = sorted({rid for rid in requirement_ids if requirement_ids.count(rid) > 1})
+        # coverage unreachable — reject rather than silently dedup.
+        # Counter, not list.count() per element: the latter is O(n^2) over a
+        # caller-supplied list (the HTTP schema now bounds it, but this
+        # function is also called directly by the M6 scripts).
+        counts = Counter(requirement_ids)
+        duplicates = sorted(rid for rid, n in counts.items() if n > 1)
         if duplicates:
             raise ValueError(
                 "exigence(s) en double dans le manifeste : " + ", ".join(duplicates)

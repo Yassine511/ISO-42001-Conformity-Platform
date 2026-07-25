@@ -151,8 +151,28 @@ class DocumentPageOut(BaseModel):
     text: str
 
 
+# Free-text bounds. Every string a client can persist carries a max_length:
+# the columns behind them are unbounded PostgreSQL `Text`, and the remediation
+# notes are ALSO copied verbatim into `remediation_events.payload` — an
+# append-only table with no pruning path (unlike llm_calls, which
+# scripts/prune_llm_payloads.py covers). Without a bound, one request could
+# push a full nginx body (client_max_body_size 21m) into the audit trail.
+# NOTE_MAX matches SoaDecisionBody.justification_fr, the field that already
+# had the right bound; SHORT_NOTE_MAX matches ChatAsk.question.
+NOTE_MAX = 4000
+SHORT_NOTE_MAX = 2000
+# Opaque row ids the client echoes back. They are never persisted as text —
+# they are primary-key lookups that 404 when unknown — but the columns behind
+# them are String(36) UUIDs, so anything longer is guaranteed garbage and has
+# no reason to reach the database as a query parameter.
+ID_MAX = 64
+ID = Annotated[str, StringConstraints(strip_whitespace=True, max_length=ID_MAX)]
+
+
 class SearchRequest(BaseModel):
-    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=SHORT_NOTE_MAX)
+    ]
     k: int = Field(default=8, ge=1, le=50)
     scope: Literal["policy", "kb", "both"] = "policy"
 
@@ -178,21 +198,21 @@ class SoaDecisionBody(BaseModel):
 
     applicable: bool
     justification_fr: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NOTE_MAX)
     ]
     editor_label: str | None = Field(default=None, max_length=200)
 
 
 class ChatAsk(BaseModel):
     question: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=SHORT_NOTE_MAX)
     ]
-    conversation_id: str | None = None
+    conversation_id: ID | None = None
     k_policy: int = Field(default=8, ge=1, le=20)
     k_kb: int = Field(default=4, ge=1, le=10)
     # M8 drill-down: anchor the exchange on one finding (server loads the
     # snapshot; the finding's text is context, never citable evidence)
-    finding_id: str | None = None
+    finding_id: ID | None = None
     # M9 «Norme seule» mode: skip the policy retrieval arm entirely, so the
     # answer can only cite the ISO KB. Combines freely with finding_id (the
     # finding stays non-citable context). The REQUESTED mode is not persisted;
@@ -399,8 +419,11 @@ class KbIndexReport(BaseModel):
 
 class AssessmentCreate(BaseModel):
     # None => the frozen 51-requirement dev manifest (M6 holdout protection:
-    # ids outside the dev split are rejected by create_assessment).
-    requirement_ids: list[str] | None = None
+    # ids outside the dev split are rejected by create_assessment). Bounded
+    # well above the 65-requirement KB: create_assessment validates every id
+    # against it anyway, and the bound keeps the manifest checks off a list
+    # sized by the request body rather than by the corpus.
+    requirement_ids: Annotated[list[str], Field(max_length=200)] | None = None
     k: int = Field(default=6, ge=1, le=20)
 
 
@@ -493,8 +516,8 @@ class FindingReviewOut(BaseModel):
 class ReviewDecision(BaseModel):
     action: Literal["approve", "edit", "override"]
     human_verdict: Literal["compliant", "partial", "non_compliant", "missing"] | None = None
-    human_rationale: str | None = None
-    review_note: str | None = None
+    human_rationale: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
+    review_note: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
     reviewer_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -567,19 +590,19 @@ class FindingDetailOut(FindingSummaryOut):
 
 
 class RemediationCaseCreate(BaseModel):
-    finding_id: str
+    finding_id: ID
     title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = None
-    link_note: str | None = None
+    link_note: Annotated[str, StringConstraints(max_length=SHORT_NOTE_MAX)] | None = None
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
 
 
 class RemediationLinkDecision(BaseModel):
-    finding_id: str
+    finding_id: ID
     decision: Literal["link", "reject"]
     link_source: Literal["search_suggested", "manual"] = "manual"
-    link_note: str | None = None
+    link_note: Annotated[str, StringConstraints(max_length=SHORT_NOTE_MAX)] | None = None
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -587,14 +610,14 @@ class RemediationLinkDecision(BaseModel):
 
 class RemediationTriageApprove(BaseModel):
     # explicit draft id — approval never targets an implicit "latest"
-    triage_draft_id: str
+    triage_draft_id: ID
     # omitted fields accept the AI draft; provided fields override it
     classification: Literal[
         "evidence_gap", "observation", "improvement_opportunity", "nonconformity"
     ] | None = None
-    correction_note: str | None = None
+    correction_note: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
     scope: Literal["local", "related_requirements", "organization_wide"] | None = None
-    scope_rationale: str | None = None
+    scope_rationale: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
     reviewer_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -607,7 +630,9 @@ class RemediationActorBody(BaseModel):
 
 
 class RemediationCloseBody(BaseModel):
-    close_note: str
+    # non-emptiness is checked in the service (French message); the bound here
+    # is the storage guard
+    close_note: Annotated[str, StringConstraints(max_length=NOTE_MAX)]
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -770,18 +795,20 @@ class RemediationPlanOut(BaseModel):
 class RemediationActionReview(BaseModel):
     action: Literal["approve", "edit", "reject"]
     # edit only: human text wins, omitted fields keep the AI values
-    description: str | None = None
-    rationale: str | None = None
-    owner_role: str | None = None
-    success_criterion: str | None = None
+    description: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
+    rationale: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
+    owner_role: Annotated[str, StringConstraints(max_length=300)] | None = None
+    success_criterion: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
     # mandatory on approve/edit, forbidden meaning on reject
     priority: Literal["haute", "normale", "basse"] | None = None
     # human-set deadline (0018) — a provided date is stored; an omitted one
     # keeps the current value. The LLM planner never proposes deadlines.
     due_date: date | None = None
-    # edit only: human-supplied effective requirement scope (override)
-    impacted_requirement_ids: list[str] | None = None
-    review_note: str | None = None
+    # edit only: human-supplied effective requirement scope (override).
+    # Bounded: the ids are validated against the live KB (65 requirements) in
+    # actions.review_action, so no legitimate list approaches this.
+    impacted_requirement_ids: Annotated[list[str], Field(max_length=100)] | None = None
+    review_note: Annotated[str, StringConstraints(max_length=NOTE_MAX)] | None = None
     reviewer_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -814,17 +841,18 @@ class RemediationLifecycleBody(BaseModel):
 
 class RemediationEffectivenessBody(BaseModel):
     effectiveness: Literal["EFFECTIVE", "PARTIALLY_EFFECTIVE", "INEFFECTIVE"]
-    note: str
+    # non-emptiness is checked in the service (French message)
+    note: Annotated[str, StringConstraints(max_length=NOTE_MAX)]
     # optional EVIDENCE citation, validated server-side; null = external
     # human evidence only (mandatory for actions with zero dev-split scope)
-    reassessment_id: str | None = None
+    reassessment_id: ID | None = None
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
 
 
 class PatchProposalCreate(BaseModel):
-    document_id: str
+    document_id: ID
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
@@ -842,7 +870,7 @@ class PatchDecisionBody(BaseModel):
 
 
 class RemediationReassessmentCreate(BaseModel):
-    selected_action_ids: list[str]
+    selected_action_ids: Annotated[list[str], Field(max_length=100)]
     actor_label: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=200)
     ] | None = None
