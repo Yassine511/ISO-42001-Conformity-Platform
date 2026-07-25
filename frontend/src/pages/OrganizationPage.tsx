@@ -175,6 +175,9 @@ function DocumentsSection({
   const queryClient = useQueryClient();
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  // Deleting a document is IRREVERSIBLE (the file and its parsed pages/chunks
+  // go), so it gets the same confirm step the reversible «Abandonner» has.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const upload = useMutation({
     mutationFn: (file: File) => api.uploadDocument(orgId, file),
@@ -183,7 +186,10 @@ function DocumentsSection({
 
   const remove = useMutation({
     mutationFn: api.deleteDocument,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents", orgId] }),
+    onSuccess: () => {
+      setConfirmDelete(null);
+      queryClient.invalidateQueries({ queryKey: ["documents", orgId] });
+    },
   });
   // The backend deliberately refuses some deletes (409: cited as evidence by a
   // finding, or an assessment is running; 503: vector index down) — those
@@ -279,14 +285,6 @@ function DocumentsSection({
             <FileUp className="size-3.5" aria-hidden="true" />
             Ajouter des preuves
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => index.mutate()}
-            disabled={index.isPending}
-          >
-            {index.isPending ? "Préparation…" : "Préparer pour l'évaluation"}
-          </Button>
         </div>
         <input
           ref={uploadRef}
@@ -305,14 +303,36 @@ function DocumentsSection({
             Téléversement…
           </p>
         )}
-        <p aria-live="polite" className="mt-2 text-xs text-muted-foreground">
+      </div>
+
+      {/* Manual reindex — an OPERATOR affordance, not a step in the flow:
+          create_assessment reconciles the index atomically under the org lock,
+          so every run already evaluates the current documents. It stays
+          reachable for the documented post-migration reindex (README). */}
+      <TechnicalDisclosure summary="Maintenance de l'index vectoriel">
+        <p>
+          Chaque évaluation reconstruit l'index avant de démarrer : cette action n'est jamais
+          nécessaire avant un lancement. Elle sert à forcer une reconstruction après une
+          migration ou une intervention sur le magasin vectoriel.
+        </p>
+        <div className="mt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => index.mutate()}
+            disabled={index.isPending}
+          >
+            {index.isPending ? "Reconstruction…" : "Reconstruire l'index"}
+          </Button>
+        </div>
+        <p aria-live="polite" className="mt-2">
           {index.isSuccess &&
             `Index à jour : ${index.data.chunks} extraits (${index.data.added} ajoutés, ${index.data.removed} retirés).`}
           {index.isError && (
             <span className="text-destructive">{(index.error as Error).message}</span>
           )}
         </p>
-      </div>
+      </TechnicalDisclosure>
 
       {uploadErrors.map((msg) => (
         <p key={msg} className="text-sm text-destructive">
@@ -357,24 +377,47 @@ function DocumentsSection({
               </div>
             </div>
             <StatusLabel display={docStatusDisplay(doc.status)} dot={false} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            {confirmDelete === doc.id ? (
+              <span className="flex items-center gap-2 text-xs">
+                Supprimer définitivement ?
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Actions pour ${doc.filename}`}
-                  className="size-10"
+                  variant="destructive"
+                  size="sm"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(doc.id)}
                 >
-                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                  Confirmer
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem variant="destructive" onClick={() => remove.mutate(doc.id)}>
-                  <Trash2 className="size-3.5" aria-hidden="true" />
-                  Supprimer
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>
+                  Non
+                </Button>
+              </span>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Actions pour ${doc.filename}`}
+                    className="size-10"
+                  >
+                    <MoreHorizontal className="size-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmDelete(doc.id);
+                      remove.reset(); // a previous refusal must not linger
+                    }}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                    Supprimer
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </li>
         ))}
       </ul>
@@ -530,9 +573,19 @@ function AssessmentCard({
           )}
           {a.status === "RUNNING" && !a.cancel_requested && (
             <>
-              <Button variant="outline" size="sm" onClick={() => resume.mutate()}>
-                Reprendre
-              </Button>
+              {/* Only for an ORPHANED run (server restarted mid-run). On a run
+                  the server is actually executing, resume 409s — so the button
+                  is not shown at all rather than shown and rejected. */}
+              {a.resumable && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => resume.mutate()}
+                  title="Cette évaluation est marquée en cours mais aucun traitement ne tourne (serveur redémarré) : la reprendre la relance là où elle s'est arrêtée."
+                >
+                  Reprendre
+                </Button>
+              )}
               {confirmAbandon ? (
                 <span className="flex items-center gap-2 text-xs">
                   Abandonner cette évaluation ?

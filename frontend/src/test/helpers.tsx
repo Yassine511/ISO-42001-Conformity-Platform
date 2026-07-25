@@ -67,6 +67,8 @@ export function makeAssessment(over: Partial<Assessment> = {}): Assessment {
     abstained_count: 0,
     reviewed_count: 0,
     manifest_complete: true,
+    // default: a RUNNING run the server IS executing — «Reprendre» is hidden
+    resumable: false,
     progress: { requirement_id: "A.4.5", node: "judge", done: 1, total: 2 },
     ...over,
   };

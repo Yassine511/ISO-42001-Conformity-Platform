@@ -114,12 +114,58 @@ describe("assessment cards", () => {
     expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
   });
 
+  it("offers «Reprendre» only for an orphaned run, never for a live one", async () => {
+    // a run the server is executing: resume would 409, so it is not offered
+    mocked.listAssessments.mockResolvedValue([makeAssessment({ resumable: false })]);
+    const view = renderPage();
+    expect(await screen.findByText("En cours")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
+    view.unmount();
+
+    // orphaned (server restarted mid-run): the action is real
+    mocked.listAssessments.mockResolvedValue([
+      makeAssessment({ resumable: true, progress: null }),
+    ]);
+    mocked.resumeAssessment.mockResolvedValue(makeAssessment({ resumable: false }));
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+    expect(mocked.resumeAssessment).toHaveBeenCalledWith("org-1", "aid-1");
+  });
+
   it("marks legacy rows with an incomplete manifest", async () => {
     mocked.listAssessments.mockResolvedValue([
       makeAssessment({ manifest_complete: false, status: "RUNNING", progress: null }),
     ]);
     renderPage();
     expect(await screen.findByText(/manifeste incomplet/)).toBeInTheDocument();
+  });
+});
+
+describe("document library", () => {
+  it("requires confirmation before deleting a document", async () => {
+    mocked.deleteDocument.mockResolvedValue(undefined);
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Actions pour politique_ia.txt" }),
+    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Supprimer/ }));
+    // the menu click alone deletes nothing — deletion is irreversible
+    expect(mocked.deleteDocument).not.toHaveBeenCalled();
+    expect(screen.getByText("Supprimer définitivement ?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer" }));
+    // api.deleteDocument is the mutationFn itself: react-query appends context
+    expect(mocked.deleteDocument.mock.calls[0][0]).toBe("doc-1");
+  });
+
+  it("lets the user back out of a deletion", async () => {
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Actions pour politique_ia.txt" }),
+    );
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Supprimer/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Non" }));
+    expect(mocked.deleteDocument).not.toHaveBeenCalled();
+    expect(screen.queryByText("Supprimer définitivement ?")).toBeNull();
   });
 });
 
