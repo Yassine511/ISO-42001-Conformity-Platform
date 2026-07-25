@@ -391,8 +391,6 @@ def test_duplicate_content_upload_rejected(client):
 
 
 def test_index_report_flags_stale_parser(client):
-    from sqlalchemy import select as sa_select
-
     from app.db import get_db
     from app.main import app as fastapi_app
     from app.models import Document as Doc

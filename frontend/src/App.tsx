@@ -3,8 +3,8 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "./auth";
 
-// Route-level code splitting: each page (and its heavy deps — recharts on the
-// dashboard, the remediation workflow) loads on demand instead of in one bundle.
+// Route-level code splitting: each page (and its heavy deps — the remediation
+// workflow, the motion layer) loads on demand instead of in one bundle.
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const SignupPage = lazy(() => import("./pages/SignupPage"));

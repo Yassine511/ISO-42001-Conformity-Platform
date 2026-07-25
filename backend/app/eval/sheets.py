@@ -15,7 +15,6 @@ hard error, not a warning.
 
 import hashlib
 import json
-from pathlib import Path
 
 PAIR_LABELS = ("SUPPORTS", "PARTIAL", "IRRELEVANT")
 ANSWER_LABELS = ("FAITHFUL", "PARTIALLY_FAITHFUL", "UNFAITHFUL")
@@ -33,10 +32,6 @@ FORBIDDEN_KEYS = frozenset(
 
 class SheetError(ValueError):
     """Validation failure on a grading sheet (French message)."""
-
-
-def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def sha256_payload(payload) -> str:
