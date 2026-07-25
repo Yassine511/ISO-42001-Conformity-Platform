@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, false, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models import (
     Assessment,
@@ -275,8 +275,33 @@ def build_reporting_scope(
     manifests = {a.id: set(a.requirement_ids or []) for a in included}
     effective: dict[str, EffectiveFinding] = {}
     if included_ids:
+        # Only the columns EffectiveFinding carries (+ created_at, the
+        # pending tie-break). The full Finding row also holds `retrieved` and
+        # `audit_log` — JSON blobs of the whole retrieved-evidence payload
+        # (models/_pipeline.py) that nothing here reads. Every reporting
+        # endpoint builds a scope, and one dashboard render fires three of
+        # them (conformity + trust + risk register), so hydrating those blobs
+        # meant deserializing megabytes per page load for nothing. Same
+        # discipline as api/assessments.py and remediation/service.py.
         rows = db.scalars(
-            select(Finding).where(Finding.assessment_id.in_(included_ids))
+            select(Finding)
+            .options(
+                load_only(
+                    Finding.id,
+                    Finding.assessment_id,
+                    Finding.requirement_id,
+                    Finding.domain,
+                    Finding.requirement_fr,
+                    Finding.status,
+                    Finding.abstain_reason,
+                    Finding.review_status,
+                    Finding.human_verdict,
+                    Finding.review_action,
+                    Finding.reviewed_at,
+                    Finding.created_at,
+                )
+            )
+            .where(Finding.assessment_id.in_(included_ids))
         )
         best_pending: dict[str, tuple] = {}
         best_confirmed: dict[str, tuple] = {}
@@ -386,11 +411,17 @@ def _materialize_treatments(db: Session, scope: ReportingScope) -> dict[str, Tre
     ]
     approved_by_plan: dict[str, int] = {}
     if active_plan_ids:
-        for action in db.scalars(
-            select(RemediationAction).where(RemediationAction.plan_id.in_(active_plan_ids))
+        # two columns, not whole action rows: the AI draft columns
+        # (ai_description/ai_rationale/ai_impacted_requirement_ids) are never
+        # read here. RemediationCase above stays a full entity load on
+        # purpose — those rows are scalar/Text only, no JSON payload.
+        for plan_id, lifecycle in db.execute(
+            select(RemediationAction.plan_id, RemediationAction.lifecycle).where(
+                RemediationAction.plan_id.in_(active_plan_ids)
+            )
         ):
-            if action.lifecycle in ("APPROVED", "IN_PROGRESS", "DONE"):
-                approved_by_plan[action.plan_id] = approved_by_plan.get(action.plan_id, 0) + 1
+            if lifecycle in ("APPROVED", "IN_PROGRESS", "DONE"):
+                approved_by_plan[plan_id] = approved_by_plan.get(plan_id, 0) + 1
 
     treatments: dict[str, Treatment] = {}
     by_finding: dict[str, list[RemediationCase]] = {}

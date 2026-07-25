@@ -670,3 +670,47 @@ def test_out_of_manifest_rows_never_contaminate_trust_telemetry(db_session):
     assert trust["gate"]["verifier_error_code_counts"] == {}
     assert trust["gate"]["drafts_with_unsupported_citation"] == 0
     assert trust["review"]["review_events"] == 1
+
+
+# ------------------------------------------------- payload-column discipline
+
+
+def test_scope_never_hydrates_the_finding_json_payloads(db_session):
+    """Audit pass 5 (F2): build_reporting_scope selected whole Finding rows,
+    hydrating `retrieved` and `audit_log` — the full retrieved-evidence
+    payloads, which no calculator reads. Every reporting endpoint builds a
+    scope and one dashboard render fires three of them, so this was megabytes
+    of JSON deserialized per page load.
+
+    Asserted on the emitted SQL, not on the result: a load_only() that gets
+    dropped in a refactor is invisible in the returned data.
+    """
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    org_id = _org(db_session)
+    a = _assessment(db_session, org_id, requirement_ids=["4.1", "5.2"])
+    _finding(db_session, a, "4.1", verdict="partial", human_verdict="partial")
+    _finding(db_session, a, "5.2")  # PENDING — the other branch of the scan
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        scope = _scope(db_session, org_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert set(scope.effective) == {"4.1", "5.2"}  # the scan really ran
+    finding_selects = [s for s in statements if "FROM findings" in s]
+    assert finding_selects, "no findings query was captured — rewrite this test"
+    for statement in finding_selects:
+        assert "findings.retrieved" not in statement, statement
+        assert "findings.audit_log" not in statement, statement
+    # the columns the calculators DO need are still selected
+    joined = " ".join(finding_selects)
+    for column in ("findings.human_verdict", "findings.review_status", "findings.reviewed_at"):
+        assert column in joined
