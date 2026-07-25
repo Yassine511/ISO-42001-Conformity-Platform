@@ -123,6 +123,45 @@ def _insert_finding(con, assessment_id: str, requirement_id: str, reason: str) -
     )
 
 
+def test_migration_head_matches_the_models(scratch_db):
+    """THE migration<->model cross-check: upgrade a virgin database through the
+    whole chain, then diff the resulting schema against Base.metadata. An empty
+    diff is the only pass — anything else means the declarative models and the
+    migrations have drifted, which no other test in this suite would notice
+    (the offline suite builds its schema with create_all, so it tests the
+    models against themselves, and the live tests only spot-check constraints).
+    """
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from sqlalchemy import create_engine
+
+    from app import models  # noqa: F401 — populates Base.metadata
+    from app.db import Base, include_object
+
+    _alembic(scratch_db, "upgrade", "head")
+
+    engine = create_engine("postgresql+psycopg://int102:int102@localhost:5433/" + scratch_db)
+    try:
+        with engine.connect() as conn:
+            context = MigrationContext.configure(
+                conn,
+                opts={
+                    # the SAME filter alembic/env.py uses: LangGraph owns its
+                    # tables and they are legitimately absent from the metadata
+                    "include_object": include_object,
+                    "compare_type": True,
+                    "compare_server_default": True,
+                },
+            )
+            diff = compare_metadata(context, Base.metadata)
+    finally:
+        engine.dispose()
+
+    assert diff == [], "migrations and models have drifted:\n" + "\n".join(
+        repr(entry) for entry in diff
+    )
+
+
 def test_concurrent_startup_migrations_are_serialized(scratch_db, monkeypatch):
     """Two processes booting at once (rolling deploy, or uvicorn --workers > 1)
     both call run_migrations() in their lifespan. The advisory lock must make

@@ -102,6 +102,19 @@ class Document(Base):
         # Supporting candidate key for the composite ownership FK from
         # document_versions(organization_id, document_id).
         UniqueConstraint("organization_id", "id", name="uq_documents_org_id"),
+        # Circular COMPOSITE FK (0014): the current version must be a version OF
+        # THIS document — (id, current_version_id) -> (document_id, id) — not
+        # merely some existing version, which a single-column FK would allow.
+        # use_alter emits it as the same post-hoc ALTER the migration performs,
+        # so the models describe the constraint PostgreSQL actually enforces;
+        # SQLite (supports_alter=False) skips it, leaving the offline test path
+        # unchanged.
+        ForeignKeyConstraint(
+            ["id", "current_version_id"],
+            ["document_versions.document_id", "document_versions.id"],
+            name="fk_documents_current_version",
+            use_alter=True,
+        ),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -249,7 +262,17 @@ class DocumentVersion(Base):
     origin: Mapped[str] = mapped_column(String(20))
     supersedes_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # Corrective-action lineage (circular FK, added post-hoc by 0014).
-    source_artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # ON DELETE RESTRICT is the guard that stops a cited artifact being removed
+    # out from under its version — declared here, not only in the migration.
+    source_artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "remediation_artifacts.id",
+            use_alter=True,
+            name="fk_document_versions_source_artifact",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     canonical_format: Mapped[str] = mapped_column(String(10))
     filename: Mapped[str] = mapped_column(String(300))
     reported_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -962,8 +985,26 @@ class RemediationCase(Base):
     )
     # free-text, EXPLICITLY UNVERIFIED (no identity layer by design)
     triage_reviewer_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    approved_triage_draft_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    active_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Circular FKs (case <-> draft, case <-> plan): use_alter mirrors the
+    # post-hoc ALTER migration 0013 performs. See Document.current_version_id.
+    approved_triage_draft_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "remediation_triage_drafts.id",
+            use_alter=True,
+            name="fk_remediation_cases_approved_triage_draft",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    active_plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "remediation_plans.id",
+            use_alter=True,
+            name="fk_remediation_cases_active_plan",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     # Stale-input protection: bumped on every finding link/unlink and triage
     # reopen; triage drafts must match it to persist / be approved.
     evidence_revision: Mapped[int] = mapped_column(

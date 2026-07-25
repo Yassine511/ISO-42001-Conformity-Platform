@@ -67,8 +67,15 @@ def seed_parsed_document(
         for i, text in enumerate(pages)
     ]
     doc.versions = [version]
-    doc.current_version_id = version.id
     db.add(doc)
+    # Two steps, like the real activation transaction: the composite FK
+    # fk_documents_current_version proves (id, current_version_id) names a
+    # version OF THIS document, so the pointer can only be set once the version
+    # row exists. Setting it in the same INSERT passed only while the test
+    # schema was missing that constraint (see test_migration_head_matches_
+    # the_models) — production PostgreSQL always refused it.
+    db.flush()
+    doc.current_version_id = version.id
     db.commit()
     return doc
 

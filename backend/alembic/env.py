@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app import models  # noqa: F401 — register tables on Base metadata
 from app.config import settings
-from app.db import Base
+from app.db import Base, include_object
 
 config = context.config
 if config.config_file_name is not None:
@@ -16,22 +16,8 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
-# LangGraph's PostgresSaver owns these tables (created by .setup(), versioned
-# by the library): autogenerate must never propose dropping them.
-LANGGRAPH_TABLES = {
-    "checkpoints",
-    "checkpoint_blobs",
-    "checkpoint_writes",
-    "checkpoint_migrations",
-}
-
-
-def include_object(obj, name, type_, reflected, compare_to) -> bool:
-    if type_ == "table" and name in LANGGRAPH_TABLES:
-        return False
-    if type_ == "index" and getattr(obj, "table", None) is not None:
-        return obj.table.name not in LANGGRAPH_TABLES
-    return True
+# include_object (skipping LangGraph's own tables) lives in app.db so the
+# migration-vs-model drift test can apply the identical filter.
 
 
 def run_migrations_offline() -> None:
