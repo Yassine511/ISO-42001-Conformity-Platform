@@ -376,3 +376,118 @@ def test_delete_refused_with_artifact_lineage(client, docx_action):
     r = client.delete(f"/api/documents/{doc_id}")
     assert r.status_code == 409
     assert "remédiation" in r.json()["detail"]
+
+
+# ------------------------------------------------------------- lock ordering
+
+
+def _lock_trace(monkeypatch) -> list[str]:
+    """Record every row lock the request takes, in order.
+
+    One hook covers all four: lock_organization and lock_case are themselves
+    `Session.get(..., with_for_update=True)` calls, so patching Session.get
+    captures Organization / RemediationCase / Document / DocumentVersion in
+    the exact order the transaction acquires them.
+    """
+    from sqlalchemy.orm import Session
+
+    trace: list[str] = []
+    real_get = Session.get
+
+    def spy(self, entity, ident, **kw):
+        if kw.get("with_for_update"):
+            name = getattr(entity, "__name__", str(entity))
+            if not trace or trace[-1] != name:  # collapse re-reads of one row
+                trace.append(name)
+        return real_get(self, entity, ident, **kw)
+
+    monkeypatch.setattr(Session, "get", spy)
+    return trace
+
+
+def _first(trace: list[str], name: str) -> int:
+    assert name in trace, f"{name} was never locked; trace={trace}"
+    return trace.index(name)
+
+
+def test_superseding_upload_takes_locks_in_the_declared_order(
+    client, docx_action, monkeypatch
+):
+    """Audit pass 5 (F3). The declared order — org -> case -> document ->
+    versions (CLAUDE.md, patcher module doc, _lock_activation_scope) — was not
+    what supersede_upload did: it took the base VERSION lock first, ahead of
+    both the case and the document, i.e. the opposite of the order
+    _activate_upload_candidate uses for the same rows. Nothing deadlocked
+    because the caller's org lock serialized every path, but the two halves of
+    one protocol must not disagree about lock order.
+    """
+    org_id, case_id, action_id, doc_id = docx_action
+    artifact = _post_artifact(
+        client, org_id, case_id, action_id, doc_id, [_artifact_json()]
+    ).json()
+    db = client.session_factory()
+    base_vid = db.get(Document, doc_id).current_version_id
+    db.close()
+
+    trace = _lock_trace(monkeypatch)
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("politique.docx", _docx_bytes("Politique révisée."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        data={"supersedes_version_id": base_vid, "remediation_artifact_id": artifact["id"]},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["outcome"] == "activated"
+
+    org, case = _first(trace, "Organization"), _first(trace, "RemediationCase")
+    doc, version = _first(trace, "Document"), _first(trace, "DocumentVersion")
+    assert org < case < doc < version, trace
+
+
+def test_stranded_upload_recovery_takes_locks_in_the_declared_order(
+    client, docx_action, monkeypatch
+):
+    """Same invariant on the recovery path, which locked the candidate VERSION
+    before the document — and, when the upload carried artifact lineage, never
+    locked the case at all."""
+    org_id, case_id, action_id, doc_id = docx_action
+    artifact = _post_artifact(
+        client, org_id, case_id, action_id, doc_id, [_artifact_json()]
+    ).json()
+    db = client.session_factory()
+    base_vid = db.get(Document, doc_id).current_version_id
+    db.close()
+
+    # strand the activation at INDEX_FAILED (Qdrant down for exactly one upsert)
+    from app.remediation import patcher as patcher_module
+    from app.services import qdrant as qdrant_service
+
+    real_upsert = qdrant_service.upsert_points
+    boom = {"armed": True}
+
+    def failing_upsert(points):
+        if boom["armed"]:
+            boom["armed"] = False
+            raise ConnectionError("qdrant down")
+        return real_upsert(points)
+
+    monkeypatch.setattr(patcher_module.qdrant, "upsert_points", failing_upsert)
+    # the INDEX_FAILED handler is itself a lock site: it used to take the
+    # document lock with NO org lock at all
+    failed_trace = _lock_trace(monkeypatch)
+    r = client.post(
+        f"/api/organizations/{org_id}/documents",
+        files={"file": ("politique.docx", _docx_bytes("Politique révisée."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        data={"supersedes_version_id": base_vid, "remediation_artifact_id": artifact["id"]},
+    )
+    assert r.status_code == 503 and r.json()["outcome"] == "index_failed"
+    stranded = r.json()["version_id"]
+    assert _first(failed_trace, "Organization") < _first(failed_trace, "Document")
+
+    trace = _lock_trace(monkeypatch)
+    rec = client.post(f"/api/documents/{doc_id}/versions/{stranded}/recover")
+    assert rec.status_code == 201, rec.text
+    assert rec.json()["outcome"] == "activated"
+
+    org, case = _first(trace, "Organization"), _first(trace, "RemediationCase")
+    doc, version = _first(trace, "Document"), _first(trace, "DocumentVersion")
+    assert org < case < doc < version, trace

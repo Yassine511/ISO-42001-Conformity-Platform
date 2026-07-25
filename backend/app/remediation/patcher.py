@@ -1401,8 +1401,16 @@ def supersede_upload(
     from app.models import RemediationArtifact
     from app.services.parsing import PARSER_VERSION
 
-    base = db.get(DocumentVersion, supersedes_version_id, with_for_update=True)
-    if base is None or base.organization_id != org_id:
+    # Declared lock order org -> case -> document -> versions (module doc,
+    # _lock_activation_scope). The org row is already held by the caller. The
+    # ids needed to reach the case and the document are read WITHOUT a lock
+    # first — taking the version lock here (as this function used to) put
+    # `versions` ahead of `case` and `document`, i.e. the exact opposite of
+    # the order _activate_upload_candidate uses for the same rows. Nothing
+    # deadlocked because the caller's org lock serialized both, but the
+    # protocol's two halves must not disagree.
+    peek = db.get(DocumentVersion, supersedes_version_id)
+    if peek is None or peek.organization_id != org_id:
         db.rollback()
         raise RemediationNotFoundError("Version à remplacer introuvable.")
     artifact = None
@@ -1411,9 +1419,11 @@ def supersede_upload(
         if artifact is None:
             db.rollback()
             raise RemediationNotFoundError("Artefact de remédiation introuvable.")
-        # lock order org -> case -> document -> versions
         lock_case(db, org_id, artifact.case_id)
-    doc = db.get(Document, base.document_id, with_for_update=True)
+    doc = db.get(Document, peek.document_id, with_for_update=True)
+    # version lock LAST, and re-read under it: everything validated below
+    # (state, current_version_id, checksum) must come from the locked row.
+    base = db.get(DocumentVersion, supersedes_version_id, with_for_update=True)
 
     # Retry idempotency FIRST (before rejecting a now-SUPERSEDED base): a
     # client that timed out after a successful/pending activation resubmits
@@ -1526,6 +1536,35 @@ def supersede_upload(
     )
 
 
+def _lock_upload_scope(db: Session, org_id: str, candidate_id: str):
+    """Declared lock order for the upload variant: org -> case (when the
+    candidate carries artifact lineage) -> document. Returns (doc, artifact);
+    the caller takes the version lock last.
+
+    The upload equivalent of _lock_activation_scope, and used by EVERY upload
+    path that mutates the candidate — including the INDEX_FAILED handler,
+    which previously locked the document with no org lock at all."""
+    from app.models import RemediationArtifact
+
+    org = lock_organization(db, org_id)
+    if org is None:
+        db.rollback()
+        raise RemediationNotFoundError("Organisation introuvable.")
+    peek = db.get(DocumentVersion, candidate_id)
+    if peek is None:
+        db.rollback()
+        raise RemediationNotFoundError("Version de document introuvable.")
+    artifact = (
+        db.get(RemediationArtifact, peek.source_artifact_id)
+        if peek.source_artifact_id
+        else None
+    )
+    if artifact is not None:
+        lock_case(db, org_id, artifact.case_id)
+    doc = db.get(Document, peek.document_id, with_for_update=True)
+    return doc, artifact
+
+
 def _index_and_activate_upload(
     db: Session, org_id: str, candidate_id: str, worker_token: str, *, actor_label
 ) -> dict:
@@ -1535,8 +1574,7 @@ def _index_and_activate_upload(
         indexed_at = _now()
     except Exception as exc:
         db.rollback()
-        candidate = db.get(DocumentVersion, candidate_id)
-        db.get(Document, candidate.document_id, with_for_update=True)
+        doc, _artifact = _lock_upload_scope(db, org_id, candidate_id)
         if _fenced(
             db, candidate_id, worker_token,
             state="INDEX_FAILED",
@@ -1546,7 +1584,7 @@ def _index_and_activate_upload(
             activation_heartbeat_at=None,
         ):
             append_version_event(
-                db, candidate.document_id, "version_index_failed",
+                db, doc.id, "version_index_failed",
                 {
                     "document_version_id": candidate_id,
                     "error": str(exc),
@@ -1576,21 +1614,7 @@ def _activate_upload_candidate(
     """Tx B, upload variant. Twin of _activate_candidate minus the patch
     gates, plus the artifact authority recheck when lineage is present —
     keep the two in step when the protocol evolves."""
-    from app.models import RemediationArtifact
-
-    org = lock_organization(db, org_id)
-    if org is None:
-        db.rollback()
-        raise RemediationNotFoundError("Organisation introuvable.")
-    peek = db.get(DocumentVersion, candidate_id)
-    artifact = (
-        db.get(RemediationArtifact, peek.source_artifact_id)
-        if peek.source_artifact_id
-        else None
-    )
-    if artifact is not None:
-        lock_case(db, org_id, artifact.case_id)
-    doc = db.get(Document, peek.document_id, with_for_update=True)
+    doc, artifact = _lock_upload_scope(db, org_id, candidate_id)
     candidate = db.get(DocumentVersion, candidate_id, with_for_update=True)
 
     if candidate.activation_token != worker_token:
@@ -1750,19 +1774,21 @@ def recover_upload_activation(
 ) -> dict:
     """Re-drive a stranded superseding-upload activation (twin of
     recover_patch_activation)."""
-    org = lock_organization(db, org_id)
-    if org is None:
-        db.rollback()
-        raise RemediationNotFoundError("Organisation introuvable.")
-    candidate = db.get(DocumentVersion, version_id, with_for_update=True)
+    # Unlocked read purely to validate the (document, version) pair before
+    # anything is locked; the locks themselves are then taken in the declared
+    # order org -> case -> document -> version. This function used to lock the
+    # version before the document, disagreeing with _activate_upload_candidate
+    # about the order of the very rows they share.
+    peek = db.get(DocumentVersion, version_id)
     if (
-        candidate is None
-        or candidate.document_id != document_id
-        or candidate.organization_id != org_id
+        peek is None
+        or peek.document_id != document_id
+        or peek.organization_id != org_id
     ):
         db.rollback()
         raise RemediationNotFoundError("Version de document introuvable.")
-    doc = db.get(Document, document_id, with_for_update=True)
+    doc, _artifact = _lock_upload_scope(db, org_id, version_id)
+    candidate = db.get(DocumentVersion, version_id, with_for_update=True)
     if candidate.state == "ACTIVE":
         db.rollback()
         return {"outcome": "already_active", "decision_id": None, "version_id": version_id}
