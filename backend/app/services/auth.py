@@ -18,7 +18,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -29,6 +29,19 @@ MAX_PASSWORD_BYTES = 72
 MIN_PASSWORD_LENGTH = 10
 
 INVITATION_TTL = timedelta(days=7)
+
+# Fixed, valid bcrypt hash of an unguessable value, used ONLY to burn the same
+# ~100 ms an authentic verification costs when the e-mail is unknown. Without
+# it, "unknown address" answers measurably faster than "wrong password" and the
+# 401 becomes an account-enumeration oracle. Literal, not computed at import:
+# hashing at startup would cost the same time on every process boot for nothing.
+_DUMMY_PASSWORD_HASH = "$2b$12$QoaDhUCv7rAUzixB4DZXuubBrampjTjtyWSgEQWOwlH/JU32tzJgi"
+
+
+def waste_password_comparison() -> None:
+    """Run one full bcrypt verification against the dummy hash. Called on the
+    unknown-e-mail branch of login so both outcomes cost the same."""
+    verify_password("", _DUMMY_PASSWORD_HASH)
 
 
 def normalize_email(email: str) -> str:
@@ -61,8 +74,19 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 def create_session(db: Session, user: User) -> str:
-    """Create a session row and return the RAW token (cookie value)."""
+    """Create a session row and return the RAW token (cookie value).
+
+    Also drops this user's already-expired rows: they are dead weight (expiry
+    is absolute, so an expired row can never authenticate again) and a token
+    that is never presented again would otherwise be pruned by nothing. Bounded
+    to one user, in the transaction the caller is already committing.
+    """
     raw_token = secrets.token_urlsafe(32)
+    db.execute(
+        delete(AuthSession).where(
+            AuthSession.user_id == user.id, AuthSession.expires_at <= _now()
+        )
+    )
     db.add(
         AuthSession(
             user_id=user.id,
@@ -74,11 +98,25 @@ def create_session(db: Session, user: User) -> str:
 
 
 def resolve_session(db: Session, raw_token: str) -> User | None:
-    """Raw cookie token -> User, or None if unknown/expired."""
+    """Raw cookie token -> User, or None if unknown/expired.
+
+    Expired rows are deleted opportunistically here: sessions are only ever
+    looked up by token hash, so a row nobody presents again is unreachable —
+    this reclaims the ones that ARE presented (the common case: a browser
+    holding a cookie past its absolute 7-day expiry) without a cron job.
+    Deletion is best-effort; a failure must never break authentication.
+    """
     session = db.scalar(
         select(AuthSession).where(AuthSession.token_hash == _hash_token(raw_token))
     )
-    if session is None or _as_utc(session.expires_at) <= _now():
+    if session is None:
+        return None
+    if _as_utc(session.expires_at) <= _now():
+        try:
+            db.delete(session)
+            db.commit()
+        except Exception:
+            db.rollback()
         return None
     return db.get(User, session.user_id)
 

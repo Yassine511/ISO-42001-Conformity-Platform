@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from sqlalchemy.orm import Session
@@ -34,17 +36,37 @@ def index_organization(org_id: str, db: Session = Depends(get_db)):
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
 
 
+# Single-flight gate for the KB reindex. index_kb() is a full reconciliation
+# (upsert every requirement, then delete every point that is not canonical):
+# two of them interleaving means one can delete points the other just wrote,
+# and it is an embedding-heavy, unbounded-cost operation that ANY authenticated
+# user can trigger. Non-blocking — a concurrent caller gets 409, never a queue.
+#
+# This is process-local, which matches the deployment (single worker, see
+# README «Déploiement»); the real authorization fix (operator-only) needs the
+# role column M10 deliberately left out and is deferred to M11.
+_KB_INDEX_LOCK = threading.Lock()
+
+
 # KB reindex touches shared app data only — authenticated, not org-scoped.
 @router.post(
     "/kb/index", response_model=KbIndexReport, dependencies=[Depends(get_current_user)]
 )
 def index_kb():
+    if not _KB_INDEX_LOCK.acquire(blocking=False):
+        raise HTTPException(
+            409,
+            "Une réindexation de la base de connaissances est déjà en cours ; "
+            "réessayez dans un instant.",
+        )
     try:
         return retrieval.index_kb()
     except FileNotFoundError:
         raise HTTPException(500, "Base de connaissances introuvable (corpus_path mal configuré ?).")
     except QDRANT_ERRORS as exc:
         raise HTTPException(503, f"Index vectoriel indisponible : {exc}")
+    finally:
+        _KB_INDEX_LOCK.release()
 
 
 @router.post(

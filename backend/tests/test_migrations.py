@@ -123,6 +123,57 @@ def _insert_finding(con, assessment_id: str, requirement_id: str, reason: str) -
     )
 
 
+def test_concurrent_startup_migrations_are_serialized(scratch_db, monkeypatch):
+    """Two processes booting at once (rolling deploy, or uvicorn --workers > 1)
+    both call run_migrations() in their lifespan. The advisory lock must make
+    the second WAIT and then find nothing to do — without it they race on the
+    same revision and one dies on a duplicate object."""
+    import threading
+
+    from sqlalchemy import create_engine
+
+    from app import main as app_main
+    from app.config import settings
+
+    url = "postgresql+psycopg://int102:int102@localhost:5433/" + scratch_db
+    # env.py reads the URL from settings; _upgrade_schema inspects app.main.engine
+    monkeypatch.setattr(settings, "database_url", url)
+    engine = create_engine(url)
+    monkeypatch.setattr(app_main, "engine", engine)
+
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(2)
+
+    def boot():
+        try:
+            barrier.wait(timeout=30)
+            app_main.run_migrations()
+        except BaseException as exc:  # noqa: BLE001 — reported, not swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=boot) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=180)
+    engine.dispose()
+
+    assert not errors, f"concurrent startup migrations failed: {errors!r}"
+    con = _connect(scratch_db)
+    try:
+        # exactly one head row, and the lock was released by both processes
+        assert con.execute("SELECT count(*) FROM alembic_version").fetchone()[0] == 1
+        # advisory locks are cluster-wide: filter on OUR key (< 2^32, so it
+        # lands in objid with classid 0) rather than counting every lock
+        held = con.execute(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = %s",
+            (app_main.MIGRATION_LOCK_KEY,),
+        ).fetchone()[0]
+        assert held == 0
+    finally:
+        con.close()
+
+
 def test_published_0005_has_no_prompt_version(scratch_db):
     """Guard against re-amending 0005: at revision 0005 the schema must be the
     PUBLISHED form (no llm_calls.prompt_version, CHECK without rate_limited)."""

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,12 +23,20 @@ from app.api import (
     reporting,
     retrieval,
 )
+from app.api.deps import SESSION_COOKIE
 from app.config import settings
 from app.db import Base, engine, get_db
 from app.services import qdrant
 
+logger = logging.getLogger(__name__)
 
-def run_migrations() -> None:
+
+# Arbitrary but FIXED key for the PostgreSQL advisory lock that serializes
+# startup migrations. Any process running this app must use this same value.
+MIGRATION_LOCK_KEY = 42001102
+
+
+def _upgrade_schema() -> None:
     cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     # A database created before Alembic was introduced (M1a create_all) has the
     # tables but no alembic_version: adopt it by stamping the initial revision.
@@ -39,8 +48,43 @@ def run_migrations() -> None:
     command.upgrade(cfg, "head")
 
 
+def run_migrations() -> None:
+    """Upgrade to head under a PostgreSQL session-level advisory lock.
+
+    Migrations run in the lifespan of every process that boots. Without the
+    lock, two processes starting together (a rolling deploy, or uvicorn with
+    more than one worker) can run the same revision concurrently — one of them
+    then fails on a duplicate object and takes the process down. The lock makes
+    the second process WAIT and then find nothing left to do.
+    """
+    with engine.connect() as conn:
+        conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
+        try:
+            _upgrade_schema()
+        finally:
+            # session-level lock: released explicitly, not by the pool checkin
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:key)"), {"key": MIGRATION_LOCK_KEY}
+            )
+            conn.commit()
+
+
+def check_deployment_settings() -> None:
+    """Loud, non-fatal warnings for configurations that are fine locally and
+    wrong in production. Never raises: a misconfigured deployment must still
+    start (and stay diagnosable) rather than crash-loop."""
+    if not settings.session_cookie_secure:
+        logger.warning(
+            "SESSION_COOKIE_SECURE is off: the %s cookie will be sent over "
+            "plain HTTP. Correct for local development — set "
+            "SESSION_COOKIE_SECURE=true behind TLS.",
+            SESSION_COOKIE,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    check_deployment_settings()
     if engine.url.get_backend_name() == "sqlite":
         Base.metadata.create_all(bind=engine)  # tests / throwaway local runs
     else:

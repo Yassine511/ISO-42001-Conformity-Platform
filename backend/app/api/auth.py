@@ -108,8 +108,13 @@ def signup(payload: SignupIn, response: Response, db: Session = Depends(get_db))
 @router.post("/login", response_model=SessionOut)
 def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
     user = auth_service.get_user_by_email(db, payload.email)
-    # generic message for unknown email AND wrong password — no enumeration
-    if user is None or not auth_service.verify_password(payload.password, user.password_hash):
+    # Generic message for unknown email AND wrong password — and the same COST:
+    # skipping bcrypt on the unknown-address branch would answer ~100× faster
+    # and turn the identical 401 into a timing enumeration oracle.
+    if user is None:
+        auth_service.waste_password_comparison()
+        raise HTTPException(401, "Identifiants invalides.")
+    if not auth_service.verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Identifiants invalides.")
     raw_token = auth_service.create_session(db, user)
     db.commit()
