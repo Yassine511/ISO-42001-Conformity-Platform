@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -34,22 +34,34 @@ function readStoredTheme(): Theme {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readStoredTheme);
-  const resolvedTheme = theme === "system" ? systemTheme() : theme;
+  // The OS preference is STATE, not a value read during render. It used to be
+  // recomputed by calling systemTheme() inline while the matchMedia listener
+  // toggled the `dark` class imperatively — so an OS theme change repainted
+  // the page but never re-rendered, and `resolvedTheme` handed consumers the
+  // value from before the change. ThemeToggle reads it: the icon stayed on
+  // the old theme and its first click computed `next` from the stale value,
+  // i.e. set the theme the page was already showing and appeared to do
+  // nothing.
+  const [systemIsDark, setSystemIsDark] = useState(() => systemTheme() === "dark");
+  const resolvedTheme: "light" | "dark" =
+    theme === "system" ? (systemIsDark ? "dark" : "light") : theme;
 
+  // Single writer of the `dark` class, driven by state alone.
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", resolvedTheme === "dark");
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
   }, [resolvedTheme]);
 
+  // Tracks the OS unconditionally — not only while theme === "system". The
+  // old effect unsubscribed on any explicit choice, so system -> dark ->
+  // system came back with whatever `systemIsDark` held before.
   useEffect(() => {
-    if (theme !== "system" || typeof window.matchMedia !== "function") return;
+    if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      document.documentElement.classList.toggle("dark", media.matches);
-    };
+    const apply = () => setSystemIsDark(media.matches);
+    apply(); // resync: the preference may have changed before we subscribed
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [theme]);
+  }, []);
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
@@ -60,11 +72,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+  // Memoized: without it every consumer of useTheme() re-rendered whenever the
+  // provider did, for an identical value.
+  const value = useMemo(
+    () => ({ theme, resolvedTheme, setTheme }),
+    [theme, resolvedTheme, setTheme],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
