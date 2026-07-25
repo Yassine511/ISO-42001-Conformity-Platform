@@ -209,7 +209,7 @@ backend/
                      checksums, scoring + versioned severity policy, SoA, PDF export
   app/eval/          M6 evaluation harness (scoring, gates, tamper-evident sheets)
   app/api/           REST routers + auth dependencies
-  alembic/           19 migrations (run automatically at startup)
+  alembic/           20 migrations (run automatically at startup, under an advisory lock)
   tests/             480+ tests (offline by default: SQLite + fake embedder)
 frontend/src/        React 19 pages, components, Vitest behaviour tests
 corpus/              versioned KB + Lumen AI documents + gold labels (see corpus/README.md)
