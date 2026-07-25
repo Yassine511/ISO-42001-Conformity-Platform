@@ -43,4 +43,11 @@ EXPOSE 8000
 # container is reported unhealthy instead of merely "running".
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health').read()"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --workers 1 is EXPLICIT and REQUIRED, not a default worth inheriting: several
+# mechanisms are process-local by design — the assessment runner's thread/
+# progress registries (pipeline/runner.py), the `resumable` flag derived from
+# them, and the /api/kb/index single-flight lock. A second worker would show
+# wrong progress and offer resume on runs another worker is executing. Scaling
+# out means moving the runner to a shared queue first. (Startup migrations are
+# already safe under a PG advisory lock — see app/main.py.)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

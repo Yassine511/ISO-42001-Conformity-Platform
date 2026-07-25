@@ -178,9 +178,25 @@ Compose, `backend/.env` serves host-side CLI runs):
 | `QDRANT_URL` | `http://localhost:6333` | Vector store |
 | `MISTRAL_API_KEY` | — | Primary LLM provider |
 | `GROQ_API_KEY` | — | Fallback LLM provider |
+| `SESSION_COOKIE_SECURE` | `false` | Set to `true` behind TLS (a warning is logged at startup while it is off) |
+| `LLM_CALL_BUDGET_SECONDS` | `240` | Wall-clock ceiling for one provider call incl. its 429 retries; `0` disables |
 
 Note: the PDF export needs WeasyPrint's native Pango/Cairo libraries — available in the Docker image
 (CI-validated); on a bare Windows host venv the endpoint returns a clean 503.
+
+### Deployment constraint: one worker per backend process
+
+The backend **must run single-worker** (`uvicorn --workers 1`, set explicitly in
+`backend/Dockerfile`). This is a design property, not an oversight: the assessment runner keeps its
+thread and progress registries in process memory (`app/pipeline/runner.py`), the `resumable` flag
+the UI uses to offer «Reprendre» is derived from them, and the `/api/kb/index` single-flight guard is
+a process-local lock. A second worker would report wrong progress and offer resume on runs another
+worker is actively executing. Correctness itself never depends on this — the DB partial unique index
+(one RUNNING assessment per organization) and the org row locks are the real mechanisms — but the UI
+would lie. Horizontal scaling means moving the runner onto a shared queue first.
+
+Startup migrations are safe under concurrency regardless: `run_migrations()` holds a PostgreSQL
+advisory lock, so a rolling deploy makes the second process wait rather than race on a revision.
 
 ## Repository map
 
@@ -242,10 +258,25 @@ the removed user's next request, because membership is checked per request.
 
 Pre-M10 organizations have no members — attach an operator with
 `python scripts/create_user.py --email you@x.fr --name "Vous" --org "Lumen AI"`.
-Pre-production TODOs (documented, deliberately out of scope): rate limiting on the two
-password-checking endpoints (`/api/auth/login` and the existing-account branch of
-`/api/auth/invitations/{token}/accept`), password reset (needs e-mail infra), CSRF double-submit
-hardening.
+Login answers in constant-ish time: an unknown address still runs one full bcrypt verification
+against a fixed dummy hash, so the identical 401 is not a timing oracle. Expired session rows are
+pruned opportunistically (on presentation, and for the user at each new login) rather than by a cron
+job — expiry is absolute, so an expired row can never authenticate again either way.
+
+Pre-production TODOs (documented, deliberately out of scope):
+
+- **Rate limiting** on the two password-checking endpoints (`/api/auth/login` and the
+  existing-account branch of `/api/auth/invitations/{token}/accept`). This is also the only real
+  mitigation for the remaining **account-existence disclosure**: with no e-mail server, signup must
+  either create the account or refuse, so its 409 necessarily reveals that an address is taken. The
+  message is deliberately *not* degraded — a vague error would cost every legitimate user clarity to
+  buy an attacker nothing they cannot get by trying to log in.
+- **Password reset** (needs e-mail infrastructure).
+- **CSRF double-submit** hardening (today's defence is `SameSite=Lax` on a same-origin deployment).
+- **Authorization roles.** `POST /api/kb/index` rebuilds shared knowledge-base vectors and any
+  authenticated user can call it; it is now single-flight (a concurrent call gets 409) so it cannot
+  be spammed into interleaved reconciliations, but "operator only" needs the role column
+  `organization_members` deliberately does not have yet.
 
 ## Testing & CI
 
@@ -253,7 +284,7 @@ hardening.
   Qdrant); CI adds a live Postgres service so the migration-chain and checkpointer tests run for real.
   Includes adversarial suites: planted fake quotes, injected instructions in documents, fabricated
   anchors, stale-state races.
-- **Frontend** — 78 Vitest + Testing Library behaviour tests, plus `tsc` and a production build in CI.
+- **Frontend** — 89 Vitest + Testing Library behaviour tests, plus `tsc` and a production build in CI.
 - **Docker PDF job** — builds the backend image and renders a real PDF inside it (the authoritative
   native-library check).
 - **Out of CI, by design** — retrieval quality gates (`scripts/retrieval_sanity.py`) need the live
