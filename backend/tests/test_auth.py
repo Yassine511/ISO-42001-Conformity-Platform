@@ -557,3 +557,55 @@ def test_member_routes_are_org_scoped(client):
     assert client.get(f"/api/organizations/{org_a}/members").status_code == 404
     assert client.get(f"/api/organizations/{org_a}/invitations").status_code == 404
     assert client.delete(f"/api/organizations/{org_a}/members/{alice}").status_code == 404
+
+
+def test_non_ascii_token_candidates_never_500(client):
+    """Audit pass 5 (F1): the session cookie and the invitation path token are
+    attacker-controlled strings, not guaranteed ASCII (Starlette decodes
+    headers as latin-1 and percent-decodes paths as UTF-8). `_hash_token` used
+    `.encode("ascii")`, so any byte >= 0x7F raised an unhandled
+    UnicodeEncodeError: every authenticated route AND both unauthenticated
+    invitation routes answered 500 instead of 401/404."""
+    org = _signup(client).json()["organizations"][0]["id"]
+    client.cookies.clear()
+
+    # raw latin-1 byte in the cookie -> unauthenticated, never a crash
+    bad_cookie = {b"Cookie": b"int102_session=caf\xe9"}
+    for method, path in (
+        ("GET", "/api/auth/me"),
+        ("GET", "/api/organizations"),
+        ("GET", "/api/kb/requirements"),
+        ("GET", f"/api/organizations/{org}/documents"),
+    ):
+        assert client.request(method, path, headers=bad_cookie).status_code == 401, path
+    # logout is idempotent and must not crash on an unusable cookie either
+    assert client.post("/api/auth/logout", headers=bad_cookie).status_code == 204
+
+    # non-ASCII invitation token (percent-encoded UTF-8) -> plain 404
+    assert client.get("/api/auth/invitations/caf%C3%A9").status_code == 404
+    assert (
+        client.post(
+            "/api/auth/invitations/caf%C3%A9/accept",
+            json={"password": "un mot de passe", "display_name": "X"},
+        ).status_code
+        == 404
+    )
+
+
+def test_ascii_token_hashes_are_unchanged_by_the_utf8_fix(client):
+    """The F1 fix switched _hash_token to UTF-8. Every token we mint is
+    `secrets.token_urlsafe` (ASCII), for which UTF-8 and ASCII encode
+    identically — so no already-stored session or invitation hash moved."""
+    import hashlib
+
+    from app.services import auth as auth_service
+
+    for sample in ("abc123", "aGVsbG8td29ybGQ", "-_" * 20):
+        assert (
+            auth_service._hash_token(sample)
+            == hashlib.sha256(sample.encode("ascii")).hexdigest()
+        )
+
+    # and a live session still resolves after the change
+    body = _signup(client, email="carol@lumen.fr", org="Carol SA", name="Carol").json()
+    assert client.get("/api/auth/me").json()["user"]["id"] == body["user"]["id"]

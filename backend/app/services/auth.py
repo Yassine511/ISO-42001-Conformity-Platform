@@ -61,7 +61,21 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def _hash_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode("ascii")).hexdigest()
+    """sha256 of a token candidate, for ANY string a client can send.
+
+    The value is attacker-controlled: it arrives in the `int102_session`
+    cookie (Starlette decodes headers as latin-1) or in an invitation URL
+    path (percent-decoded as UTF-8), so it can contain any character.
+    `.encode("ascii")` raised UnicodeEncodeError on the first byte >= 0x7F,
+    which was unhandled and turned every authenticated route — and both
+    unauthenticated invitation routes — into a 500 for that caller.
+
+    UTF-8 never raises, and every token we mint is `secrets.token_urlsafe`
+    (ASCII only), for which UTF-8 and ASCII produce identical bytes: no
+    stored hash changes. A non-ASCII candidate simply hashes to something no
+    row holds and falls through the normal not-found path (401 / 404).
+    """
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def _now() -> datetime:
