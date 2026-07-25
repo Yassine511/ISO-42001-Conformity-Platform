@@ -28,6 +28,7 @@ from app.schemas import (
 )
 from app.services import auth as auth_service
 from app.services import run_guard
+from app.services.rate_limit import client_ip, login_limiter, signup_limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -73,7 +74,17 @@ def _session_body(db: Session, user: User) -> SessionOut:
 
 
 @router.post("/signup", response_model=SessionOut, status_code=201)
-def signup(payload: SignupIn, response: Response, db: Session = Depends(get_db)):
+def signup(
+    payload: SignupIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    # The 409 below necessarily discloses that an address is taken (with no
+    # e-mail server, signup either creates the account or refuses). Throttling
+    # bounds how often that question can be asked; it does not remove the
+    # disclosure — see services/rate_limit and the README.
+    _throttle(signup_limiter, request, payload.email)
     _validate_password(payload.password)
     email = auth_service.normalize_email(payload.email)
     if "@" not in email:
@@ -105,8 +116,28 @@ def signup(payload: SignupIn, response: Response, db: Session = Depends(get_db))
     return _session_body(db, user)
 
 
+def _throttle(limiter, request: Request, identifier: str) -> None:
+    """Refuse the call with 429 when the (identifier, IP) window is exhausted.
+    Keyed on both halves — see services/rate_limit.client_ip for why the IP
+    alone is not trustworthy and the identifier alone is not fair."""
+    retry_after = limiter.hit(auth_service.normalize_email(identifier), client_ip(request))
+    if retry_after > 0:
+        raise HTTPException(
+            429,
+            "Trop de tentatives. Réessayez dans "
+            f"{int(retry_after // 60) + 1} minute(s).",
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
+
 @router.post("/login", response_model=SessionOut)
-def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
+def login(
+    payload: LoginIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    _throttle(login_limiter, request, payload.email)
     user = auth_service.get_user_by_email(db, payload.email)
     # Generic message for unknown email AND wrong password — and the same COST:
     # skipping bcrypt on the unknown-address branch would answer ~100× faster
@@ -116,6 +147,9 @@ def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
         raise HTTPException(401, "Identifiants invalides.")
     if not auth_service.verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Identifiants invalides.")
+    # authenticated: forget the window so a person who eventually remembers
+    # their password is not still throttled by their own failed attempts
+    login_limiter.reset(auth_service.normalize_email(payload.email), client_ip(request))
     raw_token = auth_service.create_session(db, user)
     db.commit()
     _set_session_cookie(response, raw_token)
@@ -156,6 +190,7 @@ def invitation_info(token: str, db: Session = Depends(get_db)):
 def accept_invitation(
     token: str,
     payload: InvitationAcceptIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -180,12 +215,18 @@ def accept_invitation(
     existing = auth_service.get_user_by_email(db, invitation.email)
     if existing is not None:
         # ---- existing account: authenticate FIRST, write nothing on failure
+        # This branch checks a password, so it is throttled exactly like login:
+        # the invitation is single-use but survives a wrong password, which
+        # would otherwise make it an unlimited guessing surface for the one
+        # address it names.
+        _throttle(login_limiter, request, invitation.email)
         if not auth_service.verify_password(payload.password, existing.password_hash):
             raise HTTPException(
                 401,
                 "Mot de passe invalide pour ce compte. L'invitation reste "
                 "valide : réessayez.",
             )
+        login_limiter.reset(invitation.email, client_ip(request))
         user = existing
         if not auth_service.is_member(db, user.id, invitation.organization_id):
             auth_service.add_membership(db, user.id, invitation.organization_id)

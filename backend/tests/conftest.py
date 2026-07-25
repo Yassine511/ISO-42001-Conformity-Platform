@@ -95,6 +95,20 @@ class FakeEmbedder:
 
 
 @pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """The auth limiters are module-level process state. Without this, a test
+    that exhausts a window makes an unrelated later test 429 — and the order
+    dependence would only show up in CI."""
+    from app.services import rate_limit
+
+    rate_limit.login_limiter.clear()
+    rate_limit.signup_limiter.clear()
+    yield
+    rate_limit.login_limiter.clear()
+    rate_limit.signup_limiter.clear()
+
+
+@pytest.fixture(autouse=True)
 def fake_vector_stack():
     embeddings.set_provider(FakeEmbedder())
     qdrant.set_client(QdrantClient(":memory:"))

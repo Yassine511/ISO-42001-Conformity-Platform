@@ -191,6 +191,87 @@ def test_unknown_email_login_still_pays_the_bcrypt_cost(client, monkeypatch):
     assert r.status_code == 401 and calls == [1]
 
 
+def test_login_is_throttled_and_a_success_clears_the_window(client):
+    """Bounds online guessing and the enumeration oracle. The window must also
+    be forgiving: a correct password forgets the failures before it."""
+    from app.services.rate_limit import LOGIN_MAX_ATTEMPTS
+
+    _signup(client)
+    client.cookies.clear()
+    bad = {"email": "alice@lumen.fr", "password": "wrong password"}
+    for _ in range(LOGIN_MAX_ATTEMPTS):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+    r = client.post("/api/auth/login", json=bad)
+    assert r.status_code == 429 and "Retry-After" in r.headers
+    # the CORRECT password is refused too while the window is open — otherwise
+    # the throttle would be trivially bypassed by the attacker who guesses right
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "alice@lumen.fr", "password": "correct horse battery"},
+    ).status_code == 429
+
+
+def test_login_success_resets_the_window(client):
+    from app.services.rate_limit import LOGIN_MAX_ATTEMPTS
+
+    _signup(client)
+    client.cookies.clear()
+    bad = {"email": "alice@lumen.fr", "password": "wrong password"}
+    for _ in range(LOGIN_MAX_ATTEMPTS - 1):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "alice@lumen.fr", "password": "correct horse battery"},
+    ).status_code == 200
+    # window forgotten: the next wrong password is a plain 401, not a 429
+    assert client.post("/api/auth/login", json=bad).status_code == 401
+
+
+def test_signup_enumeration_probing_is_throttled(client):
+    """The 409 «address already taken» is structural (no e-mail server), so the
+    mitigation is bounding how often it can be asked, not hiding it."""
+    from app.services.rate_limit import SIGNUP_MAX_ATTEMPTS
+
+    _signup(client)
+    client.cookies.clear()
+    probe = {
+        "email": "alice@lumen.fr",
+        "password": "correct horse battery",
+        "display_name": "X",
+        "organization_name": "X SA",
+    }
+    # the successful _signup above already spent one attempt on this address
+    seen = [
+        client.post("/api/auth/signup", json=probe).status_code
+        for _ in range(SIGNUP_MAX_ATTEMPTS - 1)
+    ]
+    assert set(seen) == {409}  # still discloses, deliberately
+    assert client.post("/api/auth/signup", json=probe).status_code == 429
+
+
+def test_invite_accept_password_branch_is_throttled(client):
+    """The invitation survives a wrong password (by design), so that branch is
+    an unlimited guessing surface for the address it names unless throttled."""
+    from app.services.rate_limit import LOGIN_MAX_ATTEMPTS
+
+    org_id = _signup(client).json()["organizations"][0]["id"]
+    token = client.post(
+        f"/api/organizations/{org_id}/invitations", json={"email": "bob@lumen.fr"}
+    ).json()["invite_token"]
+    # bob already has an account elsewhere -> accept authenticates it
+    client.cookies.clear()
+    _signup(client, email="bob@lumen.fr", org="Bob SA", name="Bob")
+    client.cookies.clear()
+
+    bad = {"password": "not bobs password"}
+    for _ in range(LOGIN_MAX_ATTEMPTS):
+        assert client.post(f"/api/auth/invitations/{token}/accept", json=bad).status_code == 401
+    assert client.post(f"/api/auth/invitations/{token}/accept", json=bad).status_code == 429
+    # refused without consuming the single-use invitation
+    with client.session_factory() as db:
+        assert db.scalars(select(Invitation)).one().accepted_at is None
+
+
 def test_anonymous_requests_are_401(client):
     assert client.get("/api/organizations").status_code == 401
     assert client.post("/api/organizations", json={"name": "X SA"}).status_code == 401

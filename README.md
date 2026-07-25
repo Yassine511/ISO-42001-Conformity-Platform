@@ -263,14 +263,20 @@ against a fixed dummy hash, so the identical 401 is not a timing oracle. Expired
 pruned opportunistically (on presentation, and for the user at each new login) rather than by a cron
 job — expiry is absolute, so an expired row can never authenticate again either way.
 
+**Rate limiting** is in place on every endpoint that checks a password or discloses account
+existence: `/api/auth/login`, the existing-account branch of `/api/auth/invitations/{token}/accept`,
+and `/api/auth/signup`. Fixed windows keyed on `(e-mail, client IP)` — hashed, so the limiter is not
+itself a list of typed addresses — in process memory, consistent with the single-worker deployment.
+A successful login forgets its window, and the limiter fails open on its own errors: it protects an
+endpoint, it must never be the reason nobody can log in.
+
+This bounds, but does not remove, the **account-existence disclosure**: with no e-mail server signup
+must either create the account or refuse, so its 409 necessarily reveals that an address is taken.
+The message is deliberately *not* degraded — a vague error would cost every legitimate user clarity
+to buy an attacker nothing they cannot already get from the login form.
+
 Pre-production TODOs (documented, deliberately out of scope):
 
-- **Rate limiting** on the two password-checking endpoints (`/api/auth/login` and the
-  existing-account branch of `/api/auth/invitations/{token}/accept`). This is also the only real
-  mitigation for the remaining **account-existence disclosure**: with no e-mail server, signup must
-  either create the account or refuse, so its 409 necessarily reveals that an address is taken. The
-  message is deliberately *not* degraded — a vague error would cost every legitimate user clarity to
-  buy an attacker nothing they cannot get by trying to log in.
 - **Password reset** (needs e-mail infrastructure).
 - **CSRF double-submit** hardening (today's defence is `SameSite=Lax` on a same-origin deployment).
 - **Authorization roles.** `POST /api/kb/index` rebuilds shared knowledge-base vectors and any
