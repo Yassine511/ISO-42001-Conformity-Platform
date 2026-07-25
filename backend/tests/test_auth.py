@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_current_user
 from app.db import Base, get_db
 from app.main import app
-from app.models import AuthSession, Invitation, OrganizationMember
+from app.models import AuthSession, Invitation, OrganizationMember, User
 from tests.conftest import seed_parsed_document
 
 
@@ -205,6 +205,7 @@ def test_invitation_flow(client):
         "organization_name": "Lumen SA",
         "email": "bob@lumen.fr",
         "expired": False,
+        "account_exists": False,
     }
 
     r = client.post(
@@ -229,20 +230,30 @@ def test_invitation_flow(client):
         )
 
 
-def test_invitation_expiry_and_existing_email(client):
+def test_invitation_expiry_and_duplicate_guards(client):
     org_a = _signup(client).json()["organizations"][0]["id"]
-    # inviting an already-registered email is rejected upfront
+    # inviting an existing MEMBER is pointless — rejected upfront
     r = client.post(
         f"/api/organizations/{org_a}/invitations", json={"email": "alice@lumen.fr"}
     )
     assert r.status_code == 409
+    assert "déjà membre" in r.json()["detail"]
+
+    # a second live invitation for one address would survive revoking the first
+    client.post(f"/api/organizations/{org_a}/invitations", json={"email": "dup@lumen.fr"})
+    r = client.post(
+        f"/api/organizations/{org_a}/invitations", json={"email": "dup@lumen.fr"}
+    )
+    assert r.status_code == 409 and "déjà en cours" in r.json()["detail"]
 
     r = client.post(
         f"/api/organizations/{org_a}/invitations", json={"email": "late@lumen.fr"}
     )
     token = r.json()["invite_token"]
     with client.session_factory() as db:
-        inv = db.scalars(select(Invitation)).one()
+        inv = db.scalars(
+            select(Invitation).where(Invitation.email == "late@lumen.fr")
+        ).one()
         inv.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
 
@@ -263,3 +274,155 @@ def test_non_member_cannot_create_invitations(client):
         f"/api/organizations/{org_a}/invitations", json={"email": "x@y.fr"}
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------- existing user joins a 2nd org
+
+
+def _invite(tc, org_id, email):
+    r = tc.post(f"/api/organizations/{org_id}/invitations", json={"email": email})
+    assert r.status_code == 201, r.text
+    return r.json()["invite_token"]
+
+
+def test_existing_user_joins_a_second_organization(client):
+    """The gap this closes: before, an address with an account could not be
+    invited at all, so multi-org membership was unreachable over HTTP."""
+    org_a = _signup(client).json()["organizations"][0]["id"]
+
+    # Bob already has his own account and org
+    client.cookies.clear()
+    org_b = _signup(client, email="bob@lumen.fr", org="Bob SA", name="Bob").json()[
+        "organizations"
+    ][0]["id"]
+
+    # Alice invites Bob's existing address — now allowed
+    client.cookies.clear()
+    client.post(
+        "/api/auth/login",
+        json={"email": "alice@lumen.fr", "password": "correct horse battery"},
+    )
+    token = _invite(client, org_a, "bob@lumen.fr")
+
+    # the accept page is told an account exists, so it renders "sign in to join"
+    client.cookies.clear()
+    info = client.get(f"/api/auth/invitations/{token}").json()
+    assert info["account_exists"] is True
+
+    # wrong password: 401 AND the invitation is NOT consumed
+    r = client.post(
+        f"/api/auth/invitations/{token}/accept", json={"password": "pas le bon"}
+    )
+    assert r.status_code == 401
+    assert client.get(f"/api/auth/invitations/{token}").status_code == 200
+    with client.session_factory() as db:
+        assert db.scalars(select(Invitation)).one().accepted_at is None
+
+    # correct password authenticates the EXISTING account and adds membership
+    r = client.post(
+        f"/api/auth/invitations/{token}/accept",
+        json={"password": "correct horse battery"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["user"]["display_name"] == "Bob"  # kept, not overwritten
+    assert sorted(o["id"] for o in body["organizations"]) == sorted([org_a, org_b])
+
+    # Bob now really reaches Alice's org, and no second account was created
+    assert client.get(f"/api/organizations/{org_a}/documents").status_code == 200
+    with client.session_factory() as db:
+        assert db.query(User).filter_by(email="bob@lumen.fr").count() == 1
+
+
+def test_new_account_path_still_requires_a_display_name(client):
+    org_a = _signup(client).json()["organizations"][0]["id"]
+    token = _invite(client, org_a, "carol@lumen.fr")
+    client.cookies.clear()
+    assert client.get(f"/api/auth/invitations/{token}").json()["account_exists"] is False
+    r = client.post(
+        f"/api/auth/invitations/{token}/accept", json={"password": "mot de passe long"}
+    )
+    assert r.status_code == 422
+
+
+# --------------------------------------------------------- member management
+
+
+def test_members_listing_and_removal(client):
+    org_a = _signup(client).json()["organizations"][0]["id"]
+    token = _invite(client, org_a, "bob@lumen.fr")
+    client.cookies.clear()
+    bob = client.post(
+        f"/api/auth/invitations/{token}/accept",
+        json={"password": "bob mot de passe", "display_name": "Bob"},
+    ).json()["user"]["id"]
+
+    members = client.get(f"/api/organizations/{org_a}/members").json()
+    assert [m["email"] for m in members] == ["alice@lumen.fr", "bob@lumen.fr"]
+    assert [m["is_self"] for m in members] == [False, True]  # Bob is the caller
+
+    # Bob leaves (any member may remove any member — no roles by design)
+    assert client.delete(f"/api/organizations/{org_a}/members/{bob}").status_code == 204
+    # access ends on the very next request; no session revocation needed
+    assert client.get(f"/api/organizations/{org_a}/documents").status_code == 404
+    assert client.delete(f"/api/organizations/{org_a}/members/{bob}").status_code == 404
+
+
+def test_last_member_cannot_be_removed(client):
+    body = _signup(client).json()
+    org_a, alice = body["organizations"][0]["id"], body["user"]["id"]
+    r = client.delete(f"/api/organizations/{org_a}/members/{alice}")
+    assert r.status_code == 409
+    assert "dernier membre" in r.json()["detail"]
+    assert client.get(f"/api/organizations/{org_a}/documents").status_code == 200
+
+
+def test_pending_invitations_are_listable_and_revocable(client):
+    org_a = _signup(client).json()["organizations"][0]["id"]
+    token = _invite(client, org_a, "bob@lumen.fr")
+
+    pending = client.get(f"/api/organizations/{org_a}/invitations").json()
+    assert [p["email"] for p in pending] == ["bob@lumen.fr"]
+    assert "invite_token" not in pending[0]  # the raw token is unrecoverable
+    invitation_id = pending[0]["id"]
+
+    assert (
+        client.delete(f"/api/organizations/{org_a}/invitations/{invitation_id}").status_code
+        == 204
+    )
+    # the link is dead immediately, and revoking frees the address to be re-invited
+    client.cookies.clear()
+    assert client.get(f"/api/auth/invitations/{token}").status_code == 404
+    client.post(
+        "/api/auth/login",
+        json={"email": "alice@lumen.fr", "password": "correct horse battery"},
+    )
+    assert client.get(f"/api/organizations/{org_a}/invitations").json() == []
+    _invite(client, org_a, "bob@lumen.fr")
+
+
+def test_accepted_invitations_are_not_deletable(client):
+    org_a = _signup(client).json()["organizations"][0]["id"]
+    token = _invite(client, org_a, "bob@lumen.fr")
+    invitation_id = client.get(f"/api/organizations/{org_a}/invitations").json()[0]["id"]
+    client.cookies.clear()
+    client.post(
+        f"/api/auth/invitations/{token}/accept",
+        json={"password": "bob mot de passe", "display_name": "Bob"},
+    )
+    # the record of how Bob got access is not erasable, and it left the list
+    assert (
+        client.delete(f"/api/organizations/{org_a}/invitations/{invitation_id}").status_code
+        == 404
+    )
+    assert client.get(f"/api/organizations/{org_a}/invitations").json() == []
+
+
+def test_member_routes_are_org_scoped(client):
+    body = _signup(client).json()
+    org_a, alice = body["organizations"][0]["id"], body["user"]["id"]
+    client.cookies.clear()
+    _signup(client, email="eve@autre.fr", org="Autre SA", name="Eve")
+    assert client.get(f"/api/organizations/{org_a}/members").status_code == 404
+    assert client.get(f"/api/organizations/{org_a}/invitations").status_code == 404
+    assert client.delete(f"/api/organizations/{org_a}/members/{alice}").status_code == 404

@@ -30,7 +30,7 @@ interface AuthContextValue {
   }) => Promise<SessionInfo>;
   acceptInvitation: (
     token: string,
-    body: { password: string; display_name: string },
+    body: { password: string; display_name?: string },
   ) => Promise<SessionInfo>;
   logout: () => Promise<void>;
 }
@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const acceptInvitation = useCallback(
-    async (token: string, body: { password: string; display_name: string }) => {
+    async (token: string, body: { password: string; display_name?: string }) => {
       const s = await api.acceptInvitation(token, body);
       setSession(s);
       return s;

@@ -226,10 +226,26 @@ Sessions are opaque tokens in an httpOnly `SameSite=Lax` cookie; the DB stores o
 (404, never 403 — org existence is not leaked). Public: landing page, signup, login, invitation
 lookup/accept, `/api/health`.
 
+**Invitations work for existing accounts too.** The accept page branches on whether the invited
+address already has one: if not, the link creates the account; if it does, the password *signs that
+account in* and only adds the membership — which is how a user belongs to more than one
+organization (signing up and creating an organization both mint a new one). Authentication happens
+before any write, so a wrong password leaves the single-use link unconsumed.
+
+**Members are manageable.** Any member can list members and pending invitations, remove a member
+(including themselves — that's "leave"), and revoke an outstanding invite link. Every member has
+equal rights by design: `organization_members` has no role column yet. Two rules the API enforces:
+the **last** member can never be removed (there is no org-delete endpoint, so a zero-member
+organization would be permanently unreachable data), and an **accepted** invitation is never
+deleted — it is the record of how someone got access. Removal revokes no session; access ends at
+the removed user's next request, because membership is checked per request.
+
 Pre-M10 organizations have no members — attach an operator with
 `python scripts/create_user.py --email you@x.fr --name "Vous" --org "Lumen AI"`.
-Pre-production TODOs (documented, deliberately out of scope): login rate limiting, password reset
-(needs e-mail infra), CSRF double-submit hardening.
+Pre-production TODOs (documented, deliberately out of scope): rate limiting on the two
+password-checking endpoints (`/api/auth/login` and the existing-account branch of
+`/api/auth/invitations/{token}/accept`), password reset (needs e-mail infra), CSRF double-submit
+hardening.
 
 ## Testing & CI
 

@@ -66,13 +66,43 @@ class InvitationPublicOut(BaseModel):
     organization_name: str
     email: str
     expired: bool
+    # Whether the invited address already has an account, so the accept page
+    # renders "sign in to join" instead of "create your account". Deliberate:
+    # this is an unauthenticated field, but it is scoped to a holder of the
+    # secret token and about an address that holder already knows.
+    account_exists: bool
 
 
 class InvitationAcceptIn(BaseModel):
+    # On the create-account path this is the new password; when the invited
+    # address already has an account it authenticates THAT account.
     password: str
+    # required only when creating an account (api/auth.py enforces it) — an
+    # existing user keeps the display name they already have
     display_name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
-    ]
+        str | None, StringConstraints(strip_whitespace=True, max_length=200)
+    ] = None
+
+
+class OrganizationMemberOut(BaseModel):
+    user_id: str
+    email: str
+    display_name: str
+    joined_at: datetime
+    is_self: bool
+
+
+class InvitationOut(BaseModel):
+    """Pending-invitation metadata. Carries NO token: only the sha256 was ever
+    stored, so a link is displayable exactly once at creation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    created_at: datetime
+    expires_at: datetime
+    expired: bool
 
 
 class DocumentOut(BaseModel):

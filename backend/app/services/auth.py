@@ -18,7 +18,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -107,6 +107,44 @@ def is_member(db: Session, user_id: str, organization_id: str) -> bool:
     )
 
 
+def organization_members(db: Session, organization_id: str) -> list[tuple[User, datetime]]:
+    """(user, joined_at) for every member, oldest first."""
+    return [
+        (user, joined_at)
+        for user, joined_at in db.execute(
+            select(User, OrganizationMember.created_at)
+            .join(OrganizationMember, OrganizationMember.user_id == User.id)
+            .where(OrganizationMember.organization_id == organization_id)
+            .order_by(OrganizationMember.created_at)
+        )
+    ]
+
+
+def member_count(db: Session, organization_id: str) -> int:
+    return db.scalar(
+        select(func.count())
+        .select_from(OrganizationMember)
+        .where(OrganizationMember.organization_id == organization_id)
+    )
+
+
+def get_membership(
+    db: Session, user_id: str, organization_id: str
+) -> OrganizationMember | None:
+    return db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.organization_id == organization_id,
+        )
+    )
+
+
+def add_membership(db: Session, user_id: str, organization_id: str) -> OrganizationMember:
+    membership = OrganizationMember(organization_id=organization_id, user_id=user_id)
+    db.add(membership)
+    return membership
+
+
 def user_organizations(db: Session, user_id: str) -> list[Organization]:
     return list(
         db.scalars(
@@ -143,3 +181,35 @@ def get_invitation_by_token(db: Session, raw_token: str) -> Invitation | None:
 
 def invitation_expired(invitation: Invitation) -> bool:
     return _as_utc(invitation.expires_at) <= _now()
+
+
+def live_invitation(db: Session, organization_id: str, email: str) -> Invitation | None:
+    """An outstanding invitation for this (org, email): unaccepted and not yet
+    expired. Used to refuse a duplicate invite — two live tokens for one seat
+    means revoking one leaves the other usable."""
+    for invitation in db.scalars(
+        select(Invitation).where(
+            Invitation.organization_id == organization_id,
+            Invitation.email == normalize_email(email),
+            Invitation.accepted_at.is_(None),
+        )
+    ):
+        if not invitation_expired(invitation):
+            return invitation
+    return None
+
+
+def pending_invitations(db: Session, organization_id: str) -> list[Invitation]:
+    """Unaccepted invitations, newest first. Raw tokens are NOT recoverable —
+    only their hash was ever stored — so this lists metadata for revocation,
+    never a re-displayable link."""
+    return list(
+        db.scalars(
+            select(Invitation)
+            .where(
+                Invitation.organization_id == organization_id,
+                Invitation.accepted_at.is_(None),
+            )
+            .order_by(Invitation.created_at.desc())
+        )
+    )

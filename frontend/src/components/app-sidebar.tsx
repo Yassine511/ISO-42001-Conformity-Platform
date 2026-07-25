@@ -17,10 +17,10 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { InviteDialog } from "@/components/invite-dialog";
+import { MembersDialog } from "@/components/members-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -136,7 +136,8 @@ export function AppSidebar() {
   const [searchParams] = useSearchParams();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const [membersOpen, setMembersOpen] = useState(false);
   const orgs = useQuery({ queryKey: ["organizations"], queryFn: api.listOrganizations });
   // Revue humaine resolves to the latest assessment that has findings to
   // review; the list is already needed elsewhere so this stays cheap.
@@ -281,9 +282,9 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="w-60">
-                <DropdownMenuItem onSelect={() => setInviteOpen(true)}>
+                <DropdownMenuItem onSelect={() => setMembersOpen(true)}>
                   <UserPlus className="size-4" aria-hidden="true" />
-                  Inviter un membre
+                  Membres et invitations
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -301,7 +302,19 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
 
-      <InviteDialog orgId={orgId} open={inviteOpen} onOpenChange={setInviteOpen} />
+      <MembersDialog
+        orgId={orgId}
+        open={membersOpen}
+        onOpenChange={setMembersOpen}
+        onSelfRemoved={async () => {
+          // this org now 404s for us — land on an org we still belong to
+          const remaining = await api.listOrganizations();
+          queryClient.setQueryData(["organizations"], remaining);
+          navigate(remaining.length > 0 ? `/organizations/${remaining[0].id}` : "/", {
+            replace: true,
+          });
+        }}
+      />
     </Sidebar>
   );
 }

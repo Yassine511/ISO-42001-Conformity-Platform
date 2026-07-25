@@ -27,6 +27,27 @@ export interface InvitationPublic {
   organization_name: string;
   email: string;
   expired: boolean;
+  /** true when the invited address already has an account: joining is then a
+      sign-in, not a sign-up (the accept page switches form accordingly). */
+  account_exists: boolean;
+}
+
+export interface OrganizationMember {
+  user_id: string;
+  email: string;
+  display_name: string;
+  joined_at: string;
+  is_self: boolean;
+}
+
+/** Pending invitation. Carries no token — the raw link is displayable exactly
+    once, at creation; this is the metadata needed to revoke it. */
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  created_at: string;
+  expires_at: string;
+  expired: boolean;
 }
 
 /** Fired on any 401 API response so the auth provider can drop the session. */
@@ -865,8 +886,24 @@ export const api = {
     ),
   invitationInfo: (token: string) =>
     fetch(`/api/auth/invitations/${token}`).then((r) => json<InvitationPublic>(r)),
-  acceptInvitation: (token: string, body: { password: string; display_name: string }) =>
+  // display_name is required only when the invitation creates a NEW account;
+  // an existing user joins by authenticating with `password`
+  acceptInvitation: (token: string, body: { password: string; display_name?: string }) =>
     post(`/api/auth/invitations/${token}/accept`, body).then((r) => json<SessionInfo>(r)),
+  listInvitations: (orgId: string) =>
+    fetch(`/api/organizations/${orgId}/invitations`).then((r) =>
+      json<PendingInvitation[]>(r),
+    ),
+  revokeInvitation: (orgId: string, invitationId: string) =>
+    fetch(`/api/organizations/${orgId}/invitations/${invitationId}`, {
+      method: "DELETE",
+    }).then((r) => json<void>(r)),
+  listMembers: (orgId: string) =>
+    fetch(`/api/organizations/${orgId}/members`).then((r) => json<OrganizationMember[]>(r)),
+  removeMember: (orgId: string, userId: string) =>
+    fetch(`/api/organizations/${orgId}/members/${userId}`, { method: "DELETE" }).then(
+      (r) => json<void>(r),
+    ),
 
   listOrganizations: () => fetch("/api/organizations").then((r) => json<Organization[]>(r)),
   createOrganization: (name: string) =>
