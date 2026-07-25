@@ -203,8 +203,17 @@ function ActionCard({
         ...(reviewAction === "edit" && description.trim()
           ? { description: description.trim() }
           : {}),
+        // filter(Boolean): a trailing comma — the commonest typo in a
+        // comma-separated field — used to submit an empty id, which the
+        // server then rejected with «Exigence(s) inconnue(s) … : » and
+        // nothing after the colon.
         ...(reviewAction === "edit" && scopeIds.trim()
-          ? { impacted_requirement_ids: scopeIds.split(",").map((s) => s.trim()) }
+          ? {
+              impacted_requirement_ids: scopeIds
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            }
           : {}),
       }),
     onSuccess: () => {

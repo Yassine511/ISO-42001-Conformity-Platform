@@ -168,4 +168,72 @@ describe("MembersDialog", () => {
     const alerts = await screen.findAllByRole("alert");
     expect(within(alerts[0]).getByText(/déjà membre/)).toBeInTheDocument();
   });
+  // ---------------------------------------------------------------- F6
+
+  /** Swap navigator.clipboard AFTER userEvent.setup(): user-event v14 installs
+      its own clipboard stub during setup, which would otherwise put the API
+      back and hide exactly the condition under test. Returns the restore fn. */
+  function withClipboard(value: unknown) {
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { value, configurable: true });
+    return () => {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    };
+  }
+
+  async function generateLink(user: ReturnType<typeof userEvent.setup>) {
+    mocked.createInvitation.mockResolvedValue({
+      invite_token: "raw-token-abc",
+      email: "dan@lumen.fr",
+      expires_at: "2026-08-01T10:00:00Z",
+    });
+    open();
+    await user.type(await screen.findByLabelText(/Adresse e-mail/), "dan@lumen.fr");
+    await user.click(screen.getByRole("button", { name: /Générer le lien/ }));
+    return await screen.findByRole("button", { name: "Copier le lien" });
+  }
+
+  it("tells the user when the browser refuses the clipboard instead of failing mute", async () => {
+    // Audit pass 5 (F6): navigator.clipboard exists only in a SECURE CONTEXT,
+    // and this app ships on plain HTTP by design — served from anything but
+    // localhost the property is undefined, the await threw an unhandled
+    // rejection, and the button gave no feedback at all on a link the UI
+    // states is shown exactly once.
+    const user = userEvent.setup();
+    const button = await generateLink(user);
+    const restore = withClipboard(undefined);
+    try {
+      await user.click(button);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/Copie automatique indisponible/);
+      expect(alert).toHaveTextContent(/HTTPS/);
+      // the link stays selectable — that IS the recovery the message points to
+      const link = screen.getByLabelText("Lien d'invitation") as HTMLInputElement;
+      expect(link.value).toContain("/invitation/raw-token-abc");
+      expect(link).toHaveAttribute("readonly");
+    } finally {
+      restore();
+    }
+  });
+
+  it("copies the link and confirms when the clipboard is available", async () => {
+    const user = userEvent.setup();
+    const button = await generateLink(user);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const restore = withClipboard({ writeText });
+    try {
+      await user.click(button);
+
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(
+          expect.stringContaining("/invitation/raw-token-abc"),
+        ),
+      );
+      expect(screen.queryByText(/Copie automatique indisponible/)).not.toBeInTheDocument();
+    } finally {
+      restore();
+    }
+  });
 });

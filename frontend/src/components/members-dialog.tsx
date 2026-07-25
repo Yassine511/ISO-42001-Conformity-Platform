@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Loader2, UserMinus, X } from "lucide-react";
 import { api } from "../api";
@@ -40,8 +40,20 @@ export function MembersDialog({
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [copied, setCopied] = useState(false);
+  // navigator.clipboard is unavailable outside a secure context, and this app
+  // ships on plain HTTP by design (nginx listens on :80, SESSION_COOKIE_SECURE
+  // defaults off) — see F6 on `copy` below.
+  const [copyFailed, setCopyFailed] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const members = useQuery({
     queryKey: ["members", orgId],
@@ -102,6 +114,7 @@ export function MembersDialog({
     if (!next) {
       setEmail("");
       setCopied(false);
+      setCopyFailed(false);
       setConfirmRemove(null);
       setActionError(null);
       invite.reset();
@@ -109,11 +122,26 @@ export function MembersDialog({
     onOpenChange(next);
   };
 
+  /** Copy the invite link, degrading honestly when the browser refuses.
+      `navigator.clipboard` exists only in a SECURE CONTEXT, and this app is
+      deployed on plain HTTP on purpose — served from anything but localhost
+      the property is undefined, so the await used to throw an unhandled
+      rejection, leave `copied` false and give the user no feedback at all on a
+      link the UI states is shown exactly once. The link is also rendered in a
+      readonly input, so the recovery is to say so rather than to fail mute. */
   const copy = async () => {
     if (!inviteUrl) return;
-    await navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopyFailed(false);
+      setCopied(true);
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setCopyFailed(true);
+    }
   };
 
   const memberList = members.data ?? [];
@@ -285,6 +313,13 @@ export function MembersDialog({
                     )}
                   </Button>
                 </div>
+                {copyFailed && (
+                  <p role="alert" className="text-xs text-warning-foreground dark:text-warning">
+                    Copie automatique indisponible sur cette connexion (le presse-papiers
+                    du navigateur exige HTTPS) — sélectionnez le lien ci-dessus et copiez-le
+                    manuellement.
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Transmettez ce lien à {invite.data?.email}. Il est affiché une seule
                   fois et expire dans 7 jours.

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type RemediationCaseDetail } from "../api";
@@ -578,6 +578,42 @@ describe("plan panel", () => {
         priority: "basse",
       }),
     );
+  });
+
+  it("drops empty ids from the comma-separated requirement scope", async () => {
+    // Audit pass 5 (F8): a trailing comma — the commonest typo in a
+    // comma-separated field — used to submit "" alongside the real ids. The
+    // server validates every id against the live KB, so the reviewer got
+    // «Exigence(s) inconnue(s) dans la base ISO 42001 : » with nothing after
+    // the colon.
+    mocked.getCase.mockResolvedValue(
+      makeCase({
+        status: "PLAN_READY",
+        classification: "evidence_gap",
+        scope: "local",
+        scope_rationale: "Écart isolé.",
+        triage_approved_at: "2026-07-10T09:00:30Z",
+        approved_triage_draft_id: "td-1",
+        active_plan_id: "plan-1",
+        plans: [PLAN],
+      }),
+    );
+    mocked.reviewAction.mockResolvedValue({ ...ACTION, lifecycle: "APPROVED" });
+    renderCase();
+    await screen.findByText(/Brouillon IA n°1/);
+    // "Modifier" is ambiguous on this page — the pilotage rail has one too;
+    // scope to the action's own review button row.
+    const reviewRow = screen.getByRole("button", { name: "Approuver" }).parentElement!;
+    await userEvent.click(within(reviewRow).getByRole("button", { name: "Modifier" }));
+
+    const scope = screen.getByLabelText(/Exigences visées/) as HTMLInputElement;
+    await userEvent.clear(scope);
+    await userEvent.type(scope, "A.9.2, A.4.5,, ");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la décision" }));
+
+    await waitFor(() => expect(mocked.reviewAction).toHaveBeenCalled());
+    const body = mocked.reviewAction.mock.calls[0][3];
+    expect(body.impacted_requirement_ids).toEqual(["A.9.2", "A.4.5"]);
   });
 
   it("distinguishes operational aborts from agent abstentions", async () => {
