@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -620,36 +620,78 @@ def suggested_priority_for_action(
 # ---------------------------------------------------------------- trust panel
 
 
+def _manifest_predicate(manifests: dict[str, set], assessment_col, requirement_col):
+    """SQL form of the manifest membership guard: a row counts only when its
+    requirement is in the frozen manifest of its OWN assessment.
+
+    Built ONCE and reused for attempts and findings so the two can never
+    diverge. An empty manifest set collapses to false for that assessment —
+    correct, and `false()` for no assessments at all (never an empty or_(),
+    which SQLAlchemy renders as an always-true empty conjunction)."""
+    clauses = [
+        and_(assessment_col == assessment_id, requirement_col.in_(requirement_ids))
+        for assessment_id, requirement_ids in manifests.items()
+        if requirement_ids
+    ]
+    return or_(*clauses) if clauses else false()
+
+
 def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
     """Trust-panel metrics computed AT BUILD TIME into plain data — the
     calculator (trust_panel) then works from the detached scope alone, like
     every other section. The manifest guard applies here exactly as it does
     to the effective findings: attempts/findings on a requirement outside
     their OWN assessment's frozen manifest are out of scope for telemetry
-    too (they would otherwise inflate the gate counts and review rates)."""
+    too (they would otherwise inflate the gate counts and review rates).
+
+    Counting is done by the DATABASE (COUNT/GROUP BY under the manifest
+    predicate), not by streaming rows into Python: these tables are the full
+    append-only history of the organization and grow without bound, so the old
+    row-by-row scans made the trust panel slower every day it was used. Two
+    narrow single-column scans remain, and only because both inspect the
+    CONTENTS of a JSON array — a per-code histogram and a sum of array lengths
+    need dialect-specific unnesting (`json_each` on SQLite,
+    `json_array_elements_text` on PostgreSQL), which would make the test suite
+    and production exercise different code. Both are documented at their site.
+
+    Everything here runs inside the caller's REPEATABLE READ / READ ONLY
+    snapshot, so splitting one scan into several aggregate queries cannot mix
+    database states.
+    """
     included = scope.included_assessment_ids
     manifests = scope.included_manifests
+    in_manifest = _manifest_predicate(
+        manifests, AssessmentAttempt.assessment_id, AssessmentAttempt.requirement_id
+    )
 
     outcome_counts = {"parsed": 0, "schema_invalid": 0, "provider_failure": 0, "legacy_unclassified": 0}
     code_counts: dict[str, int] = {}
     drafts_with_unsupported = 0
     classified_with_codes = 0
     if included:
-        # column select, not full ORM rows: attempts carry no large JSON, but
-        # the pattern stays uniform with the finding/chat scans below
-        for assessment_id, requirement_id, attempt_outcome, codes in db.execute(
-            select(
-                AssessmentAttempt.assessment_id,
-                AssessmentAttempt.requirement_id,
-                AssessmentAttempt.attempt_outcome,
-                AssessmentAttempt.verifier_error_codes,
-            ).where(AssessmentAttempt.assessment_id.in_(included))
+        for attempt_outcome, n in db.execute(
+            select(AssessmentAttempt.attempt_outcome, func.count())
+            .where(AssessmentAttempt.assessment_id.in_(included), in_manifest)
+            .group_by(AssessmentAttempt.attempt_outcome)
         ):
-            if requirement_id not in manifests.get(assessment_id, ()):
-                continue
-            outcome_counts[attempt_outcome] = outcome_counts.get(attempt_outcome, 0) + 1
+            outcome_counts[attempt_outcome] = outcome_counts.get(attempt_outcome, 0) + n
+
+        # JSON-array contents: one column, bounded by the scope's assessments x
+        # their manifests, not by the whole attempt history.
+        #
+        # The `codes is None` guard is NOT redundant with a SQL IS NOT NULL:
+        # SQLAlchemy's JSON type persists Python None as JSON `null`, which is
+        # not SQL NULL, so such a row passes any SQL null test and still
+        # deserializes to None. Filtering in Python is the only reading that
+        # matches how the rows were written (legacy row, or the verify node
+        # never completed the attempt).
+        for (codes,) in db.execute(
+            select(AssessmentAttempt.verifier_error_codes).where(
+                AssessmentAttempt.assessment_id.in_(included), in_manifest
+            )
+        ):
             if codes is None:
-                continue  # legacy or not yet completed by the verify node
+                continue
             classified_with_codes += 1
             for code in codes:
                 code_counts[code] = code_counts.get(code, 0) + 1
@@ -663,49 +705,58 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
     intervention_events = 0
     override_events = 0
     if included:
-        finding_rows = [
-            r
-            for r in db.execute(
-                select(
-                    Finding.id,
-                    Finding.status,
-                    Finding.abstain_reason,
-                    Finding.assessment_id,
-                    Finding.requirement_id,
-                ).where(Finding.assessment_id.in_(included))
-            )
-            if r[4] in manifests.get(r[3], ())
-        ]
-        # review events derive ONLY from the manifest-filtered findings
-        finding_ids = [r[0] for r in finding_rows]
-        for _, status, reason, _, _ in finding_rows:
-            status_counts[status] = status_counts.get(status, 0) + 1
+        finding_in_manifest = _manifest_predicate(
+            manifests, Finding.assessment_id, Finding.requirement_id
+        )
+        for status, reason, n in db.execute(
+            select(Finding.status, Finding.abstain_reason, func.count())
+            .where(Finding.assessment_id.in_(included), finding_in_manifest)
+            .group_by(Finding.status, Finding.abstain_reason)
+        ):
+            status_counts[status] = status_counts.get(status, 0) + n
             if reason:
-                abstain_counts[reason] = abstain_counts.get(reason, 0) + 1
+                abstain_counts[reason] = abstain_counts.get(reason, 0) + n
                 if reason in VERIFIER_ABSTAIN_REASONS:
-                    findings_abstained_by_verifier += 1
-        if finding_ids:
-            # immutable review EVENTS (append-only history), never the mutable
-            # projection: re-reviews each count as one event
-            for (action,) in db.execute(
-                select(FindingReview.action).where(FindingReview.finding_id.in_(finding_ids))
-            ):
-                review_events += 1
-                if action in ("edit", "override"):
-                    intervention_events += 1
-                if action == "override":
-                    override_events += 1
+                    findings_abstained_by_verifier += n
+
+        # Immutable review EVENTS (append-only history), never the mutable
+        # projection: re-reviews each count as one event. Joined to Finding so
+        # the manifest guard applies in SQL — the previous form materialized
+        # every in-scope finding id and passed them back as one IN (...) list.
+        for action, n in db.execute(
+            select(FindingReview.action, func.count())
+            .join(Finding, FindingReview.finding_id == Finding.id)
+            .where(Finding.assessment_id.in_(included), finding_in_manifest)
+            .group_by(FindingReview.action)
+        ):
+            review_events += n
+            if action in ("edit", "override"):
+                intervention_events += n
+            if action == "override":
+                override_events += n
 
     drafts_total = sum(outcome_counts.values())
-    # chat rows are owned by conversations (no assessment/org column) — join.
-    # Only the two columns the metrics need: a full ChatMessage row drags the
-    # complete retrieval/claims/raw-call JSON into memory per message.
-    chat_rows = db.execute(
-        select(ChatMessage.status, ChatMessage.stripped_citations)
+    # Chat rows are owned by conversations (no assessment/org column) — join.
+    # Status tallies are a GROUP BY; the stripped-citation total needs the
+    # LENGTH of a JSON array per row, so it keeps a one-column scan for the
+    # same dialect reason given above.
+    chat_counts: dict[str, int] = {}
+    for status, n in db.execute(
+        select(ChatMessage.status, func.count())
         .join(Conversation, ChatMessage.conversation_id == Conversation.id)
         .where(Conversation.organization_id == scope.organization_id)
-    ).all()
-    stripped_count = sum(len(stripped or []) for _, stripped in chat_rows)
+        .group_by(ChatMessage.status)
+    ):
+        chat_counts[status] = n
+    stripped_count = sum(
+        len(stripped or [])
+        for (stripped,) in db.execute(
+            select(ChatMessage.stripped_citations)
+            .join(Conversation, ChatMessage.conversation_id == Conversation.id)
+            .where(Conversation.organization_id == scope.organization_id)
+        )
+    )
+    chat_messages = sum(chat_counts.values())
 
     return {
         "gate": {
@@ -743,9 +794,9 @@ def _materialize_trust(db: Session, scope: ReportingScope) -> dict:
         },
         "chat": {
             "metric_scope": "organization",  # chat has no assessment binding
-            "messages": len(chat_rows),
-            "answered": sum(1 for status, _ in chat_rows if status == "ANSWERED"),
-            "abstained": sum(1 for status, _ in chat_rows if status == "ABSTAINED"),
+            "messages": chat_messages,
+            "answered": chat_counts.get("ANSWERED", 0),
+            "abstained": chat_counts.get("ABSTAINED", 0),
             "stripped_citation_count": stripped_count,
         },
     }

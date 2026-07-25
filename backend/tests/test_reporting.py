@@ -575,6 +575,75 @@ def test_calculators_work_from_the_detached_scope_alone(db_session):
     assert len(soa["controls"]) == 38
 
 
+def test_manifest_guard_is_per_assessment_not_a_flat_id_set(db_session):
+    """The trust telemetry counts in SQL, under an OR of per-assessment
+    predicates. The failure mode that form invites — and that the previous
+    row-by-row Python check could not have — is flattening the manifests into
+    one requirement-id set, which would let assessment B's finding on a
+    requirement that only A's manifest contains slip through.
+
+    A: manifest [4.1]  with findings on 4.1 (in) and 4.2 (out)
+    B: manifest [4.2]  with findings on 4.2 (in) and 4.1 (out)
+    A flat union {4.1, 4.2} counts all four; the correct answer is two.
+    """
+    org = _org(db_session)
+    a = _assessment(db_session, org, requirement_ids=["4.1"])
+    b = _assessment(db_session, org, requirement_ids=["4.2"])
+    for assessment, own, foreign in ((a, "4.1", "4.2"), (b, "4.2", "4.1")):
+        for rid in (own, foreign):
+            fid = _finding(db_session, assessment, rid, human_verdict="compliant")
+            db_session.add(
+                FindingReview(
+                    finding_id=fid, sequence=1, action="approve", human_verdict="compliant"
+                )
+            )
+            db_session.add(
+                AssessmentAttempt(
+                    assessment_id=assessment, requirement_id=rid, attempt_number=1,
+                    prompt_version="p", parsed_ok=True, attempt_outcome="parsed",
+                    verifier_error_codes=["citation_not_found"] if rid == foreign else [],
+                )
+            )
+    db_session.commit()
+
+    trust = scoring.trust_panel(_scope(db_session, org))
+    assert trust["gate"]["findings_verified"] == 2  # not 4
+    assert trust["gate"]["drafts_total"] == 2
+    assert trust["review"]["review_events"] == 2
+    # the out-of-manifest attempts owned the only error codes
+    assert trust["gate"]["verifier_error_code_counts"] == {}
+    assert trust["gate"]["drafts_with_unsupported_citation"] == 0
+
+
+def test_trust_telemetry_with_no_included_assessment_counts_nothing(db_session):
+    """Empty scope: the manifest predicate must collapse to FALSE, never to an
+    empty or_() (which SQLAlchemy renders as an always-true conjunction and
+    would count every row in the table)."""
+    org = _org(db_session)
+    # RUNNING assessments are excluded from an official scope entirely
+    running = _assessment(db_session, org, status="RUNNING", requirement_ids=["4.1"])
+    fid = _finding(db_session, running, "4.1", human_verdict="compliant")
+    db_session.add(
+        FindingReview(finding_id=fid, sequence=1, action="approve", human_verdict="compliant")
+    )
+    db_session.add(
+        AssessmentAttempt(
+            assessment_id=running, requirement_id="4.1", attempt_number=1,
+            prompt_version="p", parsed_ok=True, attempt_outcome="parsed",
+            verifier_error_codes=["citation_not_found"],
+        )
+    )
+    db_session.commit()
+
+    scope = _scope(db_session, org)
+    assert scope.included_assessment_ids == []
+    trust = scoring.trust_panel(scope)
+    assert trust["gate"]["drafts_total"] == 0
+    assert trust["gate"]["findings_verified"] == 0
+    assert trust["gate"]["verifier_error_code_counts"] == {}
+    assert trust["review"]["review_events"] == 0
+
+
 def test_out_of_manifest_rows_never_contaminate_trust_telemetry(db_session):
     """P2 regression: the manifest guard applies to trust telemetry too —
     before the fix a rogue finding/attempt inflated findings_verified,
