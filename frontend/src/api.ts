@@ -122,6 +122,9 @@ export interface Assessment {
   abstained_count: number;
   reviewed_count: number;
   manifest_complete: boolean;
+  // true only for an ORPHANED RUNNING run (server restarted mid-run): resume
+  // 409s on any run the server is actually executing.
+  resumable: boolean;
   progress: AssessmentProgress | null;
 }
 
@@ -837,6 +840,20 @@ export const INFRA_ABSTAIN_REASONS = ["llm_error", "rate_limited"] as const;
 export const isInfraAbstain = (reason: string | null) =>
   reason !== null && (INFRA_ABSTAIN_REASONS as readonly string[]).includes(reason);
 
+/** An API failure, carrying the HTTP status so callers (and the react-query
+    retry policy) can tell a deterministic client error from a transient one.
+    `message` stays the server's French `detail` — every existing
+    `(err as Error).message` reader is unaffected. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     if (res.status === 401) {
@@ -846,7 +863,7 @@ async function json<T>(res: Response): Promise<T> {
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     }
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Erreur ${res.status}`);
+    throw new ApiError(body?.detail ?? `Erreur ${res.status}`, res.status);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -858,14 +875,24 @@ async function json<T>(res: Response): Promise<T> {
 async function activation(res: Response): Promise<ActivationResult> {
   const body = await res.json().catch(() => null);
   if (body && typeof body.outcome === "string") return body as ActivationResult;
-  throw new Error(body?.detail ?? `Erreur ${res.status}`);
+  throw new ApiError(body?.detail ?? `Erreur ${res.status}`, res.status);
 }
+
+// Last-resort client deadline for writes. Deliberately ABOVE nginx's
+// proxy_read_timeout (300 s) so a slow-but-alive request still ends as a real
+// 504 with a server message; this only catches a connection that stalls with
+// no response at all, which would otherwise spin the UI forever. The
+// LLM-backed endpoints are bounded server-side by
+// settings.llm_call_budget_seconds — this is not the mechanism that protects
+// the worker, only the one that protects the user's screen.
+const WRITE_TIMEOUT_MS = 330_000;
 
 const post = (url: string, body?: unknown) =>
   fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
   });
 
 export const api = {

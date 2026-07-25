@@ -37,6 +37,8 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 REQUEST_TIMEOUT = 60.0
 MAX_BACKOFF_SECONDS = 30.0  # cap on Retry-After / exponential delay
 
+CALL_DEADLINE_EXCEEDED = "budget de temps épuisé"
+
 # llm_calls.status values
 CALL_SUCCESS = "SUCCESS"
 CALL_HTTP_ERROR = "HTTP_ERROR"
@@ -184,8 +186,27 @@ class HttpJsonLLM:
         between calls (M7a planner heartbeat): the whole provider/fallback/
         retry loop is encapsulated here, so callers have no other observation
         point. Callback exceptions are the callback's problem — it must catch
-        internally (the planner marks its lease lost instead of raising)."""
+        internally (the planner marks its lease lost instead of raising).
+
+        WALL-CLOCK BUDGET: the whole provider × 429-retry loop is bounded by
+        settings.llm_call_budget_seconds. Unbounded, one call could hold a
+        worker for providers × (retries+1) × (REQUEST_TIMEOUT + backoff) — over
+        ten minutes — and a request making two such calls twice that. The
+        budget is checked BEFORE starting a request and before every backoff
+        sleep, never mid-flight: an in-flight HTTP request keeps its own
+        REQUEST_TIMEOUT, so the real bound is budget + REQUEST_TIMEOUT.
+        Exhaustion is an ordinary provider failure — it yields the same
+        LLMOutcome(content=None) callers already handle (abstention with full
+        provenance), never an exception. Set the budget to 0 to disable it.
+        """
         calls: list[LLMCall] = []
+        budget = settings.llm_call_budget_seconds
+        started = time.monotonic()
+        deadline_hit = False
+
+        def _remaining() -> float:
+            """Seconds left in the budget; +inf when the budget is disabled."""
+            return float("inf") if budget <= 0 else budget - (time.monotonic() - started)
 
         def _notify() -> None:
             if on_call_finished is not None:
@@ -229,6 +250,17 @@ class HttpJsonLLM:
                     calls.append(call)
                     _notify()
                     break  # no key: retrying is pointless, go to fallback
+                if _remaining() <= 0:
+                    # Budget spent: this provider is never contacted. NO call
+                    # row is written — a row would have to claim one of the
+                    # llm_calls.status values, and every failure-class value
+                    # counts as a "competing failure" in classify_failure,
+                    # which would relabel genuine throttling (the usual cause
+                    # of a spent budget) as llm_error and corrupt the M6
+                    # rate_limited/llm_error split. The reason is reported on
+                    # the OUTCOME instead, which callers persist verbatim.
+                    deadline_hit = True
+                    break
                 try:
                     resp = httpx.post(
                         url,
@@ -257,7 +289,13 @@ class HttpJsonLLM:
                     calls.append(call)
                     _notify()  # before the backoff sleep — lease renewal window
                     if resp.status_code == 429 and backoff_round < settings.judge_429_retries:
-                        time.sleep(_backoff_delay(resp, backoff_round))
+                        delay = _backoff_delay(resp, backoff_round)
+                        # Sleeping past the budget only to hit the deadline check
+                        # on the next round wastes the worker: fall back now.
+                        if delay >= _remaining():
+                            deadline_hit = True
+                            break
+                        time.sleep(delay)
                         continue  # retry the same provider
                     # other 4xx/5xx (or 429 budget exhausted): try the fallback
                     break
@@ -282,12 +320,12 @@ class HttpJsonLLM:
                 calls.append(call)
                 _notify()
                 return LLMOutcome(content=content, calls=calls)
-        return LLMOutcome(
-            content=None,
-            calls=calls,
-            error="tous les fournisseurs LLM ont échoué : "
-            + " ; ".join(f"{c.provider}: {c.status}" for c in calls),
+        error = "tous les fournisseurs LLM ont échoué : " + " ; ".join(
+            f"{c.provider}: {c.status}" for c in calls
         )
+        if deadline_hit:
+            error += f" ; arrêt anticipé ({CALL_DEADLINE_EXCEEDED}, {budget:g} s)"
+        return LLMOutcome(content=None, calls=calls, error=error)
 
 
 _provider: LLMProvider | None = None

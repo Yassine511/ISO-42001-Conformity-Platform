@@ -461,6 +461,55 @@ def test_429_retried_with_backoff_before_fallback(monkeypatch):
     assert len(sleeps) == 1
 
 
+def test_call_budget_stops_the_retry_loop_and_is_recorded(monkeypatch):
+    """One complete_json is bounded in wall-clock time. Once the budget is
+    spent, remaining providers are not contacted — and the reason is written
+    into the call trail, never silently skipped."""
+    from unittest.mock import MagicMock
+
+    from app.pipeline import llm as L
+
+    resp_429 = MagicMock(status_code=429, text="rate limited", headers={"retry-after": "0"})
+    monkeypatch.setattr(L.settings, "mistral_api_key", "k")
+    monkeypatch.setattr(L.settings, "groq_api_key", "k")
+    monkeypatch.setattr(L.settings, "llm_call_budget_seconds", 100.0)
+    monkeypatch.setattr(L.httpx, "post", lambda *a, **kw: resp_429)
+    monkeypatch.setattr(L.time, "sleep", lambda _s: None)
+    # fake clock: every reading is 60 s later, so the budget dies after two
+    clock = iter([0.0] + [60.0 * i for i in range(1, 50)])
+    monkeypatch.setattr(L.time, "monotonic", lambda: next(clock))
+
+    out = L.HttpJsonLLM().complete_json([{"role": "user", "content": "x"}])
+    assert out.content is None
+    # unbounded, this trail would be 2 providers x 4 attempts = 8 calls
+    assert len(out.calls) < 8
+    # the early stop is on the OUTCOME, not a synthetic call row: a row would
+    # count as a competing failure and relabel throttling as llm_error
+    assert L.CALL_DEADLINE_EXCEEDED in out.error
+    assert all(c.http_status == 429 for c in out.calls)
+    assert L.classify_failure(out.calls) == "rate_limited"
+
+
+def test_call_budget_zero_disables_the_deadline(monkeypatch):
+    """0 = opt out: the loop behaves exactly as before the budget existed."""
+    from unittest.mock import MagicMock
+
+    from app.pipeline import llm as L
+
+    ok_body = {"model": "mistral-large-2411", "choices": [{"message": {"content": "{}"}}]}
+    resp_ok = MagicMock(status_code=200, headers={})
+    resp_ok.json.return_value = ok_body
+    monkeypatch.setattr(L.settings, "mistral_api_key", "k")
+    monkeypatch.setattr(L.settings, "groq_api_key", "")
+    monkeypatch.setattr(L.settings, "llm_call_budget_seconds", 0.0)
+    monkeypatch.setattr(L.httpx, "post", lambda *a, **kw: resp_ok)
+    # a clock far past any budget must not matter when the budget is disabled
+    monkeypatch.setattr(L.time, "monotonic", lambda: 10_000.0)
+
+    out = L.HttpJsonLLM().complete_json([{"role": "user", "content": "x"}])
+    assert out.content == "{}"
+
+
 def test_on_call_finished_invoked_per_call_before_backoff(monkeypatch):
     """M7a lease heartbeat hook: on_call_finished fires after EVERY recorded
     provider call — including a 429 BEFORE its backoff sleep — so a long

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { ApiError } from "./api";
 import { AuthProvider } from "./auth";
 import { ThemeProvider } from "@/components/theme-provider";
 import { MotionRoot } from "@/components/motion";
@@ -24,7 +25,20 @@ import "@fontsource/spline-sans-mono/500.css";
 import "@fontsource/spline-sans-mono/600.css";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Client errors are deterministic — a 401/404/409 answers identically on
+      // every retry. The stock policy (3 retries) turned one expired session
+      // into four 401s and four redirect events per query; server/network
+      // errors still get one retry.
+      retry: (failureCount, error) =>
+        error instanceof ApiError && error.status >= 400 && error.status < 500
+          ? false
+          : failureCount < 1,
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

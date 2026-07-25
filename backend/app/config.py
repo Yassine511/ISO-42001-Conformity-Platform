@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # judge_429_base_delay seconds, Retry-After honoured, capped at 30 s.
     judge_429_retries: int = 3
     judge_429_base_delay: float = 2.0
+    # Wall-clock budget for ONE complete_json (the whole provider + 429-retry
+    # loop). Without it the worst case is providers × (retries+1) ×
+    # (60 s timeout + 30 s backoff) ≈ 12 min per call, and a chat answer makes
+    # up to two — one request could hold a worker for ~24 min. 240 s still
+    # leaves room for both providers plus a couple of throttled retries.
+    # The bound is budget + REQUEST_TIMEOUT (an in-flight request is never
+    # interrupted). 0 disables the budget.
+    llm_call_budget_seconds: float = 240.0
 
 
 settings = Settings()
