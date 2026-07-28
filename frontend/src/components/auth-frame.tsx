@@ -42,7 +42,6 @@ export function AuthFrame({
   footer,
   brand,
   badge,
-  stamp,
   caps,
 }: {
   title: string;
@@ -61,8 +60,6 @@ export function AuthFrame({
   };
   /** Optional status chip above the title (invitation states). */
   badge?: ReactNode;
-  /** Dashed registrar stamp above the form title. */
-  stamp?: string;
   /** Mono footnote line under the footer. */
   caps?: string;
 }) {
@@ -151,13 +148,6 @@ export function AuthFrame({
           <div className="mb-7 md:hidden">
             <BackToSite tone="surface" />
           </div>
-          {stamp && (
-            <Reveal i={0}>
-              <span className="mb-6 inline-flex -rotate-2 items-center gap-2 rounded-[4px] border-[1.5px] border-dashed border-success px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] text-success uppercase select-none">
-                {stamp}
-              </span>
-            </Reveal>
-          )}
           {badge ? <div className="mb-3.5">{badge}</div> : null}
           <Reveal i={1}>
             <h1 className="font-sans text-[26px] font-semibold tracking-tight">{title}</h1>

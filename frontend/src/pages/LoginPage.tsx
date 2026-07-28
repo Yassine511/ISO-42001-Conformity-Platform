@@ -41,7 +41,6 @@ export default function LoginPage() {
     <AuthFrame
       title="Se connecter"
       subtitle="Retrouvez vos espaces d'organisation et reprenez la revue là où vous l'avez laissée."
-      stamp="✓ Accès nominatif · journalisé"
       brand={{
         eyebrow: "Espace de conformité",
         tagline: (
